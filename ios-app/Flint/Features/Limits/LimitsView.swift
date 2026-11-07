@@ -34,6 +34,7 @@ final class LimitsViewModel: ObservableObject {
     }
 }
 
+/// App limits (M13's limit cards, M15's editor). Daily time budgets per selection.
 struct LimitsView: View {
     @StateObject private var vm = LimitsViewModel()
     @StateObject private var flow = RuleMutationFlow()
@@ -43,40 +44,62 @@ struct LimitsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("App limits").flintTitle(30)
+                HStack(alignment: .center) {
+                    Text("App limits").flintTitle(32).accessibilityAddTraits(.isHeader)
                     Spacer()
-                    Button { showAdd = true } label: { Image(systemName: "plus").font(.system(size: 17)) }
-                        .buttonStyle(CircleIconButtonStyle(size: 44))
-                        .accessibilityLabel("New time limit")
+                    Button { showAdd = true } label: {
+                        Image(systemName: "plus").font(.system(size: 18, weight: .bold))
+                    }
+                    .buttonStyle(CircleIconButtonStyle(size: 44, ember: true))
+                    .accessibilityLabel("New time limit")
                 }
+                .padding(.top, 8)
 
                 Text("Daily time budgets").flintEyebrow().padding(.top, 22)
                 if vm.health.domains["limits"]?.failures.contains(where: { $0.activityName == "limits" }) == true {
-                    Text("Saved Time Limits are unavailable. Existing protection was preserved.").foregroundStyle(FlintBrand.danger)
+                    Text("Saved Time Limits are unavailable. Existing protection was preserved.")
+                        .font(FlintFont.text(13))
+                        .foregroundStyle(FlintBrand.danger)
                 }
                 if vm.limits.isEmpty {
-                    Text("Cap daily usage — say 30 minutes of social, then it rests until tomorrow.")
-                        .flintSecondary(14).lineSpacing(3).padding(.vertical, 14)
-                    Button("Add a time limit") { showAdd = true }.buttonStyle(GhostButtonStyle())
+                    FlintCard(radius: 22, padding: EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)) {
+                        Text("No time limits yet").font(FlintFont.text(15, weight: .semibold))
+                            .foregroundStyle(FlintBrand.bone)
+                        Text("Cap daily usage — say 30 minutes of social, then it rests until tomorrow.")
+                            .flintSecondary(13).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 12)
+                    Button("Add a time limit") { showAdd = true }
+                        .buttonStyle(GhostButtonStyle(height: 40))
+                        .padding(.top, 4)
                 } else {
-                    VStack(spacing: 0) {
+                    VStack(spacing: 10) {
                         ForEach(vm.limits) { limit in row(limit) }
                     }
-                    .padding(.top, 6)
+                    .padding(.top, 12)
                 }
 
-                Text("Open limits").flintEyebrow().padding(.top, 26)
                 NavigationLink { OpenLimitsView() } label: {
-                    FlintRow(title: "Open limits", subtitle: "Cap opens per day instead of minutes", chevron: true)
+                    FlintCard(radius: 22, padding: EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)) {
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Open limits").font(FlintFont.text(15, weight: .semibold))
+                                    .foregroundStyle(FlintBrand.bone)
+                                Text("Cap opens per day instead of minutes").flintSecondary(12)
+                            }
+                            Spacer(minLength: 8)
+                            FlintChevron()
+                        }
+                    }
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 6)
+                .padding(.top, 24)
                 Text("The block screen’s button spends one open to let you through.")
                     .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone).padding(.top, 8)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 20)
             .padding(.top, 8)
+            .padding(.bottom, 32)
         }
         .background(FlintGroundBackground())
         .flintTabBarInset()
@@ -91,46 +114,56 @@ struct LimitsView: View {
     }
 
     private func row(_ limit: FlintLimitRule) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-        HStack(spacing: 14) {
-            Button { editing = limit } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(limit.name).font(FlintFont.text(15, weight: .medium))
-                            .foregroundStyle(limit.enabled ? FlintBrand.bone : FlintBrand.faint)
-                        Text("\(limit.thresholdMinutes) min").font(FlintFont.display(14))
-                            .foregroundStyle(FlintBrand.mist).monospacedDigit()
-                    }
-                    Text("A day · \(limit.breakLevel.rawValue.capitalized) · \(limit.protection?.timeZoneID ?? TimeZone.current.identifier)")
-                        .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
-                    if limit.protection?.requiresTierReview == true { Text("Review migrated tier").font(.caption) }
-                    if limit.enabled {
-                        Text(FlintRuleProtectionStatus.status(enabled: limit.enabled, activityName: limit.activityName,
-                            domain: "limits", health: vm.health, observation: vm.observation,
-                            authorized: AuthorizationCenter.shared.authorizationStatus == .approved).label)
+        let active = limit.enabled
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Button { editing = limit } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(limit.name).font(FlintFont.text(15, weight: .semibold))
+                                .foregroundStyle(active ? FlintBrand.bone : FlintBrand.faint)
+                            Text("\(limit.thresholdMinutes) min").font(FlintFont.display(14))
+                                .foregroundStyle(FlintBrand.mist).monospacedDigit()
+                        }
+                        Text("A day · \(limit.breakLevel.rawValue.capitalized)")
                             .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
+                        if limit.protection?.requiresTierReview == true {
+                            Text("Review migrated tier").font(FlintFont.text(11))
+                        }
+                        if active {
+                            Text(FlintRuleProtectionStatus.status(enabled: limit.enabled, activityName: limit.activityName,
+                                domain: "limits", health: vm.health, observation: vm.observation,
+                                authorized: AuthorizationCenter.shared.authorizationStatus == .approved).label)
+                                .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            Toggle(limit.name, isOn: Binding(get: { limit.enabled }, set: { _ in
-                flow.run(scope: limit.name, operation: { vm.toggle(limit, confirmation: $0) }, cancel: { vm.cancel(limit.id, confirmation: $0) })
-            }))
+                .buttonStyle(.plain)
+                Toggle(limit.name, isOn: Binding(get: { limit.enabled }, set: { _ in
+                    flow.run(scope: limit.name, operation: { vm.toggle(limit, confirmation: $0) },
+                             cancel: { vm.cancel(limit.id, confirmation: $0) })
+                }))
                 .toggleStyle(EmberToggleStyle()).labelsHidden().fixedSize()
-        }
-        .frame(minHeight: 60)
-        if let protection = limit.protection, protection.queuedChange != nil {
-            QueuedRuleChangeView(protection: protection) {
-                flow.run(scope: limit.name, operation: { _ in vm.cancelQueued(limit, expected: protection) })
+            }
+            if !limit.selection.flintPickedTargets.isEmpty {
+                FlintAppIconStack(targets: limit.selection.flintPickedTargets, size: 28,
+                                  border: FlintBrand.card, limit: 6)
+            }
+            if let protection = limit.protection, protection.queuedChange != nil {
+                QueuedRuleChangeView(protection: protection) {
+                    flow.run(scope: limit.name, operation: { _ in vm.cancelQueued(limit, expected: protection) })
+                }
             }
         }
-        }
-        .overlay(alignment: .bottom) { FlintHairline(opacity: 0.07) }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.card))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
     }
 }
 
+/// M15's app limit editor: the app, the daily allowance dial, the tier it falls back to.
 struct LimitEditor: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -166,46 +199,59 @@ struct LimitEditor: View {
             VStack(spacing: 0) {
                 HStack {
                     Button("Cancel") { dismiss() }
-                        .font(FlintFont.text(15)).foregroundStyle(FlintBrand.mist).frame(minHeight: 44)
+                        .font(FlintFont.text(15, weight: .semibold))
+                        .foregroundStyle(FlintBrand.mist)
+                        .frame(minHeight: 44)
                     Spacer()
                     Text("App limit").flintEyebrow()
                     Spacer()
                     Button("Save") { save() }
-                        .buttonStyle(BoneButtonStyle(height: 36))
+                        .buttonStyle(BoneButtonStyle(height: 38))
                         .disabled(selectionIssue != nil)
                 }
                 .padding(.top, 14)
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Name").flintSecondary(12)
-                            TextField("", text: $name, prompt: Text("Social").foregroundColor(FlintBrand.faint))
-                                .font(FlintFont.display(26))
-                                .foregroundStyle(FlintBrand.bone)
-                                .frame(height: 44)
-                                .overlay(alignment: .bottom) { FlintHairline(opacity: 0.16) }
-                        }
-                        .padding(.top, 18)
-
                         Button { showPicker = true } label: {
-                            HStack(spacing: 14) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(selectionCount == 0 ? "Choose apps and sites" : "\(selectionCount) \(selectionCount == 1 ? "item" : "items") limited")
-                                        .flintRowTitle()
-                                    Text("Apple’s picker").flintSecondary()
+                            HStack(spacing: 12) {
+                                if selectionCount > 0 {
+                                    FlintAppIconStack(targets: selection.flintPickedTargets, size: 44,
+                                                      border: FlintBrand.card, limit: 1)
                                 }
-                                Spacer()
-                                FlintChevron()
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(selectionCount == 0 ? "Choose apps and sites" : "\(selectionCount) \(selectionCount == 1 ? "item" : "items")")
+                                        .font(FlintFont.text(18, weight: .bold))
+                                        .foregroundStyle(FlintBrand.bone)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text(selectionCount == 0 ? "Apple’s picker" : "Tap to change")
+                                        .font(FlintFont.text(12))
+                                        .foregroundStyle(FlintBrand.mist)
+                                }
+                                Spacer(minLength: 8)
+                                Text("Change")
+                                    .font(FlintFont.text(13, weight: .semibold))
+                                    .foregroundStyle(FlintBrand.mist)
                             }
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 64)
-                            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.bone(0.03)))
-                            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.10)))
+                            .padding(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.card))
+                            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .padding(.top, 22)
+                        .padding(.top, 16)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Name").font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+                            TextField("", text: $name, prompt: Text("Social").foregroundColor(FlintBrand.faint))
+                                .font(FlintFont.text(24, weight: .bold, relativeTo: .title2))
+                                .foregroundStyle(FlintBrand.bone)
+                                .frame(minHeight: 44)
+                                .overlay(alignment: .bottom) { FlintHairline(opacity: 0.14) }
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.top, 16)
 
                         if let issue = selectionIssue {
                             Text(issue.message).font(FlintFont.text(13))
@@ -213,46 +259,51 @@ struct LimitEditor: View {
                         }
 
                         ZStack {
-                            Circle().stroke(FlintBrand.bone(0.1), lineWidth: 10)
+                            Circle().stroke(FlintBrand.bone(0.10), lineWidth: 12)
                             Circle()
                                 .trim(from: 0, to: min(1, Double(minutes) / 120))
-                                .stroke(FlintBrand.ember, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                                .stroke(FlintBrand.ember, style: StrokeStyle(lineWidth: 12, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
-                            VStack(spacing: 4) {
+                            VStack(spacing: 2) {
                                 Text(TodayView.duration(minutes: minutes)).flintNumber(44)
                                 Text("a day, then it rests").flintSecondary(12)
                             }
                         }
-                        .frame(width: 210, height: 210)
+                        .frame(width: 200, height: 200)
                         .frame(maxWidth: .infinity)
-                        .padding(.top, 26)
+                        .padding(.top, 22)
                         .accessibilityElement(children: .combine)
 
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Daily allowance").flintSecondary(12)
-                                Text("\(minutes) min").flintNumber(22)
+                                Text("Daily allowance").font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
+                                Text("\(minutes) min").font(FlintFont.display(24, relativeTo: .title2))
+                                    .monospacedDigit().foregroundStyle(FlintBrand.bone)
                             }
                             Spacer()
                             HStack(spacing: 8) {
-                                Button { minutes = max(5, minutes - 5) } label: { Image(systemName: "minus").font(.system(size: 15)) }
+                                Button { minutes = max(5, minutes - 5) } label: { Image(systemName: "minus").font(.system(size: 15, weight: .medium)) }
                                     .buttonStyle(CircleIconButtonStyle(size: 44))
                                     .accessibilityLabel("Five minutes less")
-                                Button { minutes = min(480, minutes + 5) } label: { Image(systemName: "plus").font(.system(size: 15)) }
+                                Button { minutes = min(480, minutes + 5) } label: { Image(systemName: "plus").font(.system(size: 15, weight: .medium)) }
                                     .buttonStyle(CircleIconButtonStyle(size: 44))
                                     .accessibilityLabel("Five minutes more")
                             }
                         }
-                        .padding(EdgeInsets(top: 10, leading: 18, bottom: 10, trailing: 10))
-                        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(FlintBrand.bone(0.03)))
-                        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(FlintBrand.bone(0.10)))
-                        .padding(.top, 24)
+                        .padding(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 10))
+                        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(FlintBrand.card))
+                        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
+                        .padding(.top, 18)
 
-                        Text("When time runs out").flintEyebrow().padding(.top, 24)
+                        Text("When time runs out")
+                            .font(FlintFont.text(14, weight: .semibold))
+                            .foregroundStyle(FlintBrand.bone)
+                            .padding(.horizontal, 4)
+                            .padding(.top, 20)
                         FlintSegmented(options: [(BreakLevel.easy, "Easy"), (.harder, "Harder"), (.hardcore, "Hardcore")],
                                        selection: $breakLevel)
                             .padding(.top, 10)
-                        Text("Rests until tomorrow.").flintSecondary().padding(.top, 10)
+                        Text("Rests until tomorrow.").flintSecondary().padding(.top, 10).padding(.horizontal, 4)
 
                         if let onDelete {
                             Button("Delete limit") {
@@ -260,14 +311,14 @@ struct LimitEditor: View {
                                     cancel: { ticket in if let existingID { FlintLimitsController().cancelPendingChange(existingID, confirmation: ticket) } },
                                     onSaved: { dismiss() })
                             }
-                            .font(FlintFont.text(14, weight: .medium))
+                            .font(FlintFont.text(14, weight: .semibold))
                             .foregroundStyle(FlintBrand.danger)
                             .frame(maxWidth: .infinity, minHeight: 44)
-                            .padding(.top, 28)
+                            .padding(.top, 24)
                         }
                     }
                     .padding(.horizontal, 4)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 32)
                 }
             }
             .padding(.horizontal, 20)

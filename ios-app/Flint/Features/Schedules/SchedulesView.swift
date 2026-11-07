@@ -53,8 +53,7 @@ final class SchedulesViewModel: ObservableObject {
     }
 }
 
-/// The Rules tab: today's timeline, every schedule with its switch, templates, and the way
-/// into Sleep and App limits.
+/// The Rules tab (M13): what rests now, schedules as ember-washed cards, limits, groups.
 struct RulesView: View {
     @StateObject private var vm = SchedulesViewModel()
     @StateObject private var flow = RuleMutationFlow()
@@ -65,73 +64,28 @@ struct RulesView: View {
     @State private var sleep = FlintSleepConfig.load()
     @State private var limitCount = 0
     @State private var openLimitCount = 0
+    @State private var limits: [FlintLimitRule] = []
+    @State private var groups: [FlintAppGroup] = []
+    @State private var activeSession = FlintSessionController().activeSession
+    @State private var restingSelection: FamilyActivitySelection?
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("Rules").flintTitle(30)
-                        Spacer()
-                        Button { showAdd = true } label: {
-                            Image(systemName: "plus").font(.system(size: 17))
-                        }
-                        .buttonStyle(CircleIconButtonStyle(size: 44))
-                        .accessibilityLabel("New schedule")
-                    }
-                    .padding(.top, 14)
+                    header
 
-                    TodayTimeline(rules: vm.rules, now: now, health: vm.health,
-                                  observation: vm.observation).padding(.top, 20)
-
+                    if !restingTargets.isEmpty { restingSection.padding(.top, 24) }
                     if !vm.armFailures.isEmpty { armFailures.padding(.top, 22) }
-
-                    Text("Schedules").flintEyebrow().padding(.top, 22)
-                    if vm.health.domains["schedules"]?.failures.contains(where: { $0.activityName == "schedules" }) == true {
-                        Text("Saved schedules are unavailable. Existing protection was preserved.").foregroundStyle(FlintBrand.danger)
-                    }
-                    if vm.rules.isEmpty {
-                        Text("No schedules yet. Recurring blocks for work hours, study or bedtime — start from a template below or tap +.")
-                            .flintSecondary(14)
-                            .lineSpacing(3)
-                            .padding(.vertical, 14)
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(vm.rules) { rule in row(rule) }
-                        }
-                        .padding(.top, 6)
-                    }
-
-                    Text("Also").flintEyebrow().padding(.top, 20)
-                    let alsoLayout = typeSize.isAccessibilitySize
-                        ? AnyLayout(VStackLayout(spacing: 10))
-                        : AnyLayout(HStackLayout(spacing: 10))
-                    alsoLayout {
-                        NavigationLink { SleepModeView() } label: {
-                            alsoCard("Sleep", sleep.enabled
-                                     ? "\(FlintTodaySchedule.clock(sleep.schedule.startHour, sleep.schedule.startMinute)) — \(FlintTodaySchedule.clock(sleep.schedule.endHour, sleep.schedule.endMinute))"
-                                     : "Off")
-                        }
-                        NavigationLink { LimitsView() } label: {
-                            alsoCard("App limits", limitsSummary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 10)
-
-                    Text("Start from a template").flintEyebrow().padding(.top, 26)
-                    VStack(spacing: 0) {
-                        ForEach(FlintRoutinePreset.library) { preset in
-                            Button { startingTemplate = preset } label: {
-                                FlintRow(title: preset.name, subtitle: preset.description, chevron: true)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.top, 6)
+                    schedulesSection.padding(.top, 28)
+                    limitsSection.padding(.top, 28)
+                    if !groups.isEmpty { groupsSection.padding(.top, 28) }
+                    alsoSection.padding(.top, 28)
+                    templatesSection.padding(.top, 28)
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 32)
             }
             .background(FlintGroundBackground())
             .flintTabBarInset()
@@ -146,13 +100,7 @@ struct RulesView: View {
             .sheet(item: $startingTemplate) { preset in
                 ScheduleEditor(rule: preset.draftRule(), asNew: true, onSave: { vm.save($0, confirmation: $1, creating: true) })
             }
-            .onAppear {
-                vm.refresh()
-                now = Date()
-                sleep = FlintSleepConfig.load()
-                limitCount = FlintLimitsController().limits().count
-                openLimitCount = FlintOpenLimitsController().rules().count
-            }
+            .onAppear(perform: refresh)
             .onReceive(NotificationCenter.default.publisher(for: .flintProtectionReconciled)) { _ in
                 vm.refresh()
                 now = Date()
@@ -161,117 +109,266 @@ struct RulesView: View {
         }
     }
 
-    private var limitsSummary: String {
-        if limitCount == 0 && openLimitCount == 0 { return "None yet" }
-        var parts: [String] = []
-        if limitCount > 0 { parts.append("\(limitCount) time \(limitCount == 1 ? "limit" : "limits")") }
-        if openLimitCount > 0 { parts.append("\(openLimitCount) open \(openLimitCount == 1 ? "limit" : "limits")") }
-        return parts.joined(separator: " · ")
-    }
-
-    private func alsoCard(_ title: String, _ detail: String) -> some View {
-        FlintCard {
-            Text(title).flintRowTitle()
-            Text(detail).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist).monospacedDigit()
+    private func refresh() {
+        vm.refresh()
+        now = Date()
+        sleep = FlintSleepConfig.load()
+        limits = FlintLimitsController().limits()
+        limitCount = limits.count
+        openLimitCount = FlintOpenLimitsController().rules().count
+        groups = FlintGroupStore()?.loadAppGroups() ?? []
+        activeSession = FlintSessionController().activeSession
+        restingSelection = activeSession.flatMap {
+            FlintGroupStore()?.loadSessionSelection(sessionID: $0.id)
         }
     }
 
-    /// An enabled rule whose window iOS refuses is a shield the user believes in and doesn't have.
-    /// Say so out loud, above the toggle that claims otherwise, and open the editor on a tap.
-    private var armFailures: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Needs attention", systemImage: "exclamationmark.triangle")
-                .font(FlintFont.text(13, weight: .medium))
-                .foregroundStyle(FlintBrand.ember)
-            ForEach(vm.armFailures, id: \.ruleID) { failure in
-                Button {
-                    editing = vm.rules.first { $0.id == failure.ruleID }
-                } label: {
-                    FlintRow(title: failure.ruleName, subtitle: failure.message, chevron: true)
-                }
-                .buttonStyle(.plain)
+    private var header: some View {
+        HStack(alignment: .center) {
+            Text("Rules").flintTitle(32).accessibilityAddTraits(.isHeader)
+            Spacer()
+            Button { showAdd = true } label: {
+                Image(systemName: "plus").font(.system(size: 18, weight: .bold))
             }
-            Text("These schedules are switched on but their last arming attempt failed. Tap one to fix its window or its app/site selection.")
-                .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
+            .buttonStyle(CircleIconButtonStyle(size: 44, ember: true))
+            .accessibilityLabel("New schedule")
+        }
+        .padding(.top, 8)
+    }
+
+    // MARK: Resting now
+
+    private var restingTargets: [PickedTarget] {
+        if let selection = restingSelection, !selection.flintPickedTargets.isEmpty {
+            return selection.flintPickedTargets
+        }
+        if let current = FlintTodaySchedule.current(in: vm.rules, at: now) {
+            return current.selection.flintPickedTargets
+        }
+        return []
+    }
+
+    private var restingLine: String? {
+        if let session = activeSession {
+            let left = session.endsAt.map { " · \(leftText(until: $0)) left" } ?? ""
+            return "\(session.name)\(left)"
+        }
+        if let current = FlintTodaySchedule.current(in: vm.rules, at: now) {
+            let left = current.endsAtToday(now: now).map { " · \(leftText(until: $0)) left" } ?? ""
+            return "\(current.name)\(left)"
+        }
+        return nil
+    }
+
+    private var restingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                HStack(spacing: 5) {
+                    Text("Resting now").flintSection()
+                    Text("· \(restingTargets.count) \(restingTargets.count == 1 ? "item" : "items")")
+                        .font(FlintFont.text(16, weight: .medium))
+                        .foregroundStyle(FlintBrand.mist)
+                }
+                Spacer(minLength: 8)
+                if let restingLine {
+                    Text(restingLine)
+                        .font(FlintFont.text(12, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(FlintBrand.emberText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+            .padding(.horizontal, 4)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(Array(restingTargets.prefix(12).enumerated()), id: \.offset) { _, target in
+                        FlintAppTile(target: target, size: 52, resting: true)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(restingTargets.count) items resting")
         }
     }
 
-    private func row(_ rule: FlintScheduleRule) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-        HStack(spacing: 14) {
+    private func leftText(until date: Date) -> String {
+        let seconds = max(0, date.timeIntervalSince(now))
+        let minutes = Int((seconds / 60).rounded())
+        let h = minutes / 60, m = minutes % 60
+        if h == 0 { return "\(m)m" }
+        return m == 0 ? "\(h)h" : String(format: "%dh %02dm", h, m)
+    }
+
+    // MARK: Schedules
+
+    private var schedulesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Schedules").flintSection()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(FlintBrand.mist)
+                    .accessibilityHidden(true)
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .accessibilityElement(children: .combine)
+
+            if vm.health.domains["schedules"]?.failures.contains(where: { $0.activityName == "schedules" }) == true {
+                Text("Saved schedules are unavailable. Existing protection was preserved.")
+                    .font(FlintFont.text(13))
+                    .foregroundStyle(FlintBrand.danger)
+            }
+
+            if vm.rules.isEmpty {
+                FlintCard(radius: 22, padding: EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)) {
+                    Text("No schedules yet.")
+                        .font(FlintFont.text(15, weight: .semibold))
+                        .foregroundStyle(FlintBrand.bone)
+                    Text("Recurring blocks for work hours, study or bedtime — start from a template below or tap +.")
+                        .flintSecondary(13)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(vm.rules) { rule in
+                            scheduleCard(rule)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private func scheduleCard(_ rule: FlintScheduleRule) -> some View {
+        let current = FlintTodaySchedule.current(in: vm.rules, at: now)?.id == rule.id
+        let active = rule.enabled && current
+        let status = FlintRuleProtectionStatus.status(enabled: rule.enabled,
+            activityName: rule.monitorName, domain: "schedules", health: vm.health,
+            observation: vm.observation,
+            authorized: AuthorizationCenter.shared.authorizationStatus == .approved)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                ZStack {
+                    Circle().fill(FlintBrand.bone(0.08))
+                    Image(systemName: "calendar")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(FlintBrand.bone)
+                }
+                .frame(width: 32, height: 32)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(FlintBrand.stone)
+                ZStack {
+                    Circle().fill(active ? FlintBrand.ember.opacity(0.18) : FlintBrand.bone(0.08))
+                    Image(systemName: "lock")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(active ? FlintBrand.ember : FlintBrand.bone)
+                }
+                .frame(width: 32, height: 32)
+                Spacer(minLength: 8)
+                Toggle(rule.name, isOn: Binding(get: { rule.enabled }, set: { _ in
+                    flow.run(scope: rule.name, operation: { vm.toggle(rule, confirmation: $0) },
+                             cancel: { vm.cancel(rule.id, confirmation: $0) })
+                }))
+                .toggleStyle(EmberToggleStyle())
+                .labelsHidden()
+                .scaleEffect(0.8, anchor: .trailing)
+                .frame(width: 44, height: 34)
+                .fixedSize()
+            }
+            .accessibilityHidden(false)
+
             Button { editing = rule } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    let labelLayout = typeSize.isAccessibilitySize
-                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-                        : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 10))
-                    labelLayout {
+                VStack(alignment: .leading, spacing: 12) {
+                    FlintStatusPill(text: pillText(rule, current: current, status: status),
+                                    style: active ? .emberStrong : .quiet)
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(rule.name)
-                            .font(FlintFont.text(15, weight: .medium))
+                            .font(FlintFont.text(16, weight: .semibold))
                             .foregroundStyle(rule.enabled ? FlintBrand.bone : FlintBrand.faint)
-                        Text(timeRange(rule.schedule))
-                            .font(FlintFont.display(14))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                        Text("\(Self.daysSummary(rule.schedule)) · \(timeRange(rule.schedule))")
+                            .font(FlintFont.text(12))
                             .foregroundStyle(FlintBrand.mist)
-                            .monospacedDigit()
+                            .lineLimit(2)
                     }
-                    Text(meta(rule)).font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
-                    if rule.protection?.requiresTierReview == true {
-                        Text("Review migrated tier before the next occurrence").font(.caption)
-                    }
-                    let status = FlintRuleProtectionStatus.status(enabled: rule.enabled,
-                        activityName: rule.monitorName, domain: "schedules", health: vm.health,
-                        observation: vm.observation,
-                        authorized: AuthorizationCenter.shared.authorizationStatus == .approved)
-                    if rule.enabled {
-                        Text(status.label).font(FlintFont.text(12))
-                            .foregroundStyle(status == .needsAttention ? FlintBrand.danger : FlintBrand.stone)
-                    }
-                    // R-26: a saved allow list that keeps no app still runs as saved (§12).
-                    if rule.enabled, FlintSelectionValidation.needsAllowedApps(
-                        applications: rule.selection.applicationTokens.count, allowList: rule.allowListMode) {
-                        let note = "\(FlintSelectionIssue.emptyAllowList.message) It keeps running as saved until you change it."
-                        Label(status == .needsAttention ? note : "Needs attention — \(note)",
-                              systemImage: "exclamationmark.triangle")
-                            .font(FlintFont.text(12)).foregroundStyle(FlintBrand.danger)
+                    HStack(spacing: 6) {
+                        Text(rule.allowListMode ? "Allow" : "Block")
+                            .font(FlintFont.text(12))
+                            .foregroundStyle(FlintBrand.mist)
+                        FlintAppIconStack(targets: rule.selection.flintPickedTargets, size: 20,
+                                          border: FlintBrand.card, limit: 2)
+                        let total = rule.selection.applicationTokens.count + rule.selection.categoryTokens.count
+                            + rule.selection.webDomainTokens.count
+                        if total > 2 {
+                            Text("+\(total - 2)")
+                                .font(FlintFont.text(12, weight: .semibold))
+                                .foregroundStyle(FlintBrand.bone)
+                        }
+                        Spacer(minLength: 0)
                     }
                 }
-                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            Toggle(rule.name, isOn: Binding(get: { rule.enabled }, set: { _ in
-                flow.run(scope: rule.name, operation: { vm.toggle(rule, confirmation: $0) }, cancel: { vm.cancel(rule.id, confirmation: $0) })
-            }))
-                .toggleStyle(EmberToggleStyle())
-                .labelsHidden()
-                .fixedSize()
-        }
-        .frame(minHeight: 60)
-        if let protection = rule.protection, protection.queuedChange != nil {
-            QueuedRuleChangeView(protection: protection) {
-                flow.run(scope: rule.name, operation: { _ in vm.cancelQueued(rule, expected: protection) })
+            .accessibilityLabel("\(rule.name), \(Self.daysSummary(rule.schedule)), \(timeRange(rule.schedule))")
+            .accessibilityHint("Opens the schedule editor")
+
+            if rule.protection?.requiresTierReview == true {
+                Text("Review migrated tier").font(.system(size: 11)).foregroundStyle(FlintBrand.ember)
+            }
+            if rule.enabled, FlintSelectionValidation.needsAllowedApps(
+                applications: rule.selection.applicationTokens.count, allowList: rule.allowListMode) {
+                Label(FlintSelectionIssue.emptyAllowList.message, systemImage: "exclamationmark.triangle")
+                    .font(FlintFont.text(11)).foregroundStyle(FlintBrand.danger)
+            }
+            if let protection = rule.protection, protection.queuedChange != nil {
+                QueuedRuleChangeView(protection: protection) {
+                    flow.run(scope: rule.name, operation: { _ in vm.cancelQueued(rule, expected: protection) })
+                }
             }
         }
-        }
-        .overlay(alignment: .bottom) { FlintHairline(opacity: 0.07) }
+        .padding(14)
+        .frame(width: 196, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(active
+                    ? LinearGradient(stops: [
+                        .init(color: FlintBrand.ember.opacity(0.16), location: 0),
+                        .init(color: FlintBrand.ember.opacity(0.04), location: 0.6),
+                        .init(color: FlintBrand.card, location: 1),
+                    ], startPoint: .top, endPoint: .bottom)
+                    : LinearGradient(colors: [FlintBrand.card, FlintBrand.card], startPoint: .top, endPoint: .bottom))
+        )
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .strokeBorder(active ? FlintBrand.ember.opacity(0.35) : FlintBrand.bone(0.08)))
         .contextMenu {
             Button(role: .destructive) {
-                flow.run(scope: rule.name, operation: { vm.delete(rule, confirmation: $0) }, cancel: { vm.cancel(rule.id, confirmation: $0) })
+                flow.run(scope: rule.name, operation: { vm.delete(rule, confirmation: $0) },
+                         cancel: { vm.cancel(rule.id, confirmation: $0) })
             } label: { Label("Delete", systemImage: "trash") }
         }
     }
 
-    private func meta(_ rule: FlintScheduleRule) -> String {
-        let level: String
-        switch rule.breakLevel {
-        case .easy: level = "Easy"
-        case .harder: level = "Harder"
-        case .hardcore: level = "Hardcore"
+    private func pillText(_ rule: FlintScheduleRule, current: Bool, status: FlintRuleProtectionStatus) -> String {
+        if !rule.enabled { return "Off" }
+        if status == .needsAttention { return "Needs attention" }
+        if current {
+            if let end = rule.endsAtToday(now: now) {
+                return "\(leftText(until: end)) left"
+            }
+            return "Running now"
         }
-        let count = rule.selection.applicationTokens.count + rule.selection.categoryTokens.count
-            + rule.selection.webDomainTokens.count
-        let target = rule.allowListMode ? "Allow list" : "\(count) \(count == 1 ? "item" : "items")"
-        return "\(Self.daysSummary(rule.schedule)) · \(level) · \(target) · \(rule.protection?.timeZoneID ?? TimeZone.current.identifier)"
+        return "Next · \(FlintTodaySchedule.clock(rule.schedule.startHour, rule.schedule.startMinute))"
     }
 
     private func timeRange(_ s: FlintSchedule) -> String {
@@ -293,93 +390,177 @@ struct RulesView: View {
         }
         return labels.isEmpty ? "No valid days" : labels.joined(separator: " ")
     }
-}
 
-/// Today's 24 hours as one line: each schedule running today a short bar, the current one
-/// bright, and the ember at "now".
-struct TodayTimeline: View {
-    let rules: [FlintScheduleRule]
-    let now: Date
-    var health = FlintArmingHealth()
-    var observation: FlintProtectionObservation?
+    /// An enabled rule whose window iOS refuses is a shield the user believes in and doesn't have.
+    /// Say so out loud, above the card that claims otherwise, and open the editor on a tap.
+    private var armFailures: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Needs attention", systemImage: "exclamationmark.triangle")
+                .font(FlintFont.text(13, weight: .semibold))
+                .foregroundStyle(FlintBrand.ember)
+            ForEach(vm.armFailures, id: \.ruleID) { failure in
+                Button {
+                    editing = vm.rules.first { $0.id == failure.ruleID }
+                } label: {
+                    FlintRow(title: failure.ruleName, subtitle: failure.message, chevron: true)
+                }
+                .buttonStyle(.plain)
+            }
+            Text("These schedules are switched on but their last arming attempt failed. Tap one to fix its window or its app/site selection.")
+                .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone)
+        }
+    }
 
-    var body: some View {
-        let cal = Calendar.current
-        let weekday = cal.component(.weekday, from: now)
-        let nowMinute = Double(cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now))
-        let current = FlintTodaySchedule.current(in: rules.filter {
-            FlintRuleProtectionStatus.status(enabled: $0.enabled, activityName: $0.monitorName,
-                domain: "schedules", health: health, observation: observation, at: now,
-                authorized: AuthorizationCenter.shared.authorizationStatus == .approved) == .registered
-        }, at: now)
-        VStack(spacing: 8) {
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    Text("Today").flintEyebrow().fixedSize()
+    // MARK: Limits
+
+    private var limitsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            NavigationLink { LimitsView() } label: {
+                HStack(spacing: 4) {
+                    Text("Limits").flintSection()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(FlintBrand.mist)
                     Spacer()
-                    Text("Now \(now.formatted(date: .omitted, time: .shortened))").flintEyebrow().fixedSize()
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Today").flintEyebrow()
-                    Text("Now \(now.formatted(date: .omitted, time: .shortened))").flintEyebrow()
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+                .contentShape(Rectangle())
             }
-            GeometryReader { geo in
-                let w = geo.size.width
-                ZStack(alignment: .topLeading) {
-                    Rectangle().fill(FlintBrand.bone(0.14)).frame(height: 1).offset(y: 10)
-                    ForEach(segments(weekday: weekday), id: \.id) { seg in
-                        Capsule()
-                            .fill(seg.ruleID == current?.id ? FlintBrand.bone
-                                  : seg.end <= nowMinute ? Color(hex: 0x3E3A35) : Color(hex: 0x6E665A))
-                            .frame(width: max(4, w * (seg.end - seg.start) / 1440), height: 7)
-                            .offset(x: w * seg.start / 1440, y: 7)
+            .buttonStyle(.plain)
+
+            if limits.isEmpty && openLimitCount == 0 {
+                Text("No app limits yet. Cap daily usage, or cap opens per day.")
+                    .flintSecondary(13)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+                NavigationLink { LimitsView() } label: {
+                    Text("Add a limit").frame(minHeight: 40)
+                }
+                .buttonStyle(GhostButtonStyle(height: 40))
+                .padding(.horizontal, 4)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(limits) { limit in
+                            NavigationLink { LimitsView() } label: { limitCard(limit) }
+                                .buttonStyle(.plain)
+                        }
+                        if openLimitCount > 0 {
+                            NavigationLink { OpenLimitsView() } label: {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("Open limits").font(FlintFont.text(14, weight: .semibold))
+                                        .foregroundStyle(FlintBrand.bone)
+                                    Text("\(openLimitCount) \(openLimitCount == 1 ? "rule" : "rules")")
+                                        .flintSecondary(12)
+                                }
+                                .padding(14)
+                                .frame(width: 176, alignment: .leading)
+                                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.card))
+                                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .strokeBorder(FlintBrand.bone(0.08)))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    Circle().fill(FlintBrand.ember.opacity(0.25)).frame(width: 15, height: 15)
-                        .offset(x: w * nowMinute / 1440 - 7.5, y: 3)
-                    Circle().fill(FlintBrand.ember).frame(width: 7, height: 7)
-                        .offset(x: w * nowMinute / 1440 - 3.5, y: 7)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
                 }
             }
-            .frame(height: 22)
-            HStack {
-                ForEach(["00", "06", "12", "18", "24"], id: \.self) { label in
-                    Text(label)
-                    if label != "24" { Spacer() }
-                }
-            }
-            .font(FlintFont.text(11))
-            .foregroundStyle(FlintBrand.stone)
-            .monospacedDigit()
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(current.map { "Scheduled now: \($0.name), registered with iOS" }
-                             ?? "No verified schedule registration running now")
     }
 
-    private struct Segment { let id: String; let ruleID: String; let start: Double; let end: Double }
+    private func limitCard(_ limit: FlintLimitRule) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                FlintAppIconStack(targets: limit.selection.flintPickedTargets, size: 32,
+                                  border: FlintBrand.card, limit: 1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(limit.name)
+                        .font(FlintFont.text(14, weight: .semibold))
+                        .foregroundStyle(limit.enabled ? FlintBrand.bone : FlintBrand.faint)
+                        .lineLimit(1)
+                    Text("\(limit.thresholdMinutes) min a day")
+                        .font(FlintFont.text(12))
+                        .foregroundStyle(FlintBrand.mist)
+                        .monospacedDigit()
+                }
+                Spacer(minLength: 0)
+            }
+            FlintStatusPill(text: limit.enabled ? limit.breakLevel.rawValue.capitalized : "Off",
+                            style: .quiet)
+        }
+        .padding(14)
+        .frame(width: 176, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.card))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
+        .accessibilityElement(children: .combine)
+    }
 
-    private func segments(weekday: Int) -> [Segment] {
-        let yesterday = weekday == 1 ? 7 : weekday - 1
-        var out: [Segment] = []
-        for rule in rules where rule.enabled {
-            let s = rule.schedule
-            let start = Double(s.startHour * 60 + s.startMinute), end = Double(s.endHour * 60 + s.endMinute)
-            let today = s.daysOfWeek.isEmpty || s.daysOfWeek.contains(weekday)
-            let ranYesterday = s.daysOfWeek.isEmpty || s.daysOfWeek.contains(yesterday)
-            if start < end {
-                if today { out.append(Segment(id: rule.id, ruleID: rule.id, start: start, end: end)) }
-            } else {
-                if ranYesterday { out.append(Segment(id: rule.id + "-am", ruleID: rule.id, start: 0, end: end)) }
-                if today { out.append(Segment(id: rule.id + "-pm", ruleID: rule.id, start: start, end: 1440)) }
+    // MARK: Groups
+
+    private var groupsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Groups").flintSection().padding(.horizontal, 4)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 16) {
+                ForEach(groups) { group in
+                    NavigationLink { AppsListView() } label: {
+                        VStack(spacing: 8) {
+                            FlintFolderTile(targets: group.selection.flintPickedTargets, size: 92)
+                            VStack(spacing: 1) {
+                                Text(group.name)
+                                    .font(FlintFont.text(13, weight: .semibold))
+                                    .foregroundStyle(FlintBrand.bone)
+                                    .lineLimit(1)
+                                Text("\(group.itemCount) \(group.itemCount == 1 ? "item" : "items")")
+                                    .font(FlintFont.text(11))
+                                    .foregroundStyle(FlintBrand.mist)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(group.name), \(group.itemCount) items")
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    // MARK: Also + templates
+
+    private var alsoSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Also").flintSection().padding(.horizontal, 4).padding(.bottom, 4)
+            NavigationLink { SleepModeView() } label: {
+                FlintRow(title: "Sleep",
+                         subtitle: sleep.enabled
+                            ? "\(FlintTodaySchedule.clock(sleep.schedule.startHour, sleep.schedule.startMinute)) — \(FlintTodaySchedule.clock(sleep.schedule.endHour, sleep.schedule.endMinute))"
+                            : "Off",
+                         chevron: true)
+            }
+            .buttonStyle(.plain)
+            NavigationLink { OpenLimitsView() } label: {
+                FlintRow(title: "Open limits",
+                         subtitle: openLimitCount == 0 ? "None yet" : "\(openLimitCount) \(openLimitCount == 1 ? "rule" : "rules")",
+                         chevron: true)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var templatesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Start from a template").flintSection().padding(.horizontal, 4).padding(.bottom, 4)
+            ForEach(FlintRoutinePreset.library) { preset in
+                Button { startingTemplate = preset } label: {
+                    FlintRow(title: preset.name, subtitle: preset.description, chevron: true)
+                }
+                .buttonStyle(.plain)
             }
         }
-        return out
     }
 }
 
-/// Add / edit a schedule rule. `asNew: true` treats `rule` as a prefilled draft (a routine
+/// Add / edit a schedule rule (M14). `asNew: true` treats `rule` as a prefilled draft (a routine
 /// template): the editor titles itself "New schedule" and mints a fresh id on save instead of
 /// overwriting the draft's throwaway id.
 struct ScheduleEditor: View {
@@ -440,12 +621,14 @@ struct ScheduleEditor: View {
             VStack(spacing: 0) {
                 HStack {
                     Button("Cancel") { dismiss() }
-                        .font(FlintFont.text(15)).foregroundStyle(FlintBrand.mist).frame(minHeight: 44)
+                        .font(FlintFont.text(15, weight: .semibold))
+                        .foregroundStyle(FlintBrand.mist)
+                        .frame(minHeight: 44)
                     Spacer()
                     Text("Schedule").flintEyebrow()
                     Spacer()
                     Button("Save") { save() }
-                        .buttonStyle(BoneButtonStyle(height: 36))
+                        .buttonStyle(BoneButtonStyle(height: 38))
                         .disabled(!canSave)
                 }
                 .padding(.top, 14)
@@ -453,34 +636,48 @@ struct ScheduleEditor: View {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Name").flintSecondary(12)
+                            Text("Name").font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                             TextField("", text: $name, prompt: Text("Laser Focus").foregroundColor(FlintBrand.faint))
-                                .font(FlintFont.display(28))
+                                .font(FlintFont.text(28, weight: .bold, relativeTo: .title))
+                                .tracking(-0.5)
                                 .foregroundStyle(FlintBrand.bone)
-                                .frame(height: 44)
-                                .overlay(alignment: .bottom) { FlintHairline(opacity: 0.16) }
+                                .frame(minHeight: 44)
+                                .overlay(alignment: .bottom) { FlintHairline(opacity: 0.14) }
                         }
-                        .padding(.top, 18)
+                        .padding(.horizontal, 4)
+                        .padding(.top, 16)
 
                         HStack(spacing: 10) {
                             timeCard("Starts", start) { editingTime = .start }
                             timeCard("Ends", end) { editingTime = .end }
                         }
                         .disabled(original?.oneShot != nil)
-                        .padding(.top, 22)
+                        .padding(.top, 18)
                         if let window = original?.oneShot {
                             Text("One-time schedule: \(window.start.formatted(date: .abbreviated, time: .shortened)) – \(window.end.formatted(date: .abbreviated, time: .shortened)). Its saved date and time stay fixed in this editor.")
-                                .font(.caption).foregroundStyle(FlintBrand.stone).padding(.top, 6)
+                                .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone).padding(.top, 6)
                         }
                         Text("Times use \(original?.protection?.timeZoneID ?? TimeZone.current.identifier).")
-                            .font(.caption).foregroundStyle(FlintBrand.stone).padding(.top, 6)
+                            .font(FlintFont.text(12)).foregroundStyle(FlintBrand.stone).padding(.top, 6)
                         if let issue = draftSchedule.issues.first {
                             Text(issue.message).font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger).padding(.top, 8)
                         } else if draftSchedule.isOvernight {
                             Text("Runs overnight, ending the next morning.").flintSecondary().padding(.top, 8)
                         }
 
-                        Text(original?.oneShot == nil ? "Repeats · \(daysLabel)" : "Does not repeat").flintEyebrow().padding(.top, 24)
+                        HStack(spacing: 5) {
+                            Text(original?.oneShot == nil ? "Repeats" : "Does not repeat")
+                                .font(FlintFont.text(14, weight: .semibold))
+                                .foregroundStyle(FlintBrand.bone)
+                            if original?.oneShot == nil {
+                                Text("· \(daysLabel)")
+                                    .font(FlintFont.text(14, weight: .medium))
+                                    .foregroundStyle(FlintBrand.mist)
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.top, 20)
+
                         HStack(spacing: 6) {
                             ForEach(weekdays, id: \.day) { item in
                                 let on = days.contains(item.day)
@@ -488,12 +685,14 @@ struct ScheduleEditor: View {
                                     if on { days.remove(item.day) } else { days.insert(item.day) }
                                 } label: {
                                     Text(item.short)
-                                        .font(FlintFont.text(14, weight: .semibold))
+                                        .font(FlintFont.text(14, weight: .bold))
                                         .foregroundStyle(on ? FlintBrand.onEmber : FlintBrand.mist)
                                         .frame(maxWidth: .infinity, minHeight: 44)
-                                        .background(Capsule().fill(on ? FlintBrand.ember : .clear))
-                                        .overlay(Capsule().strokeBorder(on ? FlintBrand.ember : FlintBrand.bone(0.16)))
-                                        .contentShape(Capsule())
+                                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .fill(on ? FlintBrand.ember : FlintBrand.card))
+                                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .strokeBorder(on ? FlintBrand.ember : FlintBrand.bone(0.10)))
+                                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(item.full)
@@ -504,22 +703,39 @@ struct ScheduleEditor: View {
                         .padding(.top, 10)
 
                         Button { showPicker = true } label: {
-                            HStack(spacing: 14) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(selectionTitle).flintRowTitle()
-                                    Text(allowList ? "Everything else rests" : "Apple’s picker").flintSecondary()
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(spacing: 8) {
+                                    HStack(spacing: 5) {
+                                        Text(allowList ? "Allow" : "Block")
+                                            .font(FlintFont.text(14, weight: .semibold))
+                                            .foregroundStyle(FlintBrand.bone)
+                                        if selectionCount > 0 {
+                                            Text("· \(selectionSummary)")
+                                                .font(FlintFont.text(14, weight: .medium))
+                                                .foregroundStyle(FlintBrand.mist)
+                                        }
+                                    }
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    Spacer(minLength: 8)
+                                    FlintChevron()
                                 }
-                                Spacer()
-                                FlintChevron()
+                                if selectionCount == 0 {
+                                    Text("Tap to choose what rests with Apple’s picker")
+                                        .font(FlintFont.text(12))
+                                        .foregroundStyle(FlintBrand.mist)
+                                } else {
+                                    FlintAppIconStack(targets: selection.flintPickedTargets, size: 32,
+                                                      border: FlintBrand.card, limit: 6)
+                                }
                             }
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 64)
-                            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.bone(0.03)))
-                            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.10)))
+                            .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.card))
+                            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .padding(.top, 24)
+                        .padding(.top, 20)
 
                         if let issue = selectionIssue {
                             Text(issue.message(for: allowList ? .allowList : .blockList)).font(FlintFont.text(13))
@@ -530,12 +746,13 @@ struct ScheduleEditor: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Allow list").flintRowTitle()
                                 Text(allowList
-                                     ? "Only the chosen apps stay open. Flint can't confirm which system apps stay reachable, so include the ones you need, like Phone and Messages."
+                                     ? "Only the chosen apps stay open. Include the ones you need, like Phone and Messages."
                                      : "Only the chosen apps stay open").flintSecondary()
                             }
                         }
                         .toggleStyle(EmberToggleStyle())
                         .frame(minHeight: 58)
+                        .padding(.top, 8)
                         .overlay(alignment: .bottom) { FlintHairline() }
 
                         if allowList {
@@ -543,11 +760,15 @@ struct ScheduleEditor: View {
                                 .flintSecondary(12).padding(.top, 8)
                         }
 
-                        Text("Break level").flintEyebrow().padding(.top, 24)
+                        Text("Break level")
+                            .font(FlintFont.text(14, weight: .semibold))
+                            .foregroundStyle(FlintBrand.bone)
+                            .padding(.horizontal, 4)
+                            .padding(.top, 20)
                         FlintSegmented(options: [(BreakLevel.easy, "Easy"), (.harder, "Harder"), (.hardcore, "Hardcore")],
                                        selection: $breakLevel)
                             .padding(.top, 10)
-                        Text(levelNote).flintSecondary().lineSpacing(3).padding(.top, 10)
+                        Text(levelNote).flintSecondary().lineSpacing(3).padding(.top, 10).padding(.horizontal, 4)
 
                         if let onDelete {
                             Button("Delete schedule") {
@@ -555,14 +776,14 @@ struct ScheduleEditor: View {
                                     cancel: { ticket in if let existingID { FlintSchedulesController().cancelPendingChange(existingID, confirmation: ticket) } },
                                     onSaved: { dismiss() })
                             }
-                            .font(FlintFont.text(14, weight: .medium))
+                            .font(FlintFont.text(14, weight: .semibold))
                             .foregroundStyle(FlintBrand.danger)
                             .frame(maxWidth: .infinity, minHeight: 44)
-                            .padding(.top, 28)
+                            .padding(.top, 24)
                         }
                     }
                     .padding(.horizontal, 4)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 36)
                 }
             }
             .padding(.horizontal, 20)
@@ -578,21 +799,29 @@ struct ScheduleEditor: View {
 
     private func timeCard(_ label: String, _ time: Date, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            FlintCard {
-                Text(label).flintSecondary(12)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                 Text(FlintTodaySchedule.clock(Calendar.current.component(.hour, from: time),
                                               Calendar.current.component(.minute, from: time)))
-                    .flintNumber(28)
+                    .font(FlintFont.display(28, relativeTo: .title2))
+                    .monospacedDigit()
+                    .foregroundStyle(FlintBrand.bone)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.card))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(label) \(time.formatted(date: .omitted, time: .shortened))")
     }
 
-    private var selectionTitle: String {
-        if selectionCount == 0 { return allowList ? "Choose what stays open" : "Choose what rests" }
-        return allowList ? "Allow \(selectionCount) \(selectionCount == 1 ? "item" : "items")"
-            : "Block \(selectionCount) \(selectionCount == 1 ? "item" : "items")"
+    private var selectionSummary: String {
+        let counts = SelectionCounts(apps: selection.applicationTokens.count,
+                                     categories: selection.categoryTokens.count,
+                                     sites: selection.webDomainTokens.count)
+        return counts.total == 0 ? "nothing yet" : counts.summary
     }
 
     private var daysLabel: String {
@@ -604,7 +833,7 @@ struct ScheduleEditor: View {
     private var levelNote: String {
         switch breakLevel {
         case .easy: "You can end it whenever you like."
-        case .harder: "Stopping early takes friction."
+        case .harder: "No early stop. Each break waits a few minutes first."
         case .hardcore: "Active protection stays until this occurrence ends. Weakening changes can be saved for afterwards. An available Emergency Pass is a separate recovery option."
         }
     }
@@ -678,5 +907,15 @@ struct TimePickerSheet: View {
         }
         .presentationDetents([.height(320)])
         .preferredColorScheme(.dark)
+    }
+}
+
+extension FlintScheduleRule {
+    /// The end of the occurrence running now (or of the next one later today), for time-left copy.
+    func endsAtToday(now: Date = Date()) -> Date? {
+        let calendar = Calendar.current
+        guard let end = calendar.date(bySettingHour: schedule.endHour, minute: schedule.endMinute,
+                                      second: 0, of: now) else { return nil }
+        return end > now ? end : calendar.date(byAdding: .day, value: 1, to: end)
     }
 }
