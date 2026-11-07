@@ -29,6 +29,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -37,6 +38,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -70,7 +72,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -89,10 +94,13 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.core.common.theme.rememberFlintMark
+import com.flint.peakfocus.core.common.ui.EmberButton
+import com.flint.peakfocus.core.common.ui.FlintAppTile
 import com.flint.peakfocus.core.common.ui.FlintBadge
 import com.flint.peakfocus.core.common.ui.FlintInfoPill
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
@@ -248,20 +256,14 @@ fun BlockScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Spacer(Modifier.weight(1f))
-                BreathingMark(
+                BlockHero(
+                    packageName = state.packageName,
+                    label = content.displayName,
                     reveal = { heroIn.value },
                     breath = { breath.value },
                     pulse = { if (reducedMotion) 0f else markPulse.value },
                 )
-                Spacer(Modifier.height(FlintSpacing.md))
-                EntranceSlot(entrance, step = 1) {
-                    Text(
-                        text = "Flint".uppercase(),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.height(FlintSpacing.md))
+                Spacer(Modifier.height(18.dp))
                 // A new block reusing this surface swaps only the words: package-keyed, so
                 // the 1s countdown re-renders update in place without re-animating.
                 AnimatedContent(
@@ -304,15 +306,11 @@ fun BlockScreen(
                         verticalArrangement = Arrangement.spacedBy(FlintSpacing.cardGap),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Button(
+                        EmberButton(
+                            text = "Go back",
                             onClick = onDismiss,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 56.dp),
-                            shape = CircleShape,
-                        ) {
-                            Text("Go back")
-                        }
+                            minHeight = 56.dp,
+                        )
                         if (state.grantStatus == GrantStatus.FAILED || state.grantStatus == GrantStatus.RETRY_OPEN) {
                             Text(
                                 "Couldn't save. Try again.",
@@ -405,24 +403,28 @@ private fun BlockWords(
     ) {
         EntranceSlot(entrance, step = 2) {
             Text(
+                text = content.badge.text.uppercase(),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (content.badge.emphasized) FlintPalette.EmberText else FlintPalette.Mist,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        EntranceSlot(entrance, step = 2) {
+            Text(
                 text = content.headline,
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineMedium.copy(fontSize = 30.sp, lineHeight = 36.sp),
                 color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center,
             )
         }
-        Spacer(Modifier.height(FlintSpacing.cardGap))
+        Spacer(Modifier.height(10.dp))
         EntranceSlot(entrance, step = 3) {
             Text(
                 text = content.reasonLine,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
-        }
-        Spacer(Modifier.height(FlintSpacing.md))
-        EntranceSlot(entrance, step = 4) {
-            FlintBadge(text = content.badge.text, emphasized = content.badge.emphasized)
         }
         EntranceSlot(entrance, step = 5) {
             // Presence is independent of the entrance: the pill collapses away when the end
@@ -443,8 +445,10 @@ private fun BlockWords(
                 // An end becoming unknown is not an unblock. Remove its text immediately
                 // even while AnimatedVisibility finishes collapsing the old pill.
                 if (content.countdownLabel != null && state.remainingMillis != null) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Spacer(Modifier.height(FlintSpacing.lg))
+                    Row(
+                        Modifier.padding(top = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         FlintInfoPill(
                             text = content.countdownLabel,
                             spokenText = countdownA11y(state.reason, state.remainingMillis, state.combinedEnd),
@@ -453,12 +457,12 @@ private fun BlockWords(
                 }
             }
         }
-        Spacer(Modifier.height(FlintSpacing.lg))
+        Spacer(Modifier.height(20.dp))
         EntranceSlot(entrance, step = 5) {
             Text(
                 text = content.encouragement,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = FlintPalette.Mist,
                 textAlign = TextAlign.Center,
             )
         }
@@ -503,34 +507,43 @@ private fun EntranceSlot(
 }
 
 /**
- * The tri-color strike mark — the screen's brand moment. [reveal] fades + scales it in on
- * entrance (0.92→1), [breath] is the shared infinite fraction it breathes on (alpha 0.7→1.0,
- * scale 0.97→1.0, in phase with the glow), and [pulse] is the refusal accent — one stronger
- * breath. Lambdas defer the reads to the draw phase: no recomposition per animation frame.
+ * M07's hero: the ember orb with the blocked app's resting tile at its center. [reveal] fades
+ * and scales it in on entrance, [breath] drives the halo's alpha, and [pulse] is the refusal
+ * accent. Lambdas defer the reads to the draw phase: no recomposition per animation frame.
  */
 @Composable
-private fun BreathingMark(
+private fun BlockHero(
+    packageName: String,
+    label: String,
     reveal: () -> Float,
     breath: () -> Float,
     pulse: () -> Float,
     modifier: Modifier = Modifier,
 ) {
-    // The ember (design/ember-mist/E07-Shield): orb in its halo, breathing with the glow.
-    // Decorative: the "FLINT" eyebrow right below carries the brand for TalkBack.
-    Canvas(
+    Box(
         modifier = modifier
-            .size(160.dp)
+            .size(200.dp)
             .graphicsLayer {
-                val b = breath()
-                val p = pulse()
-                val baseAlpha = 0.7f + 0.3f * b
-                alpha = (baseAlpha + (1f - baseAlpha) * p) * reveal()
-                val scale = (0.92f + 0.08f * reveal()) * (0.97f + 0.03f * b) * (1f + 0.08f * p)
+                val baseAlpha = 0.7f + 0.3f * breath()
+                alpha = (baseAlpha + (1f - baseAlpha) * pulse()) * reveal()
+                val scale = (0.92f + 0.08f * reveal()) * (1f + 0.04f * pulse())
                 scaleX = scale
                 scaleY = scale
             },
+        contentAlignment = Alignment.Center,
     ) {
-        drawEmber(center, size.width * 34f / 160f, size.width / 2f, haloAlpha = 0.75f + 0.25f * breath())
+        Canvas(Modifier.fillMaxSize()) {
+            drawEmber(center, size.width * 40f / 200f, size.width / 2f, haloAlpha = 0.75f + 0.25f * breath())
+        }
+        // Real launcher icon, dimmed behind its ember ring and lock — the same resting tile
+        // language as Today and Rules.
+        FlintAppTile(
+            packageName = packageName,
+            label = label,
+            size = 60.dp,
+            cornerRadius = 18.dp,
+            resting = true,
+        )
     }
 }
 
@@ -566,8 +579,8 @@ private fun BreakActions(
                 style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
             QuietButton("Review protection state", onEmergencyPassRequested)
         }
-        // 48dp minimum keeps the deliberate 52/48/48 exit ladder under "Go back".
-        BreakAffordance.TakeABreak -> QuietButton("Take a break", onBreakRequested, modifier = modifier)
+        // 52dp outlined secondary keeps the deliberate exit ladder under "Go back".
+        BreakAffordance.TakeABreak -> QuietButton("Take a break", onBreakRequested, modifier = modifier, outlined = true)
 
         is BreakAffordance.HoldToRequest -> HoldToRequestBreakButton(
             holdMillis = affordance.holdMillis,
@@ -575,26 +588,11 @@ private fun BreakActions(
             modifier = modifier.fillMaxWidth(),
         )
 
-        is BreakAffordance.WaitBeforeBreak -> Column(
+        is BreakAffordance.WaitBeforeBreak -> BreakWaitRing(
+            remainingMillis = affordance.remainingMillis,
+            progress = affordance.progress,
             modifier = modifier,
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(FlintSpacing.sm),
-        ) {
-            if (affordance.progress != null) {
-                CircularProgressIndicator(
-                    progress = { affordance.progress },
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clearAndSetSemantics {},
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                )
-            }
-            FlintInfoPill(
-                text = "Break available in ${formatDuration(affordance.remainingMillis)}",
-                spokenText = waitNoticeA11y(affordance.remainingMillis),
-            )
-        }
+        )
 
         is BreakAffordance.EmergencyPassOnly -> Column(
             modifier = modifier.fillMaxWidth(),
@@ -662,11 +660,17 @@ private fun HoldToRequestBreakButton(
         },
     )
     val shape = RoundedCornerShape(percent = 50)
+    val fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
     Box(
         modifier = modifier
-            .heightIn(min = 48.dp)
+            .heightIn(min = 52.dp)
             .clip(shape)
             .border(width = 1.dp, color = MaterialTheme.colorScheme.primary, shape = shape)
+            // Hold progress is drawn, not laid out: a fillMaxHeight child here made the
+            // button take every spare pixel of the block screen's column.
+            .drawBehind {
+                drawRect(fillColor, size = androidx.compose.ui.geometry.Size(size.width * progress, size.height))
+            }
             // Accessibility services can't perform a press-and-hold, so expose a plain
             // activate action that fires the same callback directly — touch users keep the
             // hold friction below (the gesture path is unchanged).
@@ -691,13 +695,6 @@ private fun HoldToRequestBreakButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxHeight()
-                .fillMaxWidth(progress)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
-        )
         Crossfade(
             targetState = pressed,
             animationSpec = tween(
@@ -713,6 +710,83 @@ private fun HoldToRequestBreakButton(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = FlintSpacing.md, vertical = FlintSpacing.sm),
             )
+        }
+    }
+}
+
+/**
+ * M09's break wait: the ember ring closes as the cooldown drains, with the remaining time in the
+ * center and a disabled "Start break · in …" pill beneath. The whole block is one polite live
+ * region so TalkBack hears the new time without hunting for it.
+ */
+@Composable
+private fun BreakWaitRing(
+    remainingMillis: Long,
+    progress: Float?,
+    modifier: Modifier = Modifier,
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = (progress ?: 0f).coerceIn(0f, 1f),
+        animationSpec = tween(FlintMotion.DurationMedium, easing = FlintMotion.EasingStandard),
+        label = "breakWaitRing",
+    )
+    Column(
+        modifier = modifier.semantics(mergeDescendants = true) {
+            liveRegion = LiveRegionMode.Polite
+            contentDescription = waitNoticeA11y(remainingMillis)
+        },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.size(172.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val stroke = 3.dp.toPx()
+                val inset = stroke
+                val arcSize = Size(size.width - inset * 2, size.height - inset * 2)
+                drawCircle(
+                    Brush.radialGradient(
+                        0f to FlintPalette.Ember.copy(alpha = 0.28f),
+                        0.7f to FlintPalette.Ember.copy(alpha = 0.06f),
+                        1f to Color.Transparent,
+                        radius = size.width / 2f,
+                    ),
+                    radius = size.width / 2f,
+                )
+                drawArc(
+                    color = FlintPalette.Bone.copy(alpha = 0.12f),
+                    startAngle = 0f, sweepAngle = 360f, useCenter = false,
+                    topLeft = Offset(inset, inset), size = arcSize,
+                    style = Stroke(stroke),
+                )
+                drawArc(
+                    color = FlintPalette.Ember,
+                    startAngle = -90f, sweepAngle = 360f * animatedProgress, useCenter = false,
+                    topLeft = Offset(inset, inset), size = arcSize,
+                    style = Stroke(stroke, cap = StrokeCap.Round),
+                )
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    formatDuration(remainingMillis),
+                    style = MaterialTheme.typography.displaySmall.copy(fontSize = 40.sp, lineHeight = 44.sp),
+                )
+                Text("breathe in", style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist)
+            }
+        }
+        Surface(
+            shape = CircleShape,
+            color = Color.Transparent,
+            contentColor = FlintPalette.Faint,
+            border = BorderStroke(1.dp, FlintPalette.Divider),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    "Start break · in ${formatDuration(remainingMillis)}",
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }

@@ -30,12 +30,16 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.sp
 import com.flint.peakfocus.blocking.overlay.TargetFloorIdentities
@@ -326,6 +330,7 @@ private fun FlintApp() {
                                     subline = plan.body,
                                     setupLabel = plan.nextStep?.ctaLabel,
                                     onSetup = { plan.nextStep?.let(onSetupStep) },
+                                    onOpenRules = { tab = FlintTabGlyph.Rules },
                                 )
                                 FlintTabGlyph.Rules -> BlocklistScreen(
                                     quickBlockSummary = if (blockedCount == 0) "Apps blocked whenever Flint is on"
@@ -378,16 +383,16 @@ private enum class Stage { Welcome, Consent, Tabs }
 
 private const val KEY_WELCOMED = "welcomed"
 
-/** E01 — first run: the mark, the promise, one ember action. */
+/** M01 — first run: the mark, the promise, three privacy tiles and one ember action. */
 @Composable
 private fun WelcomeScreen(onBegin: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
-        EmberLandscape(horizonOffset = 20f, orbCenter = Offset(195f, 480f), orbRadius = 64f)
+        EmberLandscape(horizonOffset = 20f, orbCenter = Offset(195f, 470f), orbRadius = 64f)
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
                 .padding(WindowInsets.systemBars.asPaddingValues())
-                .padding(horizontal = FlintSpacing.gutter),
+                .padding(horizontal = 20.dp),
         ) {
             Column(
                 Modifier.fillMaxWidth()
@@ -396,33 +401,73 @@ private fun WelcomeScreen(onBegin: () -> Unit) {
                     .height(IntrinsicSize.Min),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.height(110.dp))
-                FlintMark(Modifier.size(40.dp))
+                Spacer(Modifier.weight(1f).heightIn(min = 96.dp))
+                FlintMark(Modifier.size(44.dp))
                 Spacer(Modifier.height(14.dp))
-                Text("Flint", style = MaterialTheme.typography.displaySmall.copy(fontSize = 48.sp, letterSpacing = (-0.8).sp),
-                    modifier = Modifier.semantics { heading() })
+                Text(
+                    "Flint",
+                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 44.sp, letterSpacing = (-1.0).sp),
+                    modifier = Modifier.semantics { heading() },
+                )
                 Spacer(Modifier.height(14.dp))
                 Text(
                     "Make time for what matters.",
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp, lineHeight = 27.sp),
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp, lineHeight = 28.sp),
                     color = FlintPalette.SoftBone,
                     textAlign = TextAlign.Center,
+                    modifier = Modifier.widthIn(max = 280.dp),
                 )
                 Spacer(Modifier.weight(1f).heightIn(min = FlintSpacing.lg))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    WelcomePromise(FlintGlyphs.lock, "Every feature free", Modifier.weight(1f))
+                    WelcomePromise(FlintGlyphs.personOff, "No account", Modifier.weight(1f))
+                    WelcomePromise(FlintGlyphs.device, "Stays on your phone", Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(14.dp))
+                EmberButton("Get started", onBegin)
+                Spacer(Modifier.height(14.dp))
                 Text(
-                    "No account  ·  No analytics  ·  Every feature free",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = FlintPalette.Mist,
+                    "Open source · built in the open",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = FlintPalette.Stone,
                     textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(18.dp))
-                EmberButton("Begin", onBegin)
-                Spacer(Modifier.height(18.dp))
-                Text("Open source · built in the open", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                    color = FlintPalette.Stone, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(12.dp))
             }
         }
+    }
+}
+
+/** One of the three welcome promises: ember glyph over a two-line 12/600 label. */
+@Composable
+private fun WelcomePromise(
+    glyph: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(FlintPalette.BoneFill.copy(alpha = 0.6f))
+            .border(1.dp, FlintPalette.Hairline, RoundedCornerShape(18.dp))
+            .padding(horizontal = 6.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(glyph, contentDescription = null, tint = FlintPalette.EmberText, modifier = Modifier.size(18.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            ),
+            color = FlintPalette.Bone,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

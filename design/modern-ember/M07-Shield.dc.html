@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Block screen</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+@keyframes sh-breathe{0%,100%{transform:scale(0.92);opacity:.7}50%{transform:scale(1);opacity:1}}
+.sh-breathe{animation:sh-breathe 8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@media (prefers-reduced-motion: reduce){.sh-breathe{animation:none}}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0C0E13; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; box-sizing: border-box; padding: 0 24px 40px 24px">
+
+  <div style="flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 30px">
+    <div style="position: relative; width: 200px; height: 200px">
+      <svg width="200" height="200" viewBox="0 0 200 200" aria-hidden="true">
+        <defs>
+          <radialGradient id="shHalo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#EF9F27" stop-opacity="0.45"></stop><stop offset="0.5" stop-color="#EF9F27" stop-opacity="0.1"></stop><stop offset="1" stop-color="#EF9F27" stop-opacity="0"></stop></radialGradient>
+          <radialGradient id="shOrb" cx="0.5" cy="0.45" r="0.55"><stop offset="0" stop-color="#FFE7C2"></stop><stop offset="0.4" stop-color="#F7BE6A"></stop><stop offset="1" stop-color="#D98620"></stop></radialGradient>
+        </defs>
+        <circle class="sh-breathe" cx="100" cy="100" r="100" fill="url(#shHalo)"></circle>
+        <circle cx="100" cy="100" r="40" fill="url(#shOrb)"></circle>
+      </svg>
+      <span role="img" aria-label="Instagram, resting" style="position: absolute; left: 70px; top: 70px; width: 60px; height: 60px; border-radius: 18px; background: #5C3344; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px rgba(239, 159, 39, 0.6), 0 12px 30px rgba(0, 0, 0, 0.45)">
+        <span style="font-size: 22px; font-weight: 700; color: rgba(237, 230, 218, 0.26)">I</span>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#EDE6DA" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="position: absolute"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+      </span>
+    </div>
+    <h1 style="margin: 18px 0 0 0; font-size: 30px; font-weight: 700; line-height: 1.2; text-align: center; letter-spacing: -0.5px">Instagram is resting.</h1>
+    <p style="margin: 10px 0 0 0; max-width: 290px; font-size: 15px; line-height: 1.5; text-align: center; color: #B7AE9F; text-wrap: pretty">Laser Focus, until 12:00. Notice the reach, then let it pass.</p>
+    <span style="margin-top: 22px; height: 32px; padding: 0 12px; border-radius: 16px; background: rgba(239, 159, 39, 0.14); color: #F4C27E; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="7"></circle><path d="M12 13V9.5M10 3h4"></path></svg>
+      1h 02m left · 23 opens stopped today
+    </span>
+  </div>
+
+  <div style="align-self: stretch; display: flex; flex-direction: column; gap: 10px">
+    <a href="M03-Today.dc.html" style="height: 56px; border-radius: 28px; background: linear-gradient(180deg, #F6B860 0%, #EF9F27 100%); color: #3A2003; text-decoration: none; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center">Go back</a>
+    <a href="M09-BreakWait.dc.html" style="height: 52px; border-radius: 26px; border: 1px solid rgba(237, 230, 218, 0.14); color: #EDE6DA; text-decoration: none; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center">Take a break</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

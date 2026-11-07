@@ -14,11 +14,14 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.snap
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.background
@@ -36,9 +39,11 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,7 +54,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -58,17 +67,24 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import com.flint.peakfocus.core.common.theme.FlintMotion
+import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.core.common.ui.FlintCard
+import com.flint.peakfocus.core.common.ui.FlintCircleButton
+import com.flint.peakfocus.core.common.ui.FlintGlyphs
 import com.flint.peakfocus.core.common.ui.FlintTimeField
+import com.flint.peakfocus.core.common.ui.flintSwitchColors
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.common.ui.rememberReducedMotion
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BreakLevel
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Author the one [SleepConfig] (spec 3.3 — free; blocking only, no bundled audio content).
@@ -155,23 +171,46 @@ internal fun SleepEditorScreen(
                     .imePadding()
                     .padding(FlintSpacing.gutter),
             ) {
-                TextButton(onClick = onClose) { Text(stringResource(R.string.sleep_back)) }
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FlintCircleButton(onClick = onClose, contentDescription = stringResource(R.string.sleep_back), size = 44.dp) {
+                        Icon(FlintGlyphs.back, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Switch(
+                        checked = config.enabled,
+                        onCheckedChange = { config = config.copy(enabled = it) },
+                        colors = flintSwitchColors(),
+                        modifier = Modifier.semantics { contentDescription = "Sleep mode" },
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
                 Text(
                     stringResource(R.string.sleep_title),
                     style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.semantics { heading() },
                 )
-                Spacer(Modifier.height(FlintSpacing.md))
-
-                FlintCard {
-                    LabeledSwitchRow(
-                        title = stringResource(R.string.sleep_title),
-                        description = stringResource(R.string.sleep_window_description),
-                        checked = config.enabled,
-                        onCheckedChange = { config = config.copy(enabled = it) },
-                    )
-                }
-                Spacer(Modifier.height(FlintSpacing.lg))
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    listOf(
+                        stringResource(presentation.nights ?: R.string.sleep_every_night),
+                        stringResource(sleepTierText(config.breakLevel)),
+                        "${config.allowedApps.size} stay open",
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
+                    color = FlintPalette.Mist,
+                )
+                Spacer(Modifier.height(18.dp))
+                val bedPreview = parseMinuteOfDay(bedText)
+                val wakePreview = parseMinuteOfDay(wakeText)
+                SleepDial(
+                    bedMinute = bedPreview,
+                    wakeMinute = wakePreview,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(18.dp))
 
                 SleepSectionLabel(R.string.sleep_nights)
                 Spacer(Modifier.height(FlintSpacing.sm))
@@ -559,4 +598,67 @@ private fun SleepEditorPreview() {
             )
         }
     }
+}
+
+/**
+ * M11's night dial: a 24-hour ring with the sleep window drawn as an indigo arc between a bone
+ * bedtime dot and an ember wake dot, and the night's length in the middle. The arc is decorative
+ * and the numbers are derived from the draft's own times — never a fixed sample.
+ */
+@Composable
+private fun SleepDial(bedMinute: Int?, wakeMinute: Int?, modifier: Modifier = Modifier) {
+    val minutes = nightMinutes(bedMinute, wakeMinute)
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Box(Modifier.size(240.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val stroke = 18.dp.toPx()
+                val radius = size.minDimension / 2f - stroke / 2f
+                drawCircle(FlintPalette.Bone.copy(alpha = 0.08f), radius, style = Stroke(stroke))
+                if (bedMinute != null && wakeMinute != null && minutes > 0) {
+                    val start = bedMinute / 1440f * 360f - 90f
+                    val sweep = minutes / 1440f * 360f
+                    drawArc(
+                        color = Color(0xFF3A3F5C),
+                        startAngle = start,
+                        sweepAngle = sweep,
+                        useCenter = false,
+                        topLeft = Offset(center.x - radius, center.y - radius),
+                        size = Size(radius * 2, radius * 2),
+                        style = Stroke(stroke, cap = StrokeCap.Round),
+                    )
+                    fun dot(angle: Float, color: Color) {
+                        val radians = Math.toRadians(angle.toDouble())
+                        drawCircle(
+                            color,
+                            13.dp.toPx(),
+                            Offset(
+                                center.x + (radius * cos(radians)).toFloat(),
+                                center.y + (radius * sin(radians)).toFloat(),
+                            ),
+                        )
+                    }
+                    dot(start, FlintPalette.Bone)
+                    dot(start + sweep, FlintPalette.Ember)
+                }
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    if (minutes > 0) {
+                        val hours = minutes / 60
+                        val rest = minutes % 60
+                        if (rest == 0) "${hours}h" else "${hours}h ${rest}m"
+                    } else {
+                        "--"
+                    },
+                    style = MaterialTheme.typography.displaySmall.copy(fontSize = 36.sp, lineHeight = 40.sp),
+                )
+                Text("of quiet", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = FlintPalette.Mist)
+            }
+        }
+    }
+}
+
+private fun nightMinutes(bedMinute: Int?, wakeMinute: Int?): Int {
+    if (bedMinute == null || wakeMinute == null) return 0
+    return if (wakeMinute >= bedMinute) wakeMinute - bedMinute else 1440 - bedMinute + wakeMinute
 }

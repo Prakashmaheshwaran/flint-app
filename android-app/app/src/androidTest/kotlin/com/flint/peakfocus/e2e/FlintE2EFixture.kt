@@ -56,7 +56,7 @@ abstract class FlintE2EFixture {
         settleSystemBeforeReset()
         assertTrue(shell("pm clear $app").contains("Success"))
         launchFlint()
-        click("Begin")
+        click("Get started")
         visible(By.text("Today"))
     }
 
@@ -248,7 +248,7 @@ abstract class FlintE2EFixture {
     }
 
     protected fun refreshAccessibilityCache() {
-        // API 36 retained Add · 0/disabled AX nodes after pixels showed Add · 1
+        // API 36 retained Done · 0/disabled AX nodes after pixels showed Done · 1 app
         // enabled. Read fresh nodes during readiness polling, without replaying input
         // or changing UiAutomation's accessibility-service preservation flag.
         if (Build.VERSION.SDK_INT >= 34) {

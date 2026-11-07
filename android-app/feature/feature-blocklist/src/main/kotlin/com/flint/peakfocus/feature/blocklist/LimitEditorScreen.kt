@@ -8,7 +8,10 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,15 +23,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,14 +48,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintNumerals
+import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.theme.FlintSpacing
+import com.flint.peakfocus.core.common.ui.BoneButton
+import com.flint.peakfocus.core.common.ui.FlintAppTile
 import com.flint.peakfocus.core.common.ui.FlintCard
+import com.flint.peakfocus.core.common.ui.FlintCircleButton
+import com.flint.peakfocus.core.common.ui.FlintGlyphs
+import com.flint.peakfocus.core.common.ui.flintSwitchColors
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.OpenLimit
@@ -151,191 +169,172 @@ private fun LimitEditorContent(
         emptyList()
     }
     val displayName = appLabel?.takeIf { it.isNotBlank() } ?: packageName
+    val attemptSave: () -> Unit = {
+        attemptedSave = true
+        val result = draft.resolve()
+        if (result is LimitFormResult.Valid) {
+            haptics.confirm()
+            onSave(result.timeLimit, result.openLimit)
+        } else {
+            haptics.reject()
+        }
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .imePadding()
-            .padding(FlintSpacing.gutter),
+            .padding(horizontal = 20.dp),
     ) {
-        EditorHeader(title = "App limits", eyebrow = "App limits", onBack = onClose)
-        Spacer(Modifier.height(FlintSpacing.md))
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onClose, enabled = !saveState.busy) {
+                Text("Cancel", color = FlintPalette.Mist)
+            }
+            Text(
+                "APP LIMIT",
+                style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.5.sp),
+                color = FlintPalette.Mist,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.weight(1f),
+            )
+            BoneButton(
+                text = "Save",
+                onClick = attemptSave,
+                compact = true,
+                enabled = !saveState.busy,
+            )
+        }
+        Spacer(Modifier.height(14.dp))
 
-        FlintCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AppIconThumb(icon = appIcon, label = displayName)
-                Spacer(Modifier.width(FlintSpacing.cardGap))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = packageName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(FlintPalette.Card)
+                .border(1.dp, FlintPalette.Hairline, RoundedCornerShape(20.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (appIcon != null) {
+                Image(
+                    bitmap = appIcon,
+                    contentDescription = null,
+                    modifier = Modifier.size(44.dp).clip(RoundedCornerShape(13.dp)),
+                )
+            } else {
+                FlintAppTile(packageName = packageName, label = displayName, size = 44.dp, cornerRadius = 13.dp)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(displayName, style = MaterialTheme.typography.headlineSmall.copy(fontSize = 18.sp))
+                Text(
+                    listOfNotNull(
+                        draft.timeEnabled.takeIf { it }?.let { "time limit on" },
+                        draft.openEnabled.takeIf { it }?.let { "open limit on" },
+                    ).ifEmpty { listOf("no limits yet") }.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = FlintPalette.Mist,
+                )
             }
         }
-        Spacer(Modifier.height(FlintSpacing.lg))
+        Spacer(Modifier.height(16.dp))
 
-        SectionLabel("Time limit")
-        Spacer(Modifier.height(FlintSpacing.sm))
-        FlintCard {
-            LabeledSwitchRow(
-                title = "Daily time limit",
-                description = "Block it after this much use in a day.",
-                checked = draft.timeEnabled,
-                onCheckedChange = { draft = draft.copy(timeEnabled = it) },
-            )
-            AnimatedVisibility(
-                visible = draft.timeEnabled,
-                enter = expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
-                exit = shrinkVertically(editorRevealSpec()) + fadeOut(editorRevealSpec()),
-            ) {
-                Column {
-                    Spacer(Modifier.height(FlintSpacing.sm))
-                    OutlinedTextField(
-                        value = draft.minutesText,
-                        onValueChange = { draft = draft.copy(minutesText = it) },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Minutes per day") },
-                        placeholder = { Text("45") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        isError = errors.contains(LimitFormError.BAD_MINUTES),
-                    )
-                    Spacer(Modifier.height(FlintSpacing.sm))
-                    // Stateful shortcut pills in the day-pill idiom: the one matching the
-                    // typed minutes lights up; typing a custom value deselects them all.
-                    Row(horizontalArrangement = Arrangement.spacedBy(FlintSpacing.sm)) {
-                        listOf(15, 30, 60, 120).forEach { minutes ->
-                            val isSelected = draft.minutesText.trim().toIntOrNull() == minutes
-                            val container by animateColorAsState(
-                                targetValue = if (isSelected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                },
-                                animationSpec = tween(
-                                    FlintMotion.DurationShort,
-                                    easing = FlintMotion.EasingStandard,
-                                ),
-                                label = "quickMinutesContainer",
-                            )
-                            val labelColor by animateColorAsState(
-                                targetValue = if (isSelected) {
-                                    MaterialTheme.colorScheme.onPrimary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                animationSpec = tween(
-                                    FlintMotion.DurationShort,
-                                    easing = FlintMotion.EasingStandard,
-                                ),
-                                label = "quickMinutesLabel",
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    // 48dp touch minimum, like the schedule day pills.
-                                    .heightIn(min = 48.dp)
-                                    .clip(MaterialTheme.shapes.small)
-                                    .background(container)
-                                    .selectable(
-                                        selected = isSelected,
-                                        role = Role.RadioButton,
-                                        onClick = {
-                                            haptics.toggleOn()
-                                            draft = draft.copy(minutesText = minutes.toString())
-                                        },
-                                    )
-                                    .padding(vertical = FlintSpacing.sm),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = formatDailyMinutes(minutes),
-                                    style = MaterialTheme.typography.labelSmall
-                                        .merge(FlintNumerals),
-                                    color = labelColor,
-                                )
-                            }
-                        }
+        LimitTypeCard(
+            title = "Time limit",
+            description = "Rest it after this much use in a day.",
+            checked = draft.timeEnabled,
+            onCheckedChange = { draft = draft.copy(timeEnabled = it) },
+        )
+        Spacer(Modifier.height(8.dp))
+        LimitTypeCard(
+            title = "Open limit",
+            description = "5-minute access credits, spent one open at a time.",
+            checked = draft.openEnabled,
+            onCheckedChange = { draft = draft.copy(openEnabled = it) },
+        )
+
+        if (draft.timeEnabled || draft.openEnabled) {
+            val value = if (draft.timeEnabled) draft.minutesText else draft.opensText
+            val unit = if (draft.timeEnabled) "min / day" else "credits / day"
+            Box(Modifier.fillMaxWidth().padding(top = 22.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(200.dp), contentAlignment = Alignment.Center) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        drawCircle(
+                            color = FlintPalette.Bone.copy(alpha = 0.1f),
+                            radius = size.minDimension / 2f - 6.dp.toPx(),
+                            style = Stroke(width = 12.dp.toPx()),
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            (value.toIntOrNull() ?: 0).let { if (draft.timeEnabled) "${it}m" else "$it" },
+                            style = MaterialTheme.typography.displaySmall.merge(FlintNumerals),
+                        )
+                        Text(unit, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = FlintPalette.Mist)
                     }
                 }
             }
-        }
-        Spacer(Modifier.height(FlintSpacing.lg))
 
-        if (draft.timeEnabled) {
-            SectionLabel("Time-limit difficulty")
-            BreakLevelSelector(selected = draft.timeBreakLevel, onSelect = { draft = draft.copy(timeBreakLevel = it) })
-            Spacer(Modifier.height(FlintSpacing.lg))
-        }
-        SectionLabel("Open limit")
-        Spacer(Modifier.height(FlintSpacing.sm))
-        FlintCard {
-            LabeledSwitchRow(
-                title = "Daily open limit",
-                description = "Choose how many 5-minute access credits you can use each day.",
-                checked = draft.openEnabled,
-                onCheckedChange = { draft = draft.copy(openEnabled = it) },
-            )
-            AnimatedVisibility(
-                visible = draft.openEnabled,
-                enter = expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
-                exit = shrinkVertically(editorRevealSpec()) + fadeOut(editorRevealSpec()),
-            ) {
-                Column {
-                    Spacer(Modifier.height(FlintSpacing.sm))
-                    OutlinedTextField(
-                        value = draft.opensText,
-                        onValueChange = { draft = draft.copy(opensText = it) },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("5-minute credits per day") },
-                        placeholder = { Text("5") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        isError = errors.contains(LimitFormError.BAD_OPENS),
-                    )
-                    Spacer(Modifier.height(FlintSpacing.cardGap))
-                    SectionLabel("Open-limit break difficulty")
-                    Spacer(Modifier.height(FlintSpacing.xs))
-                    BreakLevelSelector(
-                        selected = draft.openBreakLevel,
-                        onSelect = { draft = draft.copy(openBreakLevel = it) },
-                    )
-                }
+            // One allowance control per enabled limit: both limits are independent, so the
+            // credit count must stay editable when the time limit is on too.
+            if (draft.timeEnabled) {
+                AllowanceStepper(
+                    label = "Daily allowance · minutes",
+                    text = draft.minutesText,
+                    onText = { draft = draft.copy(minutesText = it) },
+                    onMinus = {
+                        haptics.tick()
+                        draft = draft.copy(minutesText = ((draft.minutesText.toIntOrNull() ?: 30) - 5).coerceAtLeast(5).toString())
+                    },
+                    onPlus = {
+                        haptics.tick()
+                        draft = draft.copy(minutesText = ((draft.minutesText.toIntOrNull() ?: 30) + 5).coerceAtMost(240).toString())
+                    },
+                )
+            }
+            if (draft.openEnabled) {
+                AllowanceStepper(
+                    label = "Daily allowance · credits",
+                    text = draft.opensText,
+                    onText = { draft = draft.copy(opensText = it) },
+                    onMinus = {
+                        haptics.tick()
+                        draft = draft.copy(opensText = ((draft.opensText.toIntOrNull() ?: 5) - 1).coerceAtLeast(1).toString())
+                    },
+                    onPlus = {
+                        haptics.tick()
+                        draft = draft.copy(opensText = ((draft.opensText.toIntOrNull() ?: 5) + 1).coerceAtMost(20).toString())
+                    },
+                )
             }
         }
-        Spacer(Modifier.height(FlintSpacing.lg))
 
+        if (draft.timeEnabled) {
+            Spacer(Modifier.height(18.dp))
+            SectionLabel("Time-limit difficulty")
+            Spacer(Modifier.height(FlintSpacing.sm))
+            BreakLevelSelector(selected = draft.timeBreakLevel, onSelect = { draft = draft.copy(timeBreakLevel = it) })
+        }
+        if (draft.openEnabled) {
+            Spacer(Modifier.height(18.dp))
+            SectionLabel("Open-limit difficulty")
+            Spacer(Modifier.height(FlintSpacing.sm))
+            BreakLevelSelector(selected = draft.openBreakLevel, onSelect = { draft = draft.copy(openBreakLevel = it) })
+        }
+
+        Spacer(Modifier.height(FlintSpacing.lg))
         ErrorMessages(errors.map { it.message } + listOfNotNull(saveState.error))
         if (errors.isNotEmpty()) Spacer(Modifier.height(FlintSpacing.cardGap))
 
-        Button(
+        com.flint.peakfocus.core.common.ui.EmberButton(
+            text = "Save limits",
+            onClick = attemptSave,
             enabled = !saveState.busy,
-            onClick = {
-                attemptedSave = true
-                val result = draft.resolve()
-                if (result is LimitFormResult.Valid) {
-                    haptics.confirm()
-                    onSave(result.timeLimit, result.openLimit)
-                } else {
-                    haptics.reject()
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Save limits")
-        }
+        )
         if (onRemove != null) {
             Spacer(Modifier.height(FlintSpacing.sm))
             TextButton(
@@ -352,6 +351,83 @@ private fun LimitEditorContent(
         Spacer(Modifier.height(FlintSpacing.sm))
         TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
             Text("Cancel")
+        }
+        Spacer(Modifier.height(FlintSpacing.lg))
+    }
+}
+
+/** One limit type as a v3 card with a switch — both stay independent and free. */
+@Composable
+private fun LimitTypeCard(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val haptics = rememberFlintHaptics()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(FlintPalette.Card)
+            .border(1.dp, if (checked) FlintPalette.Ember.copy(alpha = 0.4f) else FlintPalette.Hairline, RoundedCornerShape(18.dp))
+            .toggleable(value = checked, role = Role.Switch) { value ->
+                if (value) haptics.toggleOn() else haptics.toggleOff()
+                onCheckedChange(value)
+            }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp))
+            Text(description, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = FlintPalette.Mist)
+        }
+        Switch(checked = checked, onCheckedChange = null, colors = flintSwitchColors())
+    }
+}
+
+private fun minutesTextValue(text: String): Int = text.trim().toIntOrNull()?.coerceIn(1, 1440) ?: 30
+
+/** A v3 allowance card: editable number plus −/+ steppers. */
+@Composable
+private fun AllowanceStepper(
+    label: String,
+    text: String,
+    onText: (String) -> Unit,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 18.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(FlintPalette.Card)
+            .border(1.dp, FlintPalette.Hairline, RoundedCornerShape(22.dp))
+            .padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = FlintPalette.Mist)
+            androidx.compose.foundation.text.BasicTextField(
+                value = text,
+                onValueChange = { onText(it.filter { c -> c.isDigit() }) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp).merge(FlintNumerals),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(FlintPalette.Ember),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier
+                    .width(100.dp)
+                    .semantics { contentDescription = label },
+            )
+        }
+        FlintCircleButton(onClick = onMinus, contentDescription = "Less", size = 44.dp) {
+            Icon(FlintGlyphs.minus, contentDescription = null, modifier = Modifier.size(16.dp))
+        }
+        Spacer(Modifier.width(8.dp))
+        FlintCircleButton(onClick = onPlus, contentDescription = "More", size = 44.dp) {
+            Icon(FlintGlyphs.plus, contentDescription = null, modifier = Modifier.size(16.dp))
         }
     }
 }
