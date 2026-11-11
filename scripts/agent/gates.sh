@@ -23,6 +23,8 @@ ios=0 android=0 scripts=0
 while IFS= read -r -d '' path; do
   case "$path" in
     ios-app/*) ios=1 ;;
+    # Bundled iOS legal text is generated from these sources.
+    docs/privacy-policy.md|LICENSE|design/fonts/*) ios=1 ;;
     android-app/*) android=1 ;;
     scripts/*|Makefile) scripts=1 ;;
   esac

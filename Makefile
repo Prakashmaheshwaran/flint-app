@@ -96,6 +96,13 @@ ios-test: ios-gen ## Run the iOS unit tests on the first available iPhone simula
 ios-ui: ## Run DEBUG UI fixtures (Large/AX5) on an empty dedicated IOS_SIM; no Screen Time proof
 	@bash scripts/ios-ui.sh
 
+ios-legal: ## Regenerate the bundled iOS privacy policy and licenses
+	python3 -B "$$IOS_DIR/legal/generate_legal.py"
+
+ios-legal-check: ## Fail if bundled iOS legal documents drift from their sources
+	python3 -B "$$IOS_DIR/legal/generate_legal.py" --check
+	python3 -B -m unittest discover -s "$$IOS_DIR/legal" -p 'test_*.py'
+
 android: ## Assemble the Android debug APK
 	@bash scripts/flint-env-report.sh --check-android
 	cd "$$ANDROID_DIR" && ./gradlew assembleDebug
@@ -127,7 +134,9 @@ android-e2e: ## Run UI smoke on an opted-in disposable emulator (AVD=emulator-N)
 verify-android: android android-release android-bundle android-test ## Run the Android CI gate locally
 	@echo "Android gate passed."
 
-verify-ios: ios-build ios-test ## Run the iOS CI gate locally
+verify-ios: ios-legal-check ios-build ios-test ## Run the iOS CI gate locally
+	python3 -B "$$IOS_DIR/legal/generate_legal.py" \
+		--verify-bundle "$$IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/Flint.app"
 	@echo "iOS gate passed."
 
 verify: verify-android verify-ios ## Run both platform gates
@@ -173,6 +182,6 @@ clean-orphans: ## Preview orphans; deletion needs CONFIRM=1 ORPHAN_PLAN=file ORP
 	[ "$$CONFIRM" != 1 ] || args+=(--confirm --plan-digest "$$ORPHAN_DIGEST"); \
 	bash scripts/clean-devices.sh "$${args[@]}"
 
-.PHONY: help env doctor ios-gen ios ios-build ios-test ios-ui android android-release android-bundle android-install android-test \
+.PHONY: help env doctor ios-gen ios ios-build ios-test ios-ui ios-legal ios-legal-check android android-release android-bundle android-install android-test \
 	verify verify-ios verify-android android-e2e selftest release-check clean clean-devices clean-orphans \
 	gates ios-run android-run logs-ios logs-android pr-status ancestry

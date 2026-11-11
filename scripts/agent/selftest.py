@@ -346,6 +346,7 @@ class AgentCommands(unittest.TestCase):
         self.init_repo()
         scenarios = [
             (["ios-app/Foo.swift"], ["verify-ios"]),
+            (["docs/privacy-policy.md"], ["verify-ios"]),
             (["android-app/Foo.kt"], ["verify-android"]),
             (["scripts/new.sh"], ["selftest"]),
             (["Makefile"], ["selftest"]),
