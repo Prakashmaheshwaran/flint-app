@@ -38,10 +38,11 @@ target count at 5; App Intents ship inside the host app).
 - **Simulator evidence is limited.** Builds and injected adapter tests prove compilation and
   transition logic. Physical-device verification is required for Screen Time enforcement.
 - **Pomodoro starts a whole chain (F01).** The intent takes focus minutes, rest minutes, rounds and
-  an optional long rest, defaulted from the saved in-app cadence, and starts one parent session that
-  spans every round and its planned rests. The plan is frozen at acceptance, each rest is
-  pre-registered as its own DeviceActivity carrier, and the tier governs the whole chain. One round
-  runs as one ordinary focus session; a chain outside the plan bounds is refused with its limits. Physical-device delivery of the
+  an optional long rest. With 2–8 rounds it starts one parent session that spans every round and its
+  planned rests (an empty rest uses the saved in-app cadence). The plan is frozen at acceptance, each
+  rest is pre-registered as its own DeviceActivity carrier, and the tier governs the whole chain.
+  Leaving Rounds empty (or 1) keeps the legacy single focus round, so existing shortcuts keep their
+  meaning; a chain outside the plan bounds is refused with its limits. Physical-device delivery of the
   rest carriers, locked-device latency and a backward clock change while the app is closed remain
   device gates.
 - **Start retries (R-25, PC-03/10).** A supplied Retry key binds the exact parameters to one accepted

@@ -3,21 +3,22 @@ import AppIntents
 import FlintCore
 
 /// A whole Pomodoro focus/rest chain: one commitment spanning every focus round and the planned
-/// rests between them (F01). Every parameter defaults to the saved cadence in Flint, so a bare
-/// "Start Pomodoro" keeps working. A single round runs as one plain focus session, exactly as the
-/// legacy intent did; a chain outside the plan bounds is refused with its limits.
+/// rests between them (F01). Existing shortcuts keep their meaning: the focus parameter is the
+/// same non-optional value, and leaving Rounds empty runs one plain focus round exactly as the
+/// legacy intent did. Setting 2–8 rounds starts the chain; an empty rest uses the saved cadence.
+/// A chain outside the plan bounds is refused with its limits.
 struct StartPomodoroIntent: AppIntent {
     static var title: LocalizedStringResource = "Start Pomodoro"
-    static var description = IntentDescription("Start a Pomodoro chain over your blocked apps: focus rounds with planned rests between them, all one commitment. Use your saved Flint cadence, or set the lengths here.")
+    static var description = IntentDescription("Start a Pomodoro over your blocked apps. Set 2–8 rounds for a chain of focus rounds with planned rests between them, all one commitment; leave Rounds empty for a single focus round.")
     static var openAppWhenRun = false
 
-    @Parameter(title: "Focus minutes", description: "5–120, in steps of 5. Leave empty for your saved cadence.")
-    var focusMinutes: Int?
+    @Parameter(title: "Focus minutes", description: "For a chain: 5–120, in steps of 5.", default: 25)
+    var focusMinutes: Int
 
     @Parameter(title: "Rest minutes", description: "1–60. Leave empty for your saved cadence.")
     var restMinutes: Int?
 
-    @Parameter(title: "Rounds", description: "2–8 for a chain, 1 for a single focus session. Leave empty for your saved cadence.")
+    @Parameter(title: "Rounds", description: "2–8 starts a focus/rest chain. Leave empty (or 1) for a single focus round.")
     var rounds: Int?
 
     @Parameter(title: "Long rest minutes", description: "Optional 5–60 rest, at least the normal rest. Leave empty for none.")
@@ -33,8 +34,8 @@ struct StartPomodoroIntent: AppIntent {
     var requestID: String?
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Start a Pomodoro with \(\.$rounds) rounds") {
-            \.$focusMinutes
+        Summary("Pomodoro focus for \(\.$focusMinutes) minutes") {
+            \.$rounds
             \.$restMinutes
             \.$longRestMinutes
             \.$longRestEvery
@@ -46,9 +47,9 @@ struct StartPomodoroIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let saved = FlintPomodoroConfig.load()
         let config = FlintPomodoroConfig(
-            focusMinutes: focusMinutes ?? saved.focusMinutes,
+            focusMinutes: focusMinutes,
             breakMinutes: restMinutes ?? saved.breakMinutes,
-            rounds: rounds ?? saved.rounds,
+            rounds: rounds ?? 1,
             longRestMinutes: longRestMinutes,
             longRestEvery: longRestMinutes == nil ? nil : (longRestEvery ?? saved.longRestEvery)
         )

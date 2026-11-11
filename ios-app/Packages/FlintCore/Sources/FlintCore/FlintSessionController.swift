@@ -565,7 +565,8 @@ public final class FlintSessionController {
         let rest = name.dropFirst(pomodoroCarrierPrefix.count)
         guard let dot = rest.firstIndex(of: ".") else { return nil }
         let token = rest[rest.startIndex..<dot]
-        guard !token.isEmpty, rest[rest.index(after: dot)...].allSatisfy(\.isNumber) else { return nil }
+        let index = rest[rest.index(after: dot)...]
+        guard !token.isEmpty, !index.isEmpty, index.allSatisfy(\.isNumber) else { return nil }
         return String(token)
     }
 
@@ -594,11 +595,13 @@ public final class FlintSessionController {
     /// A rest carrier's registration: the rest's own wall span. A rest under DeviceActivity's
     /// 15-minute floor is padded to 15 minutes with `warningTime` landing on the logical rest end
     /// (the §4 deadline adapter), so the shield returns at the rest's real end.
-    static func pomodoroCarrierPlan(rest: FlintPomodoroPlan.Rest, start: Date, calendar: Calendar,
-                                    strategy: FlintSessionAutoClearPlan.ShortSessionStrategy) -> FlintSessionAutoClearPlan {
+    ///
+    /// A rest always uses `.endWarning`, whatever strategy ordinary sessions use: padding a short
+    /// rest without a warning would silently lengthen a disclosed planned rest to 15 minutes.
+    static func pomodoroCarrierPlan(rest: FlintPomodoroPlan.Rest, start: Date, calendar: Calendar) -> FlintSessionAutoClearPlan {
         FlintSessionAutoClearPlan.make(start: start.addingTimeInterval(rest.start),
                                        end: start.addingTimeInterval(rest.end),
-                                       calendar: calendar, strategy: strategy)
+                                       calendar: calendar, strategy: .endWarning)
     }
 
     static func makeMonitorName() -> String {
@@ -637,15 +640,22 @@ public final class FlintSessionController {
     /// Report the planned-rest boundaries the chain has crossed, once each. The marker lives on
     /// the session record under the transition lock, so a duplicate callback from the monitor or
     /// the host cannot emit the same rest twice (design §7).
+    ///
+    /// A terminal transition passes `persist: false`: it reports every boundary the chain crossed
+    /// up to its logical end (all of them for a finished chain) just before its terminal event,
+    /// and the record it would mark is about to be retired.
     private func observePlannedRests(_ session: FlintActiveSession, plan: FlintPomodoroPlan,
-                                     in store: FlintSessionStateStoring?, now: Date) {
-        guard let phase = session.pomodoroPhase(clock: env.clock)?.phase else { return }
-        let current = phase.index
+                                     in store: FlintSessionStateStoring?, now: Date, persist: Bool = true) {
+        guard let position = session.pomodoroPhase(clock: env.clock) else { return }
+        let current = position.phase?.index ?? plan.phases.count
         let emitted = session.pomodoroObservedPhase ?? 0
         guard current > emitted else { return }
         let start = session.startedAt
         let confidence: FlintEventTimeConfidence? = session.remainingCheckpoint?.timeUncertain == true
             ? FlintEventTimeConfidence.uncertain(reason: "time_uncertain") : nil
+        // ADR-012 §11 origin: the monitor extension observes host-dead boundaries; the host
+        // observes them while reconciling.
+        let origin = Bundle.main.bundleURL.pathExtension == "appex" ? "monitor" : "startup_reconciliation"
         // Entering phase `index` starts the rest at `index` (if it is one) and ends the rest at
         // `index - 1` (if that was one). Both boundaries are recorded against the logical wall
         // equivalent, so a late observation is inferred rather than silently placed at "now".
@@ -653,22 +663,23 @@ public final class FlintSessionController {
             if let rest = plan.rests.first(where: { $0.phaseIndex == index }) {
                 let boundary = start.addingTimeInterval(rest.start)
                 FlintSessionLifecycle.didObservePlannedRest(session, index: rest.index, kind: .started,
-                    logicalAt: boundary, breakEnd: start.addingTimeInterval(rest.end), observedAt: now,
+                    logicalAt: boundary, breakEnd: start.addingTimeInterval(rest.end), origin: origin, observedAt: now,
                     inferred: now.timeIntervalSince(boundary) > Self.plannedRestInferenceWindow,
                     timeConfidence: confidence)
             }
             if let rest = plan.rests.first(where: { $0.phaseIndex == index - 1 }) {
                 let boundary = start.addingTimeInterval(rest.end)
                 FlintSessionLifecycle.didObservePlannedRest(session, index: rest.index, kind: .ended,
-                    logicalAt: boundary, breakEnd: nil, observedAt: now,
+                    logicalAt: boundary, breakEnd: nil, origin: origin, observedAt: now,
                     inferred: now.timeIntervalSince(boundary) > Self.plannedRestInferenceWindow,
                     timeConfidence: confidence)
             }
         }
+        guard persist else { return }
         let updated = session.observingPomodoroPhase(current)
-        if let store, store.loadActiveSession() == session {
-            store.saveActiveSession(updated)
-        }
+        // The marker and its ledger checkpoint move together, or not at all.
+        guard let store, store.loadActiveSession() == session else { return }
+        store.saveActiveSession(updated)
         _ = env.ledger()?.transaction { state in
             try? state.sessionAuthority?.checkpoint(updated)
         }
@@ -692,6 +703,9 @@ public final class FlintSessionController {
     public func handlePomodoroCarrier(_ event: FlintSessionMonitorEvent, activity: String) {
         guard Self.isPomodoroCarrier(activity) else { return }
         Self.lock.lock(); defer { Self.lock.unlock() }
+        // Busy past the monitor timeout: change nothing. Unlike a session end, a dropped rest-end
+        // wake-up leaves the rest open until the carrier's next callback or a host reconcile
+        // (documented limit in docs/architecture/pomodoro-chain.md §4).
         guard let transition = beginTransition(timeout: env.monitorLockTimeout) else { return }
         defer { endTransition(transition) }
         defer { env.reconcileOrdinaryBreaks() }
@@ -717,7 +731,9 @@ public final class FlintSessionController {
             return
         }
         if isOver(session) {
-            end(session, route: .completed, at: now, in: store)
+            // The chain's end, observed through a rest carrier: classify it exactly like the
+            // parent's own end callback, so a late observation is never an on-time completion.
+            handleMonitorEvent(.intervalWillEndWarning, activity: session.monitorName)
             return
         }
         reconcilePomodoroPhase(session, in: store, now: now)
@@ -917,6 +933,8 @@ public final class FlintSessionController {
         // 1. The out-of-app end, before anything changes. A Pomodoro chain also pre-registers a
         //    carrier for every planned rest here, before acceptance commits (design §4): an
         //    unarmed rest would be a consistency failure, so the whole start is refused instead.
+        //    Pool headroom is sampled before this attempt registers anything.
+        let registeredBeforeAttempt = pomodoro == nil ? 0 : env.registrar.registeredActivityNames().count
         if let plan {
             do {
                 try env.registrar.startMonitoring(monitorName, plan: plan)
@@ -931,9 +949,8 @@ public final class FlintSessionController {
         }
         if let frozen = pomodoro {
             // Headroom: keep room for break, credit and recovery carriers (design §4).
-            let registered = env.registrar.registeredActivityNames().count
             let needed = restCarrierNames.count + 1
-            guard registered + needed <= FlintArmingHealth.observedActivityThreshold - 2 else {
+            guard registeredBeforeAttempt + needed <= FlintArmingHealth.observedActivityThreshold - 2 else {
                 stopStartAttempt(monitorName: monitorName, restCarriers: restCarrierNames)
                 let reason = "insufficient_activity_capacity"
                 FlintSessionHealth.update(in: env.healthDefaults()) {
@@ -946,8 +963,7 @@ public final class FlintSessionController {
                 let carrier = restCarrierNames[rest.index - 1]
                 do {
                     try env.registrar.startMonitoring(carrier, plan: Self.pomodoroCarrierPlan(
-                        rest: rest, start: now, calendar: env.clock.calendar(),
-                        strategy: env.shortSessionStrategy))
+                        rest: rest, start: now, calendar: env.clock.calendar()))
                 } catch {
                     let reason = String(describing: error)
                     stopStartAttempt(monitorName: monitorName, restCarriers: restCarrierNames)
@@ -957,6 +973,18 @@ public final class FlintSessionController {
                     FlintSessionLifecycle.didFailToArm(session, reason: reason, at: now)
                     throw FlintSessionError.armingFailed(reason: reason)
                 }
+            }
+            // Registered is not observed (design §4): iOS must actually hold the parent end and
+            // every rest carrier before the chain is accepted, or none of it is.
+            let held = env.registrar.registeredActivityNames()
+            guard ([monitorName] + restCarrierNames).allSatisfy(held.contains) else {
+                let reason = "registration_not_observed"
+                stopStartAttempt(monitorName: monitorName, restCarriers: restCarrierNames)
+                FlintSessionHealth.update(in: env.healthDefaults()) {
+                    $0.lastArmFailure = .init(sessionName: name, reason: reason, at: now)
+                }
+                FlintSessionLifecycle.didFailToArm(session, reason: reason, at: now)
+                throw FlintSessionError.armingFailed(reason: reason)
             }
         }
 
@@ -1192,6 +1220,11 @@ public final class FlintSessionController {
         let observation = FlintLedgerInstant(clock: env.clock)
         let endedAt = route == .completed ? observation.wall : now
         guard persistence.emitStartIfPending(session) else { return false }
+        // Rest boundaries the chain crossed before this end are reported before its terminal
+        // event, even when no callback or reconcile observed them in time (design §7).
+        if let plan = session.pomodoro {
+            observePlannedRests(session, plan: plan, in: store, now: observation.wall, persist: false)
+        }
         guard let changed = persistence.terminate(session, outcome: route == .completed ? .completed : .stopped,
                                     route: route.rawValue, at: endedAt) else { return false }
         if changed, session.naturalEndObservedAt == nil { env.shield.clear() }
@@ -1506,11 +1539,10 @@ public final class FlintSessionController {
             // A rest under way keeps only its end: its carrier restarts now, with the §4
             // deadline adapter landing on the logical rest end.
             let carrier = restStart > now
-                ? Self.pomodoroCarrierPlan(rest: rest, start: anchor, calendar: env.clock.calendar(),
-                                           strategy: env.shortSessionStrategy)
+                ? Self.pomodoroCarrierPlan(rest: rest, start: anchor, calendar: env.clock.calendar())
                 : FlintSessionAutoClearPlan.make(start: FlintSessionAutoClearPlan.wholeSecond(atOrAfter: now),
                                                  end: restEnd, calendar: env.clock.calendar(),
-                                                 strategy: env.shortSessionStrategy)
+                                                 strategy: .endWarning)
             // `DeviceActivityCenter` replaces the schedule for an existing name, so a repair
             // re-registers in place without a window in which the boundary cannot fire.
             do {
@@ -1753,6 +1785,9 @@ public final class FlintSessionController {
                 // whose latency is recorded too (PC-76).
                 let observation = FlintLedgerInstant(clock: env.clock)
                 let lateness = max(0, session.logicalOverrun(clock: observation.clock) ?? 0)
+                if let plan = session.pomodoro {
+                    observePlannedRests(session, plan: plan, in: store, now: observation.wall, persist: false)
+                }
                 guard persistence.terminate(session,
                     outcome: lateness > FlintTimeIntegrity.onTimeWindow ? .unconfirmed : .completed,
                     route: lateness > FlintTimeIntegrity.onTimeWindow ? "natural_end_unconfirmed" : "completed",

@@ -220,9 +220,6 @@ struct FlintGlanceActivityPlan: Equatable {
     let startedAt: Date
     let endsAt: Date
     let staleAt: Date
-    /// A Pomodoro chain's phase at the time the plan was made; nil for other sessions.
-    var phaseSummary: String? = nil
-    var phaseEndsAt: Date? = nil
 
     static func countdownLabel(endsAt: Date, staleAt: Date) -> String {
         staleAt < endsAt ? "Check in" : "Planned time left"
@@ -248,9 +245,7 @@ struct FlintGlanceActivityPlan: Equatable {
         return .init(sessionID: session.id,
                      cause: FlintGlancePresentation.sanitizedName(session.name ?? session.cause.rawValue.capitalized),
                      tier: session.tier, startedAt: session.startedAt,
-                     endsAt: session.endsAt, staleAt: min(valid, session.endsAt),
-                     phaseSummary: FlintGlancePresentation(input, at: date).phaseSummary,
-                     phaseEndsAt: session.phaseEndsAt)
+                     endsAt: session.endsAt, staleAt: min(valid, session.endsAt))
     }
 }
 

@@ -213,12 +213,12 @@ public enum FlintSessionLifecycle {
     /// `pomodoroObservedPhase` under the transition lock, so duplicate callbacks never emit twice.
     public static func didObservePlannedRest(_ session: FlintActiveSession, index: Int,
                                              kind: FlintPlannedRestKind, logicalAt: Date,
-                                             breakEnd: Date? = nil, observedAt: Date? = nil,
-                                             inferred: Bool = false,
+                                             breakEnd: Date? = nil, origin: String? = nil,
+                                             observedAt: Date? = nil, inferred: Bool = false,
                                              timeConfidence: FlintEventTimeConfidence? = nil) {
         emit(.plannedRest(session, index: index, kind: kind, logicalAt: logicalAt,
                           breakEnd: breakEnd, inferred: inferred),
-             observedAt: observedAt, timeConfidence: timeConfidence)
+             origin: origin, observedAt: observedAt, timeConfidence: timeConfidence)
     }
 
     /// Arming the session's out-of-app teardown failed. Diagnostic only; not an end.

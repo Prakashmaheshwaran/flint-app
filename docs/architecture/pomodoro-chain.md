@@ -125,7 +125,17 @@ whole chain, so its tier still governs stopping, replacing and editing during a 
   dropped is re-registered the same way.
 - **Known limit (device gate):** if the wall clock moves backward during a rest while the
   host is not running, the rest-end callback can arrive late. The shield returns at the next
-  callback or host reconcile. Ordinary-break carriers have the same limitation.
+  callback or host reconcile. Ordinary-break carriers have the same limitation. A rest-end
+  callback that finds the session transition lock busy past the monitor timeout changes
+  nothing; the rest stays open until the carrier's next callback or a host reconcile.
+- **Pre-registration is observed:** after registering, the start reads back the registered
+  activities. If iOS does not hold the parent end and every rest carrier, the chain is
+  refused (`registration_not_observed`).
+- **Rest carriers always use the deadline adapter** (`.endWarning`), whatever strategy ordinary
+  sessions use, so a short rest is never padded into a longer, undisclosed one.
+- **Late end through a rest carrier:** a carrier callback after the chain's logical end is
+  classified exactly like the parent's own end callback. A late observation is recorded as
+  unconfirmed with a latency anomaly, never as an on-time completion.
 
 ### Android
 
@@ -207,6 +217,14 @@ Readers show "Focus · round 2 of 4" or "Rest · focus resumes 10:25". A reader 
 past `phaseEndsAt` without a newer publication shows the phase as unavailable, never a
 stale focus or rest claim. A surface that cannot show phases truthfully shows only the
 parent ("Pomodoro", chain end) and makes no claim about the phase.
+
+- `phaseEndsAt` is not a snapshot validity boundary. The protection claim changes only when a
+  carrier callback or reconcile rewrites the store, and that path republishes. Shortening the
+  whole snapshot to the phase end would turn a single missed publication into "State
+  unavailable" for a device that is still protecting.
+- On iOS, the Live Activity cannot re-render at a phase boundary while the app is closed, so
+  it shows only the parent and its chain end, never a phase. The widget has timeline entries
+  at `phaseEndsAt`, so it shows the phase and drops it at the boundary.
 
 ## 9. Verification scope
 

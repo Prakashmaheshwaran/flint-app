@@ -143,7 +143,7 @@ final class FlintPomodoroSessionTests: XCTestCase {
 
     private var plan: FlintPomodoroPlan { .standard }
 
-    private func controller() -> FlintSessionController {
+    private func controller(strategy: FlintSessionAutoClearPlan.ShortSessionStrategy = .endWarning) -> FlintSessionController {
         let store = self.store!
         let defaults = self.defaults!
         let directory = self.ledgerDirectory!
@@ -155,7 +155,7 @@ final class FlintPomodoroSessionTests: XCTestCase {
             registrar: registrar,
             isAuthorized: { true },
             clock: clock.flintClock,
-            shortSessionStrategy: .endWarning,
+            shortSessionStrategy: strategy,
             healthDefaults: { defaults },
             ledger: { FlintProtectionLedger(directory: directory, clock: clock.flintClock,
                                             initializedMarker: { nil }, setInitializedMarker: { _ in }) },
@@ -256,13 +256,45 @@ final class FlintPomodoroSessionTests: XCTestCase {
 
     func testStartIsRefusedWhenTheSharedRegistrationPoolLacksHeadroomF01() throws {
         let c = controller()
-        for index in 0..<14 { registrar.registered.insert("flint.session.pool\(index)") }
+        // threshold 20 − 2 spare = 18: 15 held + the parent + 3 rests = 19 is refused.
+        for index in 0..<15 { registrar.registered.insert("flint.session.pool\(index)") }
         XCTAssertThrowsError(try start(c, plan: plan)) {
             guard case FlintSessionError.armingFailed = $0 else { return XCTFail("expected armingFailed, got \($0)") }
         }
         XCTAssertNil(store.active)
         XCTAssertEqual(shield.applyCount, 0)
         XCTAssertEqual(events.kinds.filter { $0 == "failedToArm" }.count, 1)
+    }
+
+
+    func testHeadroomCountsTheParentOnceSoAnExactFitStartsF01() throws {
+        let c = controller()
+        // 14 held + the parent + 3 rests = 18, exactly the spare-preserving ceiling.
+        for index in 0..<14 { registrar.registered.insert("flint.session.pool\(index)") }
+        let session = try start(c, plan: plan)
+        XCTAssertEqual(store.active?.id, session.id)
+    }
+
+    func testARegistrationIOSDoesNotHoldRefusesTheChainF01() throws {
+        let c = controller()
+        registrar.dropOnStartIndex = 3 // rest 2 returns without error but is not held
+        XCTAssertThrowsError(try start(c, plan: plan)) {
+            guard case FlintSessionError.armingFailed(let reason) = $0 else {
+                return XCTFail("expected armingFailed, got \($0)")
+            }
+            XCTAssertEqual(reason, "registration_not_observed")
+        }
+        XCTAssertNil(store.active)
+        XCTAssertEqual(shield.applyCount, 0)
+        XCTAssertTrue(registrar.registered.isEmpty, "every registration of the attempt is rolled back")
+        XCTAssertEqual(events.kinds.filter { $0 == "failedToArm" }.count, 1)
+    }
+
+    func testRestCarriersKeepTheDeadlineAdapterUnderTheFloorStrategyF01() throws {
+        let c = controller(strategy: .floor)
+        let session = try start(c, plan: plan)
+        let first = try XCTUnwrap(registrar.started.first { $0.name == carriers(session)[0] }?.plan)
+        XCTAssertEqual(first.warningTime?.minute, 10, "a 5-minute rest still warns at its logical end")
     }
 
     // MARK: Phase enforcement
@@ -369,6 +401,54 @@ final class FlintPomodoroSessionTests: XCTestCase {
             return false
         }
         XCTAssertEqual(completed.count, 1)
+    }
+
+    func testALateChainEndThroughARestCarrierIsNotAnOnTimeCompletionF01() throws {
+        let c = controller()
+        let session = try start(c, plan: plan)
+        let names = carriers(session)
+        clock.advance(115 * 60 + 3 * 3600) // device away for hours past the chain end
+        c.handlePomodoroCarrier(.intervalDidEnd, activity: names[2])
+        XCTAssertNil(store.active)
+        XCTAssertFalse(events.log.contains {
+            if case let .ended(_, route, _) = $0.unannotated { return route == .completed }
+            return false
+        }, "a late observation is unconfirmed, not completed")
+        for name in [session.monitorName] + names { XCTAssertTrue(registrar.stopped.contains(name)) }
+    }
+
+    func testAnOnTimeChainEndThroughARestCarrierCompletesF01() throws {
+        let c = controller()
+        let session = try start(c, plan: plan)
+        clock.advance(115 * 60)
+        c.handlePomodoroCarrier(.intervalDidEnd, activity: carriers(session)[2])
+        XCTAssertNil(store.active)
+        XCTAssertEqual(events.log.filter {
+            if case let .ended(_, route, _) = $0.unannotated { return route == .completed }
+            return false
+        }.count, 1)
+    }
+
+    func testRestsCrossedWhileUnobservedAreReportedBeforeTheTerminalEventF01() throws {
+        let c = controller()
+        _ = try start(c, plan: plan)
+        clock.advance(115 * 60) // nothing observed any boundary
+        c.finishIfExpired()
+        XCTAssertEqual(plannedRestEvents(.started).count, 3)
+        XCTAssertEqual(plannedRestEvents(.ended).count, 3)
+        let terminal = try XCTUnwrap(events.log.firstIndex {
+            if case .ended = $0.unannotated { return true }
+            return false
+        })
+        let lastRest = try XCTUnwrap(events.log.lastIndex {
+            if case .plannedRest = $0.unannotated { return true }
+            return false
+        })
+        XCTAssertLessThan(lastRest, terminal, "rest boundaries precede the chain's terminal event")
+        XCTAssertTrue(plannedRestEvents(.started).allSatisfy {
+            if case let .plannedRest(_, _, _, _, _, inferred) = $0.unannotated { return inferred }
+            return false
+        }, "late reports are inferred")
     }
 
     func testEmergencyPassEndsTheParentAndStopsItsCarriersF01() throws {
@@ -630,13 +710,15 @@ private final class PomoRegistrar: FlintSessionActivityRegistering {
     var registered: Set<String> = []
     /// 1-based index of a `startMonitoring` call that iOS refuses.
     var failOnStartIndex: Int?
+    /// 1-based index of a `startMonitoring` call iOS accepts without error but does not hold.
+    var dropOnStartIndex: Int?
     private var calls = 0
 
     func startMonitoring(_ name: String, plan: FlintSessionAutoClearPlan) throws {
         calls += 1
         if calls == failOnStartIndex { throw Refused() }
         started.append(Start(name: name, plan: plan))
-        registered.insert(name)
+        if calls != dropOnStartIndex { registered.insert(name) }
     }
 
     func stopMonitoring(_ names: [String]) {

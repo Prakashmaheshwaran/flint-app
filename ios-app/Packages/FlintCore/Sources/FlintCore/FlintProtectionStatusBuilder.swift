@@ -186,7 +186,9 @@ public enum FlintProtectionStatusBuilder {
                         round: phaseEndsAt == nil ? nil : input.round,
                         rounds: phaseEndsAt == nil ? nil : input.rounds,
                         phaseEndsAt: phaseEndsAt)
-                    if let phaseEndsAt { boundaries.append(phaseEndsAt) }
+                    // Not a snapshot boundary: the protection claim only changes when a carrier
+                    // callback rewrites the store, and that callback republishes. Readers drop
+                    // the phase fields alone past `phaseEndsAt` (design §8).
                 }
                 causes.append(Snapshot.Cause(id: active.id,
                     kind: input.kind == .pomodoro ? .pomodoro : .session, displayName: active.name,
