@@ -43,8 +43,14 @@ jobs:
           import xml.etree.ElementTree as ET
           root = ET.parse('../artifacts/android-e2e/test-manifest.xml').getroot()
           target = root.find('instrumentation').get('{http://schemas.android.com/apk/res/android}targetPackage')
-          assert target == root.get('package') == 'com.flint.peakfocus.test', (target, root.get('package'))
+          assert target == root.get('package') == 'app.flint.focus.test', (target, root.get('package'))
           PY
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          app_id="$("$analyzer" manifest application-id app/build/outputs/apk/debug/app-debug.apk)"
+          if [[ $app_id != app.flint.focus ]]; then
+            echo "Debug APK applicationId is '$app_id', expected 'app.flint.focus' (applicationId differs from the Kotlin namespace com.flint.peakfocus)" >&2
+            exit 1
+          fi
       - uses: ./.github/actions/android-emulator-cache
       - name: Release build memory and monitor emulator host
         run: |

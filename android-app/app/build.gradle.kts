@@ -47,7 +47,10 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.flint.peakfocus"
+        // The installed identity (ADR-008, 2026-11-11). The namespace and Kotlin packages
+        // keep com.flint.peakfocus, so components need fully qualified class names, never
+        // ".Class" shorthand or packageName + ".Class". Must equal FlintIdentity.APPLICATION_ID.
+        applicationId = "app.flint.focus"
         minSdk = 23
         targetSdk = 36
         versionCode = 1

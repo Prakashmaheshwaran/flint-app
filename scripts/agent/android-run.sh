@@ -5,7 +5,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$here/common.sh"
 android_dir=$(cd "${ANDROID_DIR:-android-app}" && pwd)
 avd=${AVD:-flint-test}
-bundle_id=com.flint.peakfocus
+bundle_id=app.flint.focus
 
 device_info=$(agent_device android "$avd")
 IFS=$'\t' read -r serial avd_name incarnation <<< "$device_info"
@@ -19,5 +19,5 @@ agent_orca emulator install "$apk" --reinstall --device "$serial" --worktree "pa
 agent_device verify-android "$serial" "$avd_name" "$incarnation"
 # Orca's activity-less launch uses Android monkey, which aborts on this AVD
 # ("SYS_KEYS has no physical keys"). Target Flint's declared launcher directly.
-agent_orca emulator launch "$bundle_id" --activity .MainActivity --device "$serial" --worktree "path:$PWD" --json
+agent_orca emulator launch "$bundle_id" --activity com.flint.peakfocus.MainActivity --device "$serial" --worktree "path:$PWD" --json
 echo "Flint launched: device=$avd ($serial) bundle=$bundle_id"

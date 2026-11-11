@@ -15,7 +15,7 @@ import org.junit.Test
 class BlockDecisionEngineTest {
 
     private val engine = BlockDecisionEngine()
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
 
     private fun rule(
         apps: Set<String> = emptySet(),
@@ -208,7 +208,7 @@ class BlockDecisionEngineTest {
 class SafetyFloorEngineMatrixTest {
 
     private val engine = BlockDecisionEngine()
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
     private val control = "com.instagram.android"
     // Every static floor package (ADR-012 §7) plus Flint itself — never a hand-kept subset.
     private val floor = com.flint.peakfocus.core.model.SafetyFloor.STATIC_PACKAGES.toList() + self
@@ -255,7 +255,7 @@ class SafetyFloorEngineMatrixTest {
 class OpenLimitDipSurfacesTest {
 
     private val policy = OpenLimitPolicy()
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
 
     @Test fun `every dip surface is on the safety floor`() {
         assertTrue(SYSTEM_SURFACE_PACKAGES.all { com.flint.peakfocus.core.model.SafetyFloor.isProtected(it, self) })

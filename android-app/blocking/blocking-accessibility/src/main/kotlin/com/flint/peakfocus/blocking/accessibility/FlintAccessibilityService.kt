@@ -35,6 +35,7 @@ import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.Verdict
 import com.flint.peakfocus.core.model.EnforcementSignals
+import com.flint.peakfocus.core.model.FlintIdentity
 import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
@@ -178,7 +179,8 @@ class FlintAccessibilityService : AccessibilityService() {
             // Attaching our overlay must not replace its underlying foreground target. A real
             // MainActivity visit is different: stand the shield down, retaining a bounded
             // recovery check in case the underlying app returns without a fresh window event.
-            if (className == "$packageName.MainActivity") {
+            // The class follows the Kotlin namespace, not the applicationId (ADR-008).
+            if (className == FlintIdentity.MAIN_ACTIVITY_CLASS) {
                 timeForeground?.checkpoint(null)
                 lastForegroundPackage = pkg
                 lastForegroundUrl = null

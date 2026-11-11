@@ -1,8 +1,9 @@
 # Android Play submission package (draft)
 
-Prepared 2026-10-28 for `com.flint.peakfocus`. These files are editable owner
-drafts, not Console submissions or approval evidence. No Google account action,
-upload, signing enrollment, release, or publication has been performed.
+Prepared 2026-10-28 for `app.flint.focus` (re-keyed 2026-11-11 from
+`com.flint.peakfocus`). These files are editable owner drafts, not Console
+submissions or approval evidence. No Google account action, upload, signing
+enrollment, release, or publication has been performed.
 
 - [Target API assessment](target-api.md)
 - [Upload signing and key custody](signing.md)

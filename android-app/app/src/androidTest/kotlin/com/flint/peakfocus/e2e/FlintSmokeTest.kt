@@ -99,7 +99,7 @@ class FlintSmokeTest : FlintE2EFixture() {
     @Test fun exhaustedDailyBudgetShowsTimeLimitShield() {
         // The existing DEBUG receiver seeds an already exhausted zero-minute legacy budget.
         // This proves adapter -> cause -> shield wiring, not elapsed UsageStats accounting.
-        val result = shell("am broadcast -n $app/.SetBlocklistReceiver --es limitPkg $target --ei limitMin 0")
+        val result = shell("am broadcast -n $app/$ns.SetBlocklistReceiver --es limitPkg $target --ei limitMin 0")
         assertTrue(result, result.contains("Broadcast completed"))
         enableService()
         launchTarget()

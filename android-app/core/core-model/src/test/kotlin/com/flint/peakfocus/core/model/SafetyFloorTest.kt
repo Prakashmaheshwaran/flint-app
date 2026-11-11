@@ -7,7 +7,7 @@ import org.junit.Test
 
 class SafetyFloorTest {
 
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
 
     @Test fun `dialer, emergency, settings and permission surfaces are on the static floor`() {
         for (pkg in listOf(

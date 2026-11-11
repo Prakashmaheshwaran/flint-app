@@ -56,7 +56,8 @@ apply only where Orca is installed.
    `docs/verification/workspace-android-live-2026-10-28.md` for raw JSON and UI
    evidence. Missing-image guidance uses the executable sdkmanager on PATH, or
    generic SDK Manager guidance if unavailable. Android waits for
-   `sys.boot_completed=1` before attach and launches explicit `.MainActivity`;
+   `sys.boot_completed=1` before attach and launches explicit
+   `com.flint.peakfocus.MainActivity` (the installed package is `app.flint.focus`);
    Orca's activity-less monkey launch failed on the verified AVD. Reused Android
    attach can omit backend, accepted only after fresh backend inventory plus
    exact SDK AVD/boot checks. No helper PID was returned, so no helper ownership

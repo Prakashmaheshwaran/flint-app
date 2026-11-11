@@ -5,6 +5,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+### Android application ID re-key (2026-11-11)
+
+- **Breaking for existing installs:** the Android applicationId changed from
+  `com.flint.peakfocus` to `app.flint.focus` (debug and release; the instrumentation APK is
+  `app.flint.focus.test`), matching the iOS re-key in ADR-008. The public v0.1.0 debug APK
+  and any earlier preview install as a different app: they cannot update in place, and their
+  local rules, limits and history do not carry over. Recreate rules in the new app, then
+  uninstall the old one. The Gradle namespace and Kotlin packages stay `com.flint.peakfocus`.
+- **Android:** opening Flint's own MainActivity is now recognised by its class name rather
+  than `packageName + ".MainActivity"`, which the re-key would have broken; the editor's
+  safety floor names the new package through one shared `FlintIdentity` constant.
+
 ### v1 — integration/v1 (refreshed 2026-10-30)
 
 This is an integration summary, not a published v1 release or store/device acceptance.

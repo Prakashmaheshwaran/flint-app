@@ -13,7 +13,7 @@ from pathlib import Path
 
 ADB = os.environ.get('ADB', shutil.which('adb') or 'adb')
 SERIAL = os.environ.get('ANDROID_SERIAL', 'emulator-5554')
-PACKAGE = 'com.flint.peakfocus'
+PACKAGE = 'app.flint.focus'
 OUT = Path(os.environ.get('FLINT_UI_EVIDENCE', '/tmp/flint-control-insets-proof'))
 
 def adb(*args, input=None):
@@ -197,7 +197,7 @@ class Ui:
 
     def launch(self):
         adb('shell','am','force-stop',PACKAGE)
-        adb('shell','am','start','-W','-n',PACKAGE+'/.MainActivity')
+        adb('shell','am','start','-W','-n',PACKAGE+'/com.flint.peakfocus.MainActivity')
         self.root = None
         time.sleep(2)  # Let the first Compose frame settle after activity launch.
         self.dump()

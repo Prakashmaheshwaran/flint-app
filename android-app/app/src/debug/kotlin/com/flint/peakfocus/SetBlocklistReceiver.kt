@@ -9,10 +9,10 @@ import com.flint.peakfocus.core.data.LimitStore
 /**
  * DEBUG ONLY — sets the blocklist / schedule deterministically for testing via adb:
  *
- *   adb shell am broadcast -n com.flint.peakfocus/.SetBlocklistReceiver --es package <pkg>
- *   adb shell am broadcast -n com.flint.peakfocus/.SetBlocklistReceiver --ez clear true
- *   adb shell am broadcast -n com.flint.peakfocus/.SetBlocklistReceiver --ei schedStart 540 --ei schedEnd 1020
- *   adb shell am broadcast -n com.flint.peakfocus/.SetBlocklistReceiver --ez schedClear true
+ *   adb shell am broadcast -n app.flint.focus/com.flint.peakfocus.SetBlocklistReceiver --es package <pkg>
+ *   adb shell am broadcast -n app.flint.focus/com.flint.peakfocus.SetBlocklistReceiver --ez clear true
+ *   adb shell am broadcast -n app.flint.focus/com.flint.peakfocus.SetBlocklistReceiver --ei schedStart 540 --ei schedEnd 1020
+ *   adb shell am broadcast -n app.flint.focus/com.flint.peakfocus.SetBlocklistReceiver --ez schedClear true
  *
  * Lives in src/debug so it never ships in a release build.
  */

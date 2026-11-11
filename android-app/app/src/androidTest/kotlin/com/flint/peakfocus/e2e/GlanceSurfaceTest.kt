@@ -55,7 +55,7 @@ class GlanceSurfaceTest : FlintE2EFixture() {
     }
 
     private fun openFixture(state: String) {
-        assertTrue(shell("am start -W -n $app/.glance.GlanceFixtureActivity --es state $state").contains("Status: ok"))
+        assertTrue(shell("am start -W -n $app/$ns.glance.GlanceFixtureActivity --es state $state").contains("Status: ok"))
         // Open Flint can retire the prior host Activity. Each newly allocated widget needs
         // its own ordinary bind consent; never request an always-allow or privileged grant.
         val expected = when (state) {
