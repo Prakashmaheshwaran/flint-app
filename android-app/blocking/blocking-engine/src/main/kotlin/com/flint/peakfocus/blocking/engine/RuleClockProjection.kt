@@ -34,6 +34,21 @@ object RuleClockProjection {
             if (remaining == null) return RuleEvaluation(true, null, null)
             if (remaining > 0) {
                 val end = addBounded(now.wallEpochMs, remaining)
+                // F01: a Pomodoro parent projects its phase from trusted elapsed time. Its own
+                // rule enforces only during focus; the chain end stays the commitment end, and
+                // the next boundary is the phase end so the detector re-evaluates at rest start
+                // and rest end without an app switch.
+                val plan = rule.pomodoro
+                if (plan != null) {
+                    val elapsed = (plan.totalMs - remaining).coerceAtLeast(0L)
+                    val phase = plan.phaseAt(elapsed)
+                    return RuleEvaluation(
+                        active = phase?.isFocus == true,
+                        endsAtEpochMs = end,
+                        nextBoundaryEpochMs = phase?.let { addBounded(now.wallEpochMs, it.endMs - elapsed) } ?: end,
+                        phase = phase,
+                    )
+                }
                 return RuleEvaluation(true, end, end)
             }
         }

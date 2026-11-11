@@ -61,8 +61,8 @@ internal object StrictPrefsCodec {
     fun rules(encoded: String): List<BlockRule> {
         rows(encoded).forEach { row ->
             val f = row.split('|')
-            if (f.size > 11) future()
-            check(f.size == 10 || f.size == 11)
+            if (f.size > 12) future()
+            check(f.size in 10..12)
             atom(f[0], true); atom(f[1])
             check(f[2].toBooleanStrictOrNull() != null && f[4].toBooleanStrictOrNull() != null)
             level(f[3]); targets(f[5], f[6])
@@ -70,7 +70,13 @@ internal object StrictPrefsCodec {
             val start = f[8].toIntOrNull() ?: corrupt()
             val end = f[9].toIntOrNull() ?: corrupt()
             check((start == -1 && end == -1 && f[7].isEmpty()) || (start in 0..1439 && end in 0..1439))
-            if (f.size == 11) check(f[10].toLongOrNull()?.let { it == -1L || it >= 0 } == true)
+            if (f.size >= 11) check(f[10].toLongOrNull()?.let { it == -1L || it >= 0 } == true)
+            // F01 plan: `focus~rest~rounds[~longRest~every]`; an empty field means no plan.
+            if (f.size == 12 && f[11].isNotEmpty()) {
+                val sub = f[11].split('~')
+                check(sub.size == 3 || sub.size == 5)
+                check(sub.all { atom -> atom.toIntOrNull()?.let { it >= 0 } == true })
+            }
         }
         return PrefsCodec.decodeRules(encoded).also { result -> check(result.map { it.id }.distinct().size == result.size) }
     }

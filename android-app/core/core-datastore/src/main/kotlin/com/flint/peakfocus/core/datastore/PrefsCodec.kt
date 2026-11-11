@@ -9,6 +9,7 @@ import com.flint.peakfocus.core.model.BreakRequestState
 import com.flint.peakfocus.core.model.BreakSessionState
 import com.flint.peakfocus.core.model.DomainRef
 import com.flint.peakfocus.core.model.OpenLimit
+import com.flint.peakfocus.core.model.PomodoroPlan
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.TimeLimit
 
@@ -55,14 +56,42 @@ internal object PrefsCodec {
         .replace("%7C", FIELD)
         .replace("%25", "%")
 
-    // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end[|expiresAt]
-    // (expiresAt appended later for one-shot sessions; decode accepts 10-field legacy lines)
+    // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end[|expiresAt[|pomodoro]]
+    // (expiresAt appended for one-shot sessions; pomodoro appended for F01 Pomodoro parents.
+    // Decode accepts 10-field legacy lines and 11-field lines without a plan. An older build
+    // ignores the trailing plan field and decodes the rule as a plain Timer, which ends at the
+    // chain end — stricter than the chain, never weaker.)
 
     fun encodeRules(rules: List<BlockRule>): String =
         rules.joinToString(RECORD) { encodeRule(it) }
 
     fun decodeRules(encoded: String): List<BlockRule> =
         encoded.split(RECORD).filter { it.isNotBlank() }.mapNotNull { decodeRule(it) }
+
+    /** `focus~rest~rounds[~longRest~every]`; empty = no plan. */
+    private fun encodePomodoro(plan: PomodoroPlan): String = listOf(
+        plan.focusMinutes, plan.restMinutes, plan.rounds,
+    ).joinToString(SUB) + (plan.longRestMinutes?.let { long ->
+        SUB + long + SUB + plan.longRestEvery
+    } ?: "")
+
+    /** A malformed or out-of-range plan decodes as no plan: the rule stays a plain Timer. */
+    private fun decodePomodoro(raw: String): PomodoroPlan? {
+        if (raw.isEmpty()) return null
+        val sub = raw.split(SUB)
+        if (sub.size != 3 && sub.size != 5) return null
+        val focus = sub[0].toIntOrNull() ?: return null
+        val rest = sub[1].toIntOrNull() ?: return null
+        val rounds = sub[2].toIntOrNull() ?: return null
+        val longRest = if (sub.size == 5) sub[3].toIntOrNull() ?: return null else null
+        val every = if (sub.size == 5) sub[4].toIntOrNull() ?: return null else null
+        return try {
+            PomodoroPlan(focusMinutes = focus, restMinutes = rest, rounds = rounds,
+                longRestMinutes = longRest, longRestEvery = every)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
 
     private fun encodeRule(rule: BlockRule): String {
         val apps = rule.targets.apps.joinToString(ITEM) { app ->
@@ -82,12 +111,14 @@ internal object PrefsCodec {
             (rule.schedule?.startMinuteOfDay ?: NO_SCHEDULE).toString(),
             (rule.schedule?.endMinuteOfDay ?: NO_SCHEDULE).toString(),
             (rule.expiresAtEpochMs ?: NO_EXPIRY).toString(),
-        ).joinToString(FIELD)
+            // Trailing and optional: a 10/11-field line stays valid, and an empty field is
+            // written only for a plan-less rule so older builds keep reading today's format.
+        ).joinToString(FIELD) + (rule.pomodoro?.let { FIELD + encodePomodoro(it) } ?: "")
     }
 
     private fun decodeRule(line: String): BlockRule? {
         val f = line.split(FIELD)
-        if (f.size != 10 && f.size != 11) return null
+        if (f.size !in 10..12) return null
         val id = unescape(f[0])
         if (id.isEmpty()) return null
 
@@ -125,6 +156,7 @@ internal object PrefsCodec {
             breakLevel = decodeBreakLevel(f[3]),
             enabled = f[2].toBooleanStrictOrNull() ?: true,
             expiresAtEpochMs = f.getOrNull(10)?.toLongOrNull()?.takeIf { it != NO_EXPIRY },
+            pomodoro = f.getOrNull(11)?.let(::decodePomodoro),
         )
     }
 

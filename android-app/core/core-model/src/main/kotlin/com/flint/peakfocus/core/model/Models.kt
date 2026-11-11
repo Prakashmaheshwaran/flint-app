@@ -76,6 +76,12 @@ data class BlockRule(
     val breakLevel: BreakLevel = BreakLevel.EASY,
     val enabled: Boolean = true,
     val expiresAtEpochMs: Long? = null,
+    /**
+     * F01 Pomodoro parent: the frozen focus/rest plan accepted with this rule. Null for every
+     * plain Timer and rule. [expiresAtEpochMs] is the chain end; the current phase follows from
+     * the trusted elapsed time (see `RuleClockProjection`), never from wall time.
+     */
+    val pomodoro: PomodoroPlan? = null,
     /** Transient occurrence authority supplied by the editor bridge; never serialized. */
     val runtime: RuleRuntime? = null,
 ) {
