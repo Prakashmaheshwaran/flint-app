@@ -413,7 +413,7 @@ report were reconciled; an open PR, lane claim or unrelated green test is insuff
 | R-08 iOS removal guard | Explicit default-off captured consent and one derived finite-owner writer, positive pass release and legacy-store migration. | SOURCE-CLOSED by #226; OS effects/revocation and R08-08 corrupt/installing-owner retention remain DEVICE-PENDING. |
 | iOS required-reason API inventory | All six manifests and verifier now include SystemBootTime 35F9.1 for lock deadlines. | SOURCE-CLOSED by #230; final signed-archive re-inventory remains required. |
 | PC-84 Android terminal arbitration | First explicit terminal wins; it replaces a provisional unknown end atomically and suppresses conflicting owner plan/terminal replay. | SOURCE/BOUNDED EMULATOR slice closed by #227; legacy duplicates remain readable, no whole-history exactly-once claim. |
-| Android measurement copy | time-limit-measurement-unavailable is published but has no dedicated short-note/glance mapping. | OPEN follow-up, not dispatched; tested generic degraded fallback is current behavior. |
+| Android measurement copy | time-limit-measurement-unavailable now has a dedicated short note ("Time limits can't measure app use right now") and is contextual on the glance, like time-limits-need-usage-access; every other fault still degrades. | SOURCE-CLOSED by #248 (`TimeLimitMeasurementFallbackTest` PC-60); real-launcher widget/notification rendering remains DEVICE-PENDING. |
 | Android Path B reliability (P1 scope) | #193 removes startup/query work from Main, but observed ANR root cause and first-mount wait remain unproved. | PARTIAL; no low-end/OEM reliability guarantee. |
 
 **Coordinator release decisions:** R-12 is source-complete with Open acceptance enabled

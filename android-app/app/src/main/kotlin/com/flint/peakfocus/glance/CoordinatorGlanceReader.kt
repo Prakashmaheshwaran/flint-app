@@ -88,7 +88,11 @@ internal fun coordinatorGlanceReading(status: CoordinatorStatus): ProtectionRead
 }
 
 private val focusKinds = setOf(CoordinatorStatus.CauseKind.SESSION, CoordinatorStatus.CauseKind.TIMER)
-private val contextualReasons = listOf("path-b-backup-unavailable", "time-limits-need-usage-access")
+private val contextualReasons = listOf(
+    "path-b-backup-unavailable",
+    "time-limits-need-usage-access",
+    "time-limit-measurement-unavailable",
+)
 private fun displayName(name: String, kind: CoordinatorStatus.CauseKind) =
     CoordinatorStatus.sanitizeDisplayName(name).ifBlank { causeName(kind) }
 private fun causeName(kind: CoordinatorStatus.CauseKind) = when (kind) {
