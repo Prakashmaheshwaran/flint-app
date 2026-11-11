@@ -8,7 +8,7 @@ final class FocusHistoryModel: ObservableObject {
         #if DEBUG
         if let preview = FocusHistoryPreview.make() { return preview }
         #endif
-        return FocusHistoryModel()
+        return FocusHistoryModel(project: FlintProtectionHistoryProjection.projectLive)
     }()
 
     @Published private(set) var summary: FlintHistorySummary?
@@ -20,23 +20,28 @@ final class FocusHistoryModel: ObservableObject {
     private let sessionClock: FlintClock
     private let calendar: Calendar
     private let activeSession: () -> FlintActiveSession?
+    /// Projects break/pass intents committed by any process (host or extension) before reading.
+    private let project: ((FlintHistoryStore, FlintHistorySnapshot) -> Void)?
 
     init(sink: FlintHistorySink = .shared, clock: @escaping () -> Date = Date.init,
          sessionClock: FlintClock = .system,
          calendar: Calendar = .current,
          activeSession: @escaping () -> FlintActiveSession? = { FlintGroupStore()?.loadActiveSession() },
          isPreview: Bool = false, presentsCompletions: Bool = true,
-         acknowledgementKey: String = "flint.history.lastAcknowledgedCompletion") {
+         acknowledgementKey: String = "flint.history.lastAcknowledgedCompletion",
+         project: ((FlintHistoryStore, FlintHistorySnapshot) -> Void)? = nil) {
         self.sink = sink; self.clock = clock; self.calendar = calendar; self.activeSession = activeSession
         self.sessionClock = sessionClock
         self.isPreview = isPreview; self.presentsCompletions = presentsCompletions
         self.acknowledgementKey = acknowledgementKey
+        self.project = project
     }
 
     func refresh(completion: ((FlintHistorySummary) -> Void)? = nil) {
-        let now = clock(), calendar = calendar, active = activeSession()
+        let now = clock(), calendar = calendar, active = activeSession(), project = project
         sink.perform { [weak self] store in
-            let snapshot = FlintHistoryReconciler.reconcile(store: store, activeSession: active, now: now, calendar: calendar)
+            let snapshot = FlintHistoryReconciler.reconcile(store: store, activeSession: active, now: now,
+                                                            calendar: calendar, project: project)
             let summary = FlintHistoryAggregator.summarize(snapshot, activeSessionID: active?.id, now: now, calendar: calendar)
             DispatchQueue.main.async {
                 guard let self else { return }
