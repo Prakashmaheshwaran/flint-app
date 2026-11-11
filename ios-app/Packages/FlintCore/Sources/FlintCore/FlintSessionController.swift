@@ -1421,8 +1421,9 @@ public final class FlintSessionController {
             $0.unauthorizedSince = report.notAuthorized ? ($0.unauthorizedSince ?? now) : nil
         }
 
+        var zoneMoved = false
         if let store, session.endsAt != nil {
-            let zoneMoved = !FlintSessionAutoClearPlan.isCurrent(for: session, in: env.clock.calendar())
+            zoneMoved = !FlintSessionAutoClearPlan.isCurrent(for: session, in: env.clock.calendar())
             let missing = !env.registrar.registeredActivityNames().contains(session.monitorName)
             // A same-boot wall-clock change moved the registered wall end away from the logical
             // end: re-register so iOS ends it at the right moment (ADR-012 §9).
@@ -1458,8 +1459,10 @@ public final class FlintSessionController {
                 // A time-zone change or forward clock jump moved the rest carriers' wall
                 // instants: re-register the future ones from logical time, bounded by the
                 // existing clock-rearm budget (design §4).
-                repairPomodoroCarriers(current, plan: plan, in: store, now: now)
-                observePlannedRests(current, plan: plan, in: store, now: now)
+                repairPomodoroCarriers(current, plan: plan, in: store, now: now, timeZoneMoved: zoneMoved)
+                if let updated = store.loadActiveSession(), updated.id == current.id {
+                    observePlannedRests(updated, plan: plan, in: store, now: now)
+                }
             }
             stopOrphanPomodoroCarriers(keepingToken: Self.pomodoroToken(of: current.monitorName))
         } else {
@@ -1470,10 +1473,12 @@ public final class FlintSessionController {
     }
 
     /// Register the rest carriers that are missing for the chain's remaining rests, anchored to
-    /// the parent's logical times. Bounded by the clock-change re-arm budget so a device that
-    /// keeps dropping registrations cannot drain the shared pool.
+    /// the parent's logical times. A time-zone change re-registers the future carriers whose wall
+    /// components were computed in the old zone. Bounded by the clock-change re-arm budget so a
+    /// device that keeps dropping registrations cannot drain the shared pool.
     private func repairPomodoroCarriers(_ session: FlintActiveSession, plan: FlintPomodoroPlan,
-                                        in store: FlintSessionStateStoring, now: Date) {
+                                        in store: FlintSessionStateStoring, now: Date,
+                                        timeZoneMoved: Bool) {
         guard let elapsed = session.pomodoroElapsed(clock: env.clock),
               (session.clockRearmCount ?? 0) < Self.maximumClockChangeRearms else { return }
         let names = Self.pomodoroCarrierNames(monitorName: session.monitorName, plan: plan)
@@ -1483,11 +1488,16 @@ public final class FlintSessionController {
         var registeredAny = false
         for rest in plan.rests {
             // Only future rests are re-registered: a rest already under way has no boundary left
-            // to arm, and its phase is repaired by the shield write above (design §4).
-            guard anchor.addingTimeInterval(rest.start) > now,
-                  rest.index - 1 < names.count, !registered.contains(names[rest.index - 1]) else { continue }
+            // to arm, and its phase is repaired by the shield write above (design §4). After a
+            // time-zone change the existing registration lands on the wrong wall instant, so it
+            // is replaced too.
+            guard anchor.addingTimeInterval(rest.start) > now, rest.index - 1 < names.count else { continue }
+            let name = names[rest.index - 1]
+            guard timeZoneMoved || !registered.contains(name) else { continue }
+            // `DeviceActivityCenter` replaces the schedule for an existing name, so a zone repair
+            // re-registers in place without a window in which the boundary cannot fire.
             do {
-                try env.registrar.startMonitoring(names[rest.index - 1], plan: Self.pomodoroCarrierPlan(
+                try env.registrar.startMonitoring(name, plan: Self.pomodoroCarrierPlan(
                     rest: rest, start: anchor, calendar: env.clock.calendar(),
                     strategy: env.shortSessionStrategy))
                 registeredAny = true

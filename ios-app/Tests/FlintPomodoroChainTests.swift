@@ -405,6 +405,27 @@ final class FlintPomodoroSessionTests: XCTestCase {
         XCTAssertNotNil(store.active, "the live parent is untouched")
     }
 
+    func testATimeZoneChangeReRegistersTheFutureRestCarriersF01() throws {
+        let c = controller()
+        let session = try start(c, plan: plan)
+        let oldNames = carriers(session)
+        clock.advance(25 * 60 + 30) // inside rest 1
+        clock.timeZone = TimeZone(identifier: "UTC")!
+        let startedBefore = registrar.started.count
+        _ = c.reconcile()
+        let current = try XCTUnwrap(store.active)
+        XCTAssertNotEqual(current.monitorName, session.monitorName, "the parent end is re-registered")
+        let newNames = carriers(current)
+        XCTAssertEqual(newNames.count, 3)
+        let rearmed = Set(registrar.started.dropFirst(startedBefore).map(\.name))
+        XCTAssertFalse(rearmed.contains(newNames[0]), "the rest in progress has no boundary left to arm")
+        XCTAssertTrue(rearmed.contains(newNames[1]))
+        XCTAssertTrue(rearmed.contains(newNames[2]))
+        XCTAssertTrue(oldNames.allSatisfy(registrar.stopped.contains), "old-token carriers are stale")
+        XCTAssertTrue(registrar.registered.contains(newNames[1]))
+        XCTAssertTrue(registrar.registered.contains(newNames[2]))
+    }
+
     // MARK: History
 
     func testPlannedRestHistoryIsEmittedOnceDespiteDuplicateCallbacksF01() throws {
