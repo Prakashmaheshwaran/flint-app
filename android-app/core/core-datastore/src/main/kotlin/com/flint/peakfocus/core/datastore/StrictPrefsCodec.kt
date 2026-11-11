@@ -72,10 +72,21 @@ internal object StrictPrefsCodec {
             check((start == -1 && end == -1 && f[7].isEmpty()) || (start in 0..1439 && end in 0..1439))
             if (f.size >= 11) check(f[10].toLongOrNull()?.let { it == -1L || it >= 0 } == true)
             // F01 plan: `focus~rest~rounds[~longRest~every]`; an empty field means no plan.
+            // A non-empty field must be a valid plan. Anything else is an unknown future
+            // shape, never silently dropped into a plainer Timer.
             if (f.size == 12 && f[11].isNotEmpty()) {
                 val sub = f[11].split('~')
-                check(sub.size == 3 || sub.size == 5)
-                check(sub.all { atom -> atom.toIntOrNull()?.let { it >= 0 } == true })
+                if (sub.size != 3 && sub.size != 5) future()
+                val numbers = sub.map { it.toIntOrNull() ?: future() }
+                try {
+                    if (numbers.size == 3) com.flint.peakfocus.core.model.PomodoroPlan(
+                        focusMinutes = numbers[0], restMinutes = numbers[1], rounds = numbers[2])
+                    else com.flint.peakfocus.core.model.PomodoroPlan(
+                        focusMinutes = numbers[0], restMinutes = numbers[1], rounds = numbers[2],
+                        longRestMinutes = numbers[3], longRestEvery = numbers[4])
+                } catch (_: IllegalArgumentException) {
+                    future()
+                }
             }
         }
         return PrefsCodec.decodeRules(encoded).also { result -> check(result.map { it.id }.distinct().size == result.size) }
