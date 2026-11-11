@@ -61,9 +61,20 @@ public enum FlintOpenCredit {
         let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults,
                                            at: now.wall, migrating: false)
         let raw = defaults.object(forKey: FlintLedgerState.legacyOpenCreditKey)
+        // R2p2-N03: fresh-install bootstrap writes `[]` here before ledger creation, which the
+        // old presence check read as an established legacy setup and thereby made a never-used
+        // quota unavailable. The bootstrap receipt is the discriminator: a genuine legacy
+        // install (including a user who deleted their rules) has no such receipt and must keep
+        // the closed "lost established counter" refusal.
+        let openRules = defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue)
+        let bootstrappedEmpty = (openRules as? Data) == Data("[]".utf8)
+            && FlintRuleInitialization.receipt(in: defaults) != .absent
+            && !FlintRuleInitialization.hasDomainEvidence(
+                FlintRuleStoreKey.openLimits, in: defaults, activities: [],
+                ledger: nil, directory: nil)
+        let established = raw != nil || (openRules != nil && !bootstrappedEmpty)
         state.importLegacyOpenCredits(raw.map(FlintLegacyValue.value) ?? .absent,
-            targetKeys: rules.map(targetKeys), established: rules == nil ||
-                defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue) != nil || raw != nil,
+            targetKeys: rules.map(targetKeys), established: established,
             at: now, calendar: calendar)
     }
 

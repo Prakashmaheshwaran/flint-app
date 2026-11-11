@@ -82,6 +82,15 @@ public final class FlintShieldStore {
         }
     }
 
+    /// Positive native evidence that this store still restricts something: any shield or
+    /// Safari key a writer here sets. Read-only; used where a missing record must not be
+    /// mistaken for termination (R-20).
+    public var hasAppliedSettings: Bool {
+        store.shield.applications != nil || store.shield.applicationCategories != nil
+            || store.shield.webDomains != nil || store.shield.webDomainCategories != nil
+            || store.webContent.blockedByFilter != nil
+    }
+
     /// Clear all session-owned keys, including historical allow-list and Safari settings.
     /// The old denyAppRemoval value is retired ONLY by the validated derived migration;
     /// a whole-store clear here would release it even when another owner's read failed.

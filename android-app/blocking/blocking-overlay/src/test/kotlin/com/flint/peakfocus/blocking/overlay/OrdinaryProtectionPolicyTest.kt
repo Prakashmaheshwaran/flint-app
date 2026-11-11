@@ -165,4 +165,36 @@ class OrdinaryProtectionPolicyTest {
             assertTrue(focus.protection!!.ordinaryGrants.isEmpty())
         }
     }
+
+    @Test fun R2p2N01_timeLimitCommittedAfterTheClickStillBlocksInsteadOfGrantingABreak() {
+        // Display-time capture: no Time limit, so the reviewed scope is the rule only.
+        val before = snapshot()
+        val reviewed = input.copy(timeSpent = false)
+        val frozen = OrdinaryProtectionPolicy.frozenScopes(before, reviewed, emptyList(), now)!!
+
+        // Commit: a Hardcore Time Limit was added between the click and the transaction.
+        val committed = before.copy(times = listOf(TimeLimit("a", 0, BreakLevel.HARDCORE)),
+            editor = before.editor.copy(causes = before.editor.causes +
+                (timeCauseKey("a") to EditorCause("day", null, "UTC"))))
+
+        // The stale Boolean would have missed it; derivation from the committed snapshot
+        // changes the scope set, so the frozen click cannot join and the break is refused.
+        val denied = OrdinaryProtectionPolicy.request(committed, reviewed, id, now, emptyList(), frozen)
+        assertEquals(GrantResult.Denied, denied.result)
+        assertTrue(denied.focus.protection!!.ordinaryGrants.isEmpty())
+    }
+
+    @Test fun R16_importedLegacyHarderCauseStillPaysItsPreservedWait() {
+        // A migrated foreign occurrence carries legacyRights = true. Legacy editor/stop rights
+        // must not waive ordinary-break friction, so the first request still waits.
+        val rule = BlockRule("legacy-foreign", "Imported", BlockTargets(apps = setOf(AppRef("a"))),
+            breakLevel = BreakLevel.HARDER, expiresAtEpochMs = now.wallEpochMs + 600_000)
+        val original = snapshot().copy(rules = emptyList())
+        val foreign = listOf(rule)
+        val scopes = OrdinaryProtectionPolicy.frozenScopes(original, input, foreign, now)!!
+        val first = OrdinaryProtectionPolicy.request(original, input, id, now, foreign, scopes)
+        assertTrue(first.result is GrantResult.Pending)
+        assertEquals(60_000L, first.harder!!.pending!!.requiredMs)
+        assertTrue(first.focus.protection!!.ordinaryGrants.isEmpty())
+    }
 }

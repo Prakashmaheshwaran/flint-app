@@ -160,6 +160,9 @@ public protocol FlintSessionShielding: AnyObject {
     func applyBlockList(_ selection: FamilyActivitySelection) throws
     /// Releases session-owned settings. Removal denial belongs to the derived guard adapter.
     func clear()
+    /// True when the session-owned store still holds restrictions. Before the first session
+    /// generation exists, this contradicts an absent record, so it is not idle proof (R-20).
+    func retainsAppliedSettings() -> Bool
 }
 
 /// `DeviceActivityCenter` for the session's one-shot auto-clear.
@@ -1510,6 +1513,8 @@ final class LiveSessionShield: FlintSessionShielding {
 
 
     func clear() { store.clear() }
+
+    func retainsAppliedSettings() -> Bool { store.hasAppliedSettings }
 }
 
 final class LiveSessionRegistrar: FlintSessionActivityRegistering {
