@@ -148,6 +148,48 @@ struct BoneButtonStyle: ButtonStyle {
     }
 }
 
+/// Cancel · eyebrow title · Save, for the schedule and limit editors. At accessibility sizes the
+/// three no longer fit one row (each broke mid-word), so the title takes its own line.
+struct FlintEditorHeader: View {
+    let title: String
+    let canSave: Bool
+    let onCancel: () -> Void
+    let onSave: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack { cancel; Spacer(minLength: 8); save }
+                Text(title).flintEyebrow().accessibilityAddTraits(.isHeader)
+            }
+        } else {
+            HStack {
+                cancel
+                Spacer()
+                Text(title).flintEyebrow().accessibilityAddTraits(.isHeader)
+                Spacer()
+                save
+            }
+        }
+    }
+
+    private var cancel: some View {
+        Button("Cancel", action: onCancel)
+            .font(FlintFont.text(15, weight: .semibold))
+            .foregroundStyle(FlintBrand.mist)
+            .lineLimit(1)
+            .frame(minHeight: 44)
+    }
+
+    private var save: some View {
+        Button("Save", action: onSave)
+            .lineLimit(1)
+            .buttonStyle(BoneButtonStyle(height: 38))
+            .disabled(!canSave)
+    }
+}
+
 /// The secondary text action under a primary one ("Take a break", "Start another").
 struct QuietButtonStyle: ButtonStyle {
     var color: Color = FlintBrand.bone
@@ -170,7 +212,10 @@ struct GhostButtonStyle: ButtonStyle {
         configuration.label
             .font(FlintFont.text(13, weight: .semibold))
             .foregroundStyle(tint)
+            .multilineTextAlignment(.center)
+            // Wrapped labels at accessibility sizes keep clear of the capsule's rounded ends.
             .padding(.horizontal, 16)
+            .padding(.vertical, 6)
             .frame(minHeight: height)
             .overlay(Capsule().strokeBorder(tint == FlintBrand.bone ? FlintBrand.bone(0.18) : tint.opacity(0.5)))
             .contentShape(Capsule())
@@ -258,9 +303,14 @@ struct FlintSegmented<Value: Hashable>: View {
     @Binding var selection: Value
     var height: CGFloat = 40
     var compact = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HStack(spacing: compact ? 2 : 4) {
+        // Full-width tracks stack their options at accessibility sizes: three labels side by
+        // side ("Harder", "Hardcore", "Full Assist") broke mid-word.
+        let stacked = !compact && typeSize.isAccessibilitySize
+        let layout = stacked ? AnyLayout(VStackLayout(spacing: 4)) : AnyLayout(HStackLayout(spacing: compact ? 2 : 4))
+        layout {
             ForEach(options, id: \.value) { option in
                 let selected = option.value == selection
                 Button { selection = option.value } label: {
@@ -979,12 +1029,37 @@ extension View {
     }
 }
 
-/// Reserves room for the floating bar; two rows at accessibility sizes.
+/// Reserves room for the floating bar; two rows at accessibility sizes. Uses the bar's measured
+/// height when `RootView` provides it — at the largest sizes the two-row bar outgrows any constant.
 struct FlintTabBarSpacer: View {
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.flintTabBarHeight) private var barHeight
     var body: some View {
-        Color.clear.frame(height: typeSize.isAccessibilitySize ? 168 : 96)
+        Color.clear.frame(height: Self.height(measured: barHeight, accessibilitySize: typeSize.isAccessibilitySize))
     }
+
+    static func height(measured: CGFloat?, accessibilitySize: Bool) -> CGFloat {
+        let fallback: CGFloat = accessibilitySize ? 168 : 96
+        guard let measured, measured > 0 else { return fallback }
+        return max(fallback, measured + 16)
+    }
+}
+
+private struct FlintTabBarHeightKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    /// Height of the floating tab bar (including its bottom margin), measured by `RootView`.
+    var flintTabBarHeight: CGFloat? {
+        get { self[FlintTabBarHeightKey.self] }
+        set { self[FlintTabBarHeightKey.self] = newValue }
+    }
+}
+
+struct FlintTabBarHeightPreference: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 // MARK: - Today's hero scene

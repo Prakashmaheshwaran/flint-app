@@ -17,6 +17,7 @@ struct TodayView: View {
     @State private var health = FlintArmingHealth()
     @State private var observation: FlintProtectionObservation?
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.flintTabBarHeight) private var barHeight
 
     private var compact: Bool { typeSize.isAccessibilitySize }
 
@@ -45,7 +46,7 @@ struct TodayView: View {
                             .padding(.horizontal, 20)
                             .padding(.top, footerIsEmpty ? 0 : 20)
                     }
-                    .padding(.bottom, 112)
+                    .padding(.bottom, FlintTabBarSpacer.height(measured: barHeight, accessibilitySize: compact) + 16)
                     .frame(minHeight: geometry.size.height, alignment: .top)
                 }
                 .clipped()
@@ -114,7 +115,11 @@ struct TodayView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        // At accessibility sizes the status pill would truncate beside the wordmark; it takes
+        // its own line instead.
+        let layout = compact
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 10))
+        return layout {
             HStack(spacing: 8) {
                 FlintMark(size: 22)
                 Text("Flint")
@@ -122,7 +127,7 @@ struct TodayView: View {
                     .tracking(-0.3)
                     .foregroundStyle(FlintBrand.bone)
             }
-            Spacer(minLength: 8)
+            if !compact { Spacer(minLength: 8) }
             Button(action: onOpenRules) {
                 FlintDotPill(text: protectionPill.text, tint: protectionPill.tint,
                              dot: protectionPill.dot, icon: protectionPill.icon)
@@ -317,6 +322,7 @@ struct TodayView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("View in Rules")
+            .accessibilityInputLabels([Text("View"), Text("View in Rules")])
         }
     }
 

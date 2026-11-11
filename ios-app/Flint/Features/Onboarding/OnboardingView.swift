@@ -82,9 +82,14 @@ private struct WelcomeView: View {
             ("person.crop.circle.badge.xmark", "No account"),
             ("iphone", "Stays on your phone"),
         ]
-        return HStack(spacing: 8) {
+        // At accessibility sizes three side-by-side tiles break words mid-word, so they stack
+        // as full-width rows with the icon leading.
+        let large = typeSize.isAccessibilitySize
+        let tiles = large ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+        let tile = large ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 6))
+        return tiles {
             ForEach(items, id: \.label) { item in
-                VStack(spacing: 6) {
+                tile {
                     Image(systemName: item.icon)
                         .font(.system(size: 17, weight: .regular))
                         .foregroundStyle(FlintBrand.emberText)
@@ -92,10 +97,11 @@ private struct WelcomeView: View {
                     Text(item.label)
                         .font(FlintFont.text(12, weight: .semibold, relativeTo: .caption))
                         .foregroundStyle(FlintBrand.bone)
-                        .multilineTextAlignment(.center)
+                        .multilineTextAlignment(large ? .leading : .center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: large ? .leading : .center)
+                .padding(.horizontal, large ? 10 : 0)
                 .padding(.vertical, 12)
                 .padding(.horizontal, 6)
                 .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(FlintBrand.bone(0.06)))
@@ -193,6 +199,7 @@ private struct PermissionsView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Skip setup for now")
+                            .accessibilityInputLabels([Text("Not now"), Text("Skip setup for now")])
                             .accessibilityIdentifier("onboarding.skip")
                         }
                         .frame(maxWidth: .infinity)
@@ -226,33 +233,46 @@ private struct PermissionsView: View {
 
     private func permissionCard(symbol: String, title: String, detail: String,
                                 badge: LocalizedStringKey, highlighted: Bool) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(highlighted ? FlintBrand.ember.opacity(0.14) : FlintBrand.bone(0.07))
-                Image(systemName: symbol)
-                    .font(.system(size: 19, weight: .regular))
-                    .foregroundStyle(highlighted ? FlintBrand.ember : FlintBrand.mist)
+        let icon = ZStack {
+            Circle().fill(highlighted ? FlintBrand.ember.opacity(0.14) : FlintBrand.bone(0.07))
+            Image(systemName: symbol)
+                .font(.system(size: 19, weight: .regular))
+                .foregroundStyle(highlighted ? FlintBrand.ember : FlintBrand.mist)
+        }
+        .frame(width: 44, height: 44)
+        .accessibilityHidden(true)
+        let copy = VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(FlintFont.text(15, weight: .semibold))
+                .foregroundStyle(FlintBrand.bone)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(detail)
+                .font(FlintFont.text(13))
+                .foregroundStyle(FlintBrand.mist)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        let pill = Text(badge)
+            .font(FlintFont.text(11, weight: .semibold, relativeTo: .caption2))
+            .foregroundStyle(highlighted ? FlintBrand.emberText : FlintBrand.mist)
+            .padding(.horizontal, 8)
+            .frame(minHeight: 24)
+            .background(Capsule().fill(highlighted ? FlintBrand.ember.opacity(0.16) : FlintBrand.bone(0.07)))
+            .fixedSize()
+        return Group {
+            if typeSize.isAccessibilitySize {
+                // Side by side, the icon and badge leave the copy a few characters per line.
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) { icon; Spacer(minLength: 8); pill }
+                    copy
+                }
+            } else {
+                HStack(spacing: 14) {
+                    icon
+                    copy
+                    Spacer(minLength: 8)
+                    pill
+                }
             }
-            .frame(width: 44, height: 44)
-            .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(FlintFont.text(15, weight: .semibold))
-                    .foregroundStyle(FlintBrand.bone)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(detail)
-                    .font(FlintFont.text(13))
-                    .foregroundStyle(FlintBrand.mist)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            Text(badge)
-                .font(FlintFont.text(11, weight: .semibold, relativeTo: .caption2))
-                .foregroundStyle(highlighted ? FlintBrand.emberText : FlintBrand.mist)
-                .padding(.horizontal, 8)
-                .frame(minHeight: 24)
-                .background(Capsule().fill(highlighted ? FlintBrand.ember.opacity(0.16) : FlintBrand.bone(0.07)))
-                .fixedSize()
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -264,7 +284,9 @@ private struct PermissionsView: View {
 
     @ViewBuilder private var notificationActions: some View {
         if notifications.status == .notDetermined && !skippedNotifications {
-            HStack(spacing: 8) {
+            let layout = typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+            layout {
                 Button(notifications.isRequesting ? "Requesting…" : "Allow notifications", action: notifications.request)
                     .buttonStyle(GhostButtonStyle(tint: FlintBrand.bone, height: 40))
                     .disabled(notifications.isRequesting)
@@ -274,6 +296,7 @@ private struct PermissionsView: View {
                     .foregroundStyle(FlintBrand.mist)
                     .frame(minHeight: 40)
                     .accessibilityLabel("Skip optional notifications")
+                    .accessibilityInputLabels([Text("Not now"), Text("Skip optional notifications")])
                     .accessibilityIdentifier("onboarding.notifications.skip")
             }
             .frame(maxWidth: .infinity, alignment: .leading)

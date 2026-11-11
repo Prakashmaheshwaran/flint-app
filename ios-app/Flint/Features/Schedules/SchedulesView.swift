@@ -565,6 +565,7 @@ struct RulesView: View {
 /// overwriting the draft's throwaway id.
 struct ScheduleEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private let existingID: String?
     private let existingEnabled: Bool
@@ -619,25 +620,15 @@ struct ScheduleEditor: View {
         ZStack {
             FlintBrand.ground.ignoresSafeArea()
             VStack(spacing: 0) {
-                HStack {
-                    Button("Cancel") { dismiss() }
-                        .font(FlintFont.text(15, weight: .semibold))
-                        .foregroundStyle(FlintBrand.mist)
-                        .frame(minHeight: 44)
-                    Spacer()
-                    Text("Schedule").flintEyebrow()
-                    Spacer()
-                    Button("Save") { save() }
-                        .buttonStyle(BoneButtonStyle(height: 38))
-                        .disabled(!canSave)
-                }
-                .padding(.top, 14)
+                FlintEditorHeader(title: "Schedule", canSave: canSave, onCancel: { dismiss() }, onSave: { save() })
+                    .padding(.top, 14)
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Name").font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                             TextField("", text: $name, prompt: Text("Laser Focus").foregroundColor(FlintBrand.faint))
+                                .accessibilityLabel("Name")
                                 .font(FlintFont.text(28, weight: .bold, relativeTo: .title))
                                 .tracking(-0.5)
                                 .foregroundStyle(FlintBrand.bone)
@@ -647,7 +638,8 @@ struct ScheduleEditor: View {
                         .padding(.horizontal, 4)
                         .padding(.top, 16)
 
-                        HStack(spacing: 10) {
+                        // Side by side, the clock digits break at accessibility sizes.
+                        (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))) {
                             timeCard("Starts", start) { editingTime = .start }
                             timeCard("Ends", end) { editingTime = .end }
                         }

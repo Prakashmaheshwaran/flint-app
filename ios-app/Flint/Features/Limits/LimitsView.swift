@@ -166,6 +166,7 @@ struct LimitsView: View {
 /// M15's app limit editor: the app, the daily allowance dial, the tier it falls back to.
 struct LimitEditor: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private let existingID: String?
     private let existingEnabled: Bool
@@ -197,19 +198,9 @@ struct LimitEditor: View {
         ZStack {
             FlintBrand.ground.ignoresSafeArea()
             VStack(spacing: 0) {
-                HStack {
-                    Button("Cancel") { dismiss() }
-                        .font(FlintFont.text(15, weight: .semibold))
-                        .foregroundStyle(FlintBrand.mist)
-                        .frame(minHeight: 44)
-                    Spacer()
-                    Text("App limit").flintEyebrow()
-                    Spacer()
-                    Button("Save") { save() }
-                        .buttonStyle(BoneButtonStyle(height: 38))
-                        .disabled(selectionIssue != nil)
-                }
-                .padding(.top, 14)
+                FlintEditorHeader(title: "App limit", canSave: selectionIssue == nil,
+                                  onCancel: { dismiss() }, onSave: { save() })
+                    .padding(.top, 14)
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
@@ -229,9 +220,13 @@ struct LimitEditor: View {
                                         .foregroundStyle(FlintBrand.mist)
                                 }
                                 Spacer(minLength: 8)
-                                Text("Change")
-                                    .font(FlintFont.text(13, weight: .semibold))
-                                    .foregroundStyle(FlintBrand.mist)
+                                // The subtitle already says how to change it; at accessibility
+                                // sizes this trailing label broke the title mid-word.
+                                if !typeSize.isAccessibilitySize {
+                                    Text("Change")
+                                        .font(FlintFont.text(13, weight: .semibold))
+                                        .foregroundStyle(FlintBrand.mist)
+                                }
                             }
                             .padding(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -245,6 +240,7 @@ struct LimitEditor: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Name").font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                             TextField("", text: $name, prompt: Text("Social").foregroundColor(FlintBrand.faint))
+                                .accessibilityLabel("Name")
                                 .font(FlintFont.text(24, weight: .bold, relativeTo: .title2))
                                 .foregroundStyle(FlintBrand.bone)
                                 .frame(minHeight: 44)

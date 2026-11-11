@@ -34,6 +34,7 @@ struct EmergencyPassSheet: View {
                         Spacer()
                         Button("Done", action: onKeep).buttonStyle(GhostButtonStyle(height: 38))
                             .accessibilityLabel("Keep focusing")
+                            .accessibilityInputLabels([Text("Done"), Text("Keep focusing")])
                     }
                     VStack(alignment: .leading, spacing: 0) {
                         ZStack {

@@ -26,6 +26,7 @@ struct RootView: View {
     @StateObject private var session = SessionViewModel()
     @State private var tab: FlintTab = .today
     @State private var showStart = false
+    @State private var tabBarHeight: CGFloat?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -97,10 +98,15 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
+            .environment(\.flintTabBarHeight, tabBarHeight)
 
             // The floating pill bar sits over the content, as in M03/M12/M13/M16.
             FlintTabBar(selection: $tab)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: FlintTabBarHeightPreference.self, value: proxy.size.height)
+                })
         }
+        .onPreferenceChange(FlintTabBarHeightPreference.self) { tabBarHeight = $0 }
         .background {
             // Hosted outside the clipped tab content so Insights' decoration can paint the top
             // safe-area band without sizing any viewport.

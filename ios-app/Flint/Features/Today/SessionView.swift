@@ -14,7 +14,11 @@ struct SessionView: View {
     var body: some View {
         ZStack {
             EmberLandscape(horizonOffset: 8, orbCenter: nil)
-            SunArc(progress: vm.progress)
+            // The arc is laid out on the 390-pt artboard; at accessibility sizes the enlarged
+            // countdown and captions sit where the orb passes, so it is left out (as on M02).
+            if !typeSize.isAccessibilitySize {
+                SunArc(progress: vm.progress)
+            }
 
             if let active = vm.active {
                 VStack(spacing: 0) {
@@ -281,7 +285,9 @@ struct SunArc: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var breathe = false
 
-    private let p0 = CGPoint(x: 50, y: 470), p1 = CGPoint(x: 195, y: 90), p2 = CGPoint(x: 340, y: 470)
+    // Apex control at y 140 (was 90): mid-session the orb rose behind the "ends at" caption,
+    // grey on ember. At 140 its top edge stays clear of the caption at t = 0.5.
+    private let p0 = CGPoint(x: 50, y: 470), p1 = CGPoint(x: 195, y: 140), p2 = CGPoint(x: 340, y: 470)
 
     var body: some View {
         GeometryReader { geo in

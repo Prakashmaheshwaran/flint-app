@@ -325,7 +325,10 @@ struct StartFocusSheet: View {
                     Circle().fill(selected ? FlintBrand.ember : .clear).frame(width: 10, height: 10)
                 }
                 .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
+                // At accessibility sizes a trailing badge leaves the hint a few characters per
+                // line, so it moves under the copy.
+                let large = typeSize.isAccessibilitySize
+                VStack(alignment: .leading, spacing: large ? 6 : 2) {
                     Text(title(for: level))
                         .font(FlintFont.text(15, weight: .semibold))
                         .foregroundStyle(FlintBrand.bone)
@@ -333,16 +336,11 @@ struct StartFocusSheet: View {
                         .font(FlintFont.text(12))
                         .foregroundStyle(FlintBrand.mist)
                         .fixedSize(horizontal: false, vertical: true)
+                    if large { levelBadge(level, selected: selected) }
                 }
                 .multilineTextAlignment(.leading)
                 Spacer(minLength: 8)
-                Text(badge(for: level))
-                    .font(FlintFont.text(11, weight: .semibold, relativeTo: .caption2))
-                    .foregroundStyle(selected ? FlintBrand.emberText : FlintBrand.mist)
-                    .padding(.horizontal, 8)
-                    .frame(minHeight: 22)
-                    .background(Capsule().fill(selected ? FlintBrand.ember.opacity(0.18) : FlintBrand.bone(0.06)))
-                    .fixedSize()
+                if !large { levelBadge(level, selected: selected) }
             }
             .padding(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14))
             .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
@@ -355,6 +353,16 @@ struct StartFocusSheet: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func levelBadge(_ level: BreakLevel, selected: Bool) -> some View {
+        Text(badge(for: level))
+            .font(FlintFont.text(11, weight: .semibold, relativeTo: .caption2))
+            .foregroundStyle(selected ? FlintBrand.emberText : FlintBrand.mist)
+            .padding(.horizontal, 8)
+            .frame(minHeight: 22)
+            .background(Capsule().fill(selected ? FlintBrand.ember.opacity(0.18) : FlintBrand.bone(0.06)))
+            .fixedSize()
     }
 
     private func title(for level: BreakLevel) -> String {

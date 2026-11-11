@@ -178,14 +178,17 @@ struct SleepModeView: View {
 
     @ViewBuilder private var status: some View {
         if let issue = vm.protectionIssue {
-            HStack(spacing: 10) {
+            // Beside the Retry button the message broke mid-word at accessibility sizes.
+            let large = dynamicTypeSize.isAccessibilitySize
+            (large ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))) {
                 Label("Needs attention — \(issue)", systemImage: "exclamationmark.triangle")
                     .font(FlintFont.text(13)).foregroundStyle(FlintBrand.danger)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
+                if !large { Spacer(minLength: 8) }
                 Button("Retry") { vm.retryRegistration() }
                     .buttonStyle(GhostButtonStyle(height: 36))
                     .accessibilityLabel("Retry Sleep registration")
+                    .accessibilityInputLabels([Text("Retry"), Text("Retry Sleep registration")])
             }
         } else if let note = vm.allowListNote {
             Label("Needs attention — \(note) Sleep keeps running as saved until you change it.",
