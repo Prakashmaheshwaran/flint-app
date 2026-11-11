@@ -178,8 +178,15 @@ final class SessionViewModel: ObservableObject {
     /// "7 apps · 2 sites" — what the selection blocks, in the design's words.
     var selectionSummary: String { Self.summary(of: selection) }
 
-    /// The targets the next start uses: the allow list's kept apps, or the block list.
-    var startSelection: FamilyActivitySelection { allowListMode ? allowListSelection : selection }
+    /// The targets the next start uses: the allow list's kept apps, or the block list. An allow
+    /// list's exceptions are individually picked apps only (as the controller enforces), so its
+    /// category and website picks are never counted, shown or sent as kept apps.
+    var startSelection: FamilyActivitySelection {
+        guard allowListMode else { return selection }
+        var apps = FamilyActivitySelection()
+        apps.applicationTokens = allowListSelection.applicationTokens
+        return apps
+    }
 
     /// What would stop the next start, using the same validation the controller enforces. An
     /// allow list with no app is refused (it would shield everything Screen Time can shield).

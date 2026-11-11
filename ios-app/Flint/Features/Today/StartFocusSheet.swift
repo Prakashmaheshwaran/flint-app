@@ -44,7 +44,7 @@ struct StartFocusSheet: View {
                             groupChips.padding(.top, 12)
                         }
                         if vm.allowListMode {
-                            Text("Only individually picked apps stay open. Everything else Screen Time can block is blocked; website and category picks are ignored.")
+                            Text("Only individually picked apps stay open. Everything else Screen Time can block is blocked, including websites; category and website picks aren't kept open.")
                                 .flintSecondary(12)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .lineSpacing(3)

@@ -139,6 +139,9 @@ struct RulesView: View {
     // MARK: Resting now
 
     private var restingTargets: [PickedTarget] {
+        // An Allow List session keeps its picks available and blocks everything else: there is
+        // no resting set to draw, and a concurrent schedule's picks must not stand in for it.
+        if activeSession?.isAllowList == true { return [] }
         if let selection = restingSelection, !selection.flintPickedTargets.isEmpty {
             return selection.flintPickedTargets
         }

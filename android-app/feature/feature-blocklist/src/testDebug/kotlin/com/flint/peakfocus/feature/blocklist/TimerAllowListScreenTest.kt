@@ -48,7 +48,7 @@ class TimerAllowListScreenTest {
             }
         }
         compose.onNodeWithText("2 apps allowed").assertExists()
-        compose.onNodeWithText("Everything else is blocked while this runs. Calling, Home, Settings and Flint stay available.")
+        compose.onNodeWithText("Every other app is blocked while this runs. Calling, Home, Settings and Flint stay available.")
             .assertExists()
         compose.onAllNodesWithText("resting", substring = true, ignoreCase = true).assertCountEquals(0)
         compose.onNodeWithText("Block list").assertExists().performScrollTo().performClick()
@@ -77,7 +77,7 @@ class TimerAllowListScreenTest {
             }
         }
         compose.onNodeWithText("Allow list · 2 apps allowed").assertIsDisplayed()
-        compose.onNodeWithText("Everything else is blocked").assertIsDisplayed()
+        compose.onNodeWithText("Every other app is blocked").assertIsDisplayed()
         compose.onAllNodesWithText("resting", substring = true, ignoreCase = true).assertCountEquals(0)
         compose.onAllNodesWithText("Locked until it ends").assertCountEquals(0)
     }

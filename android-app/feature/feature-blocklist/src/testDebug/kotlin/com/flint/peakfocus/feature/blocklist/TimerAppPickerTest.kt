@@ -76,7 +76,7 @@ class TimerAppPickerTest {
             )
         }
         compose.onNodeWithText("What stays available").assertExists()
-        compose.onNodeWithText("Everything else is blocked while this timer runs.").assertExists()
+        compose.onNodeWithText("Every other app is blocked while this timer runs.").assertExists()
         // The picker's own floor note already says these governed surfaces are never blocked.
         compose.onAllNodesWithText("What rests").assertCountEquals(0)
     }

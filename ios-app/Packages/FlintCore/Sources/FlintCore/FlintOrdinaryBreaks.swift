@@ -10,6 +10,10 @@ public struct FlintOrdinaryBreakPreview: Equatable {
     public let message: String
     public var isActionable: Bool { kind == .confirm || kind == .wait }
     public static let unavailable = Self(kind: .unavailable, message: "Access unavailable")
+    /// The designed scope limit, not a fault: an Allow List session has no frozen blocked-target
+    /// set a break could name.
+    public static let unavailableForAllowList = Self(kind: .unavailable,
+        message: "Breaks aren't available during an Allow List session.")
 }
 
 public struct FlintOrdinaryBreakStatus {
@@ -101,10 +105,10 @@ public enum FlintOrdinaryBreaks {
 
     public static func previewForCurrentSession() -> FlintOrdinaryBreakPreview {
         guard case let .success(state)? = FlintProtectionLedger.appGroup()?.peek(),
-              let group = FlintGroupStore(), let session = group.loadActiveSession(),
-              // Same floor as `requestForCurrentSession`: no nameable break scope for an Allow List.
-              !session.isAllowList,
-              let selection = group.loadSessionSelection(sessionID: session.id), let scope = try? scope(selection),
+              let group = FlintGroupStore(), let session = group.loadActiveSession() else { return .unavailable }
+        // Same floor as `requestForCurrentSession`: no nameable break scope for an Allow List.
+        if session.isAllowList { return .unavailableForAllowList }
+        guard let selection = group.loadSessionSelection(sessionID: session.id), let scope = try? scope(selection),
               let context = context(state, at: .init(clock: .system)),
               context.canRelease(scope) else { return .unavailable }
         return preview(scope: scope, context: context, grants: state.ordinaryGrants, clock: .system)

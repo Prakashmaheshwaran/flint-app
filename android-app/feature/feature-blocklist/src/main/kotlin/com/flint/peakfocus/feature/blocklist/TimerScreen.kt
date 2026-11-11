@@ -272,7 +272,7 @@ fun TimerScreen(
             text = {
                 Column {
                     Text(
-                        if (allowList) "These apps stay available until the timer ends. Everything else is blocked."
+                        if (allowList) "These apps stay available until the timer ends. Every other app is blocked."
                         else "This selection stays fixed until the timer ends.",
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -309,7 +309,7 @@ internal fun TimerAppPicker(
     AppPickerScreen(
         appsState = appsState,
         title = if (allowListMode) "What stays available" else "What rests",
-        subtitle = if (allowListMode) "Everything else is blocked while this timer runs." else null,
+        subtitle = if (allowListMode) "Every other app is blocked while this timer runs." else null,
         multiSelect = true,
         initiallySelected = initiallySelected,
         onConfirm = onConfirm,
@@ -944,7 +944,7 @@ internal fun StartFocusSheet(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             )
             Text(
-                if (allowListMode) "Everything else is blocked while this runs. Calling, Home, Settings and Flint stay available."
+                if (allowListMode) "Every other app is blocked while this runs. Calling, Home, Settings and Flint stay available."
                 else "Only the apps above are blocked. Calling, Home, Settings and Flint stay available.",
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                 color = FlintPalette.Mist,
@@ -1202,7 +1202,7 @@ private fun SessionRestCard(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    if (allowList) "Everything else is blocked" else "Locked until it ends",
+                    if (allowList) "Every other app is blocked" else "Locked until it ends",
                     style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp),
                 )
                 Text(
