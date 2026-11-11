@@ -49,7 +49,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -248,7 +247,9 @@ private fun PinGateScreen(
             .focusGroup()
             .focusProperties { exit = { FocusRequester.Cancel } },
     ) {
-        EmberLandscape(horizonOffset = 20f, orbCenter = Offset(195f, 470f), orbRadius = 64f)
+        // No ember orb: the PIN, Unlock and recovery controls cross its band at every font scale,
+        // and light text over the orb fails contrast (the Today/session scenes do the same).
+        EmberLandscape(horizonOffset = 20f, orbCenter = null)
         Column(
             Modifier
                 .fillMaxSize()
