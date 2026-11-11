@@ -26,8 +26,16 @@ class OverlayController(private val context: Context) {
 
     fun isShowing(): Boolean = current != null
 
-    fun show(content: View) {
-        if (current != null || !canShow()) return
+    /**
+     * Attach [content]; true only when this call's view is the one attached. A revoked grant
+     * between [canShow] and addView (or any WindowManager rejection) returns false instead
+     * of crashing the Main thread, so the caller's fallback and health report apply.
+     */
+    fun show(content: View): Boolean {
+        // Unchanged pre-R-30 contract: the singleton window is already covering the screen
+        // and the coordinator's detach removes whichever view is current.
+        if (current != null) return true
+        if (!canShow()) return false
         @Suppress("DEPRECATION")
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -42,9 +50,10 @@ class OverlayController(private val context: Context) {
             PixelFormat.OPAQUE,
         ).apply { gravity = Gravity.CENTER }
 
-        wm.addView(content, params)
+        if (runCatching { wm.addView(content, params) }.isFailure) return false
         current = content
         recoveryFocusYielded = false
+        return true
     }
 
     fun hide() {

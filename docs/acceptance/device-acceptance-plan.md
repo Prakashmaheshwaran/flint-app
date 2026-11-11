@@ -25,10 +25,17 @@ feature `BLOCKED`, with its issue/PR, rather than executing an obsolete substitu
   retention past end with positive committed-pass release; no OS effect is proven by assignment.
 - **Android:** force-stop unbinds Accessibility. #173/#229 refuse Timer arming without a live
   detector; test setup re-grants do not prove automatic recovery. Include overlay mount
-  failure and truthful Degraded health in D10/D12; the R-30 remainder is still open.
+  failure and truthful Degraded health in D10/D12. #249 source-closes mount-failure health
+  (`block-surface-mount-failed` / `block-surface-fallback-only`, Armed withheld); D10/D12 must
+  still check a silently dropped `BlockActivity` fallback and real `BadTokenException` timing.
 - **Time/reset:** #225 trusted Android saved-zone days and retained usage are source-closed;
-  D13/D14 still require exact-device clock/reboot/measurement/migration evidence. Dedicated
-  `time-limit-measurement-unavailable` UI/glance copy is absent; generic degraded is current.
+  D13/D14 still require exact-device clock/reboot/measurement/migration evidence.
+  #248 adds dedicated `time-limit-measurement-unavailable` copy ("Time limits can't measure
+  app use right now") and keeps primary protection Active on the glance; verify it in D19.
+- **iOS migration (#251):** R-07 anchorless records re-anchor at the retained start; R-20 reads a
+  v0.1.0 install that still holds session shield keys with no session as *unavailable* (shield
+  kept, recovery via global recovery) rather than idle; R-04 restores an open-ended predecessor
+  behind an unapplied replacement. D13/D14 must cover each on a signed upgrade.
 - Open source findings in the [wind-down ledger](v1-capability-ledger.md#open-at-v1-wind-down)
   can block a case. Keep it BLOCKED until a fixing build is selected; no whole-case pass
   follows from a PC-tagged fixture.

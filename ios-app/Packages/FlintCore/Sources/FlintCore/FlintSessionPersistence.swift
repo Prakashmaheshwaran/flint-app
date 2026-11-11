@@ -52,9 +52,16 @@ final class FlintSessionPersistence {
         guard let ledger = env.ledger() else { return nil }
         let raw = store.loadActiveSession()
         if raw == nil && store.hasActiveSessionRecord() { return nil }
+        // R-20: before any session generation exists (a legacy ledger, or the initial
+        // tombstone of a ledger created for a pre-ledger install), an absent projection is
+        // idle only without native contradiction. Session-owned restrictions still applied
+        // mean a running legacy session lost its record; retain them as unavailable rather
+        // than manufacture idle and clear them. A normal legacy end clears this store.
+        let retainedNative = raw == nil && env.shield.retainsAppliedSettings()
         let result = ledger.transaction { state -> FlintSessionAuthority? in
             var authority = state.sessionAuthority
             if authority == nil && (state.version >= 3 || state.sessionAuthorityVersion != nil) { return nil }
+            if retainedNative && authority?.latest == nil { return nil }
             // Shipped legacy ledgers had no generation field. Upgrade a positively readable
             // legacy absence once; after this migration only the latest tombstone proves idle.
             if authority == nil, store.isProtectionStateReadable() {
@@ -155,9 +162,16 @@ final class FlintSessionPersistence {
                     // never clear/reapply unknown targets or stop its dependable end.
                     var adopted = FlintSessionAuthority(initializedAt: previous.startedAt)
                     adopted.adopt(previous)
-                    guard store.isProtectionStateReadable(), let raw = store.loadActiveSession(),
-                          let known = adopted.observedSession(matching: raw, clock: env.clock),
-                          !known.isLogicallyExpired(clock: env.clock) else { return false }
+                    guard store.isProtectionStateReadable(), let raw = store.loadActiveSession() else { return false }
+                    // R-04: the projection may instead be this exact unapplied replacement,
+                    // saved before its native application. The generation's own predecessor is
+                    // then the positively known owner; restore it so ordinary stop and Emergency
+                    // Pass scope can reach it. A missing or foreign projection still refuses.
+                    let known: FlintActiveSession
+                    if let current = adopted.observedSession(matching: raw, clock: env.clock) { known = current }
+                    else if generation.matches(raw), FlintSessionAuthority.sameCommitment(raw, generation.session) { known = observed }
+                    else { return false }
+                    guard !known.isLogicallyExpired(clock: env.clock) else { return false }
                     let restored = known.checkpointed(clock: env.clock)
                     store.saveActiveSession(restored)
                     guard store.loadActiveSession() == restored,

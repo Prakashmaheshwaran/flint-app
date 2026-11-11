@@ -16,7 +16,9 @@ class GlanceStartupWidgetTest : FlintE2EFixture() {
         visible(By.text("Protection state unavailable"))
         visible(By.text("Emergency Pass unavailable"))
         screenshot("installed-widget-unavailable")
-        visible(By.text("Protection state unavailable")).click()
+        // The widget's first rows can be clipped by the host view on a single
+        // render; tap a row that is actually on the rendered surface.
+        visible(By.text("Open Flint to check")).click()
         visible(By.text("Today"))
         screenshot("installed-widget-open-flint")
     }
