@@ -51,7 +51,8 @@ final class FlintRemovalGuardIntegrationTests: XCTestCase {
     func testInactiveTemplateNeverArmsAndCapturesOnlyAtAcceptedStart() throws {
         let h = try RemovalGuardHarness(); defer { h.clean() }
         var future = h.rules.schedule(tier: .hardcore)
-        future.oneShot = .init(start: h.rules.now.addingTimeInterval(600), end: h.rules.now.addingTimeInterval(1200))
+        // 15 minutes: iOS's DeviceActivity floor, so the new authoring gate accepts this window.
+        future.oneShot = .init(start: h.rules.now.addingTimeInterval(600), end: h.rules.now.addingTimeInterval(1500))
         let rule = try h.save(future)
         try h.optIn()
         XCTAssertNil(rule.protection?.removalGuard)

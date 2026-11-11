@@ -78,6 +78,18 @@ final class FlintRuleArbiter {
                 if let proposed = mutation.proposed {
                     guard proposed.id == mutation.id else { return .invalid("Rule identity changed.") }
                     if let issue = proposed.validationIssue { return .invalid(issue) }
+                    if let window = proposed.absoluteWindow, window != old?.absoluteWindow {
+                        // A one-time window may be authored any distance ahead, but a NEW or
+                        // CHANGED one must still be able to arm: a start that already passed can
+                        // never run, the DeviceActivity floor bounds the length, and a day or more
+                        // is not a finite occurrence. A stored window is never re-judged, and an
+                        // active window keeps its tier's ordinary edit gate below (PC-11/13/14).
+                        let timeline = FlintRuleOccurrenceClock.date(for: old ?? proposed, clock: self.env.clock)
+                        if let issue = FlintOneShotSchedule.issue(for: window, now: timeline,
+                                startChanged: window.start != old?.absoluteWindow?.start) {
+                            return .invalid(issue.message)
+                        }
+                    }
                     if proposed.enabled, let issue = self.env.validateSelection(proposed.selection,
                         Rule.domain == .openLimits ? .openLimit : (proposed.allowList ? .allowList : .blockList)) {
                         return .invalid(issue.message)

@@ -34,8 +34,10 @@ public enum FlintScheduleWindow {
         return Resolution(current: current, next: next)
     }
 
-    private static func endpoint(hour: Int, minute: Int, day: Date, calendar: Calendar,
-                                 repeated: Calendar.RepeatedTimePolicy) -> Date? {
+    /// One local endpoint on `day` under the §9 policy. Shared with `FlintOneShotSchedule`, so a
+    /// date-specific window resolves a missing/ambiguous local time exactly like a weekly one.
+    static func endpoint(hour: Int, minute: Int, day: Date, calendar: Calendar,
+                         repeated: Calendar.RepeatedTimePolicy) -> Date? {
         guard let result = calendar.nextDate(after: day.addingTimeInterval(-1),
             matching: DateComponents(hour: hour, minute: minute, second: 0),
             matchingPolicy: .nextTimePreservingSmallerComponents,
