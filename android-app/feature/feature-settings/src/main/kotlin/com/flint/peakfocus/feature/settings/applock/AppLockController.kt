@@ -182,8 +182,11 @@ class AppLockController(
         synchronized(stateLock) {
             known = readBack
             authorization = null
+            // The record is saved either way, but a re-lock during the read-back hash ended this
+            // visit: the new PIN then starts locked, like any PIN after leaving Flint.
+            val relocked = _state.value.epoch != epoch
             _state.update {
-                it.copy(pinStatus = PinStatus.On, locked = false, lockoutRemainingMs = 0, epoch = it.epoch + 1)
+                it.copy(pinStatus = PinStatus.On, locked = relocked, lockoutRemainingMs = 0, epoch = it.epoch + 1)
             }
         }
         true
@@ -278,6 +281,8 @@ class AppLockController(
             if (upgradeIterations && !upgradeRecord(pin, record)) {
                 return@withLock PinAttempt.Unavailable
             }
+            // The upgrade hashes again; re-validate with no suspension point before onSuccess.
+            if (_state.value.epoch != epoch) return@withLock PinAttempt.Unavailable
             _state.update { it.copy(lockoutRemainingMs = 0) }
             onSuccess(record)
         } finally {

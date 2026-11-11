@@ -172,6 +172,30 @@ class AppLockControllerTest {
         assertEquals(PinStatus.Off, controller.state.value.pinStatus)
     }
 
+    @Test fun `a re-lock during the saved pin's read-back keeps the new pin locked`() {
+        val storage = SpyStorage()
+        lateinit var controller: AppLockController
+        // Dispatch 1 derives the new record; dispatch 2 is the read-back verification.
+        val dispatcher = RecordingDispatcher { index -> if (index == 2) controller.onBackground() }
+        controller = newController(storage, dispatcher = dispatcher)
+
+        assertTrue("the record itself is valid and kept", runBlocking { controller.savePin("2468") })
+        assertEquals(PinStatus.On, controller.state.value.pinStatus)
+        assertTrue("leaving Flint mid-save must not leave it unlocked", controller.state.value.locked)
+        assertTrue(controller.state.value.gateVisible)
+    }
+
+    @Test fun `a re-lock during the iteration upgrade keeps the gate up`() {
+        val storage = SpyStorage(recordRaw = rawFor(pin)) // MIN_ITERATIONS: unlock upgrades it
+        lateinit var controller: AppLockController
+        // Dispatch 1 verifies the PIN; dispatch 2 re-hashes it at the current cost.
+        val dispatcher = RecordingDispatcher { index -> if (index == 2) controller.onBackground() }
+        controller = newController(storage, dispatcher = dispatcher)
+
+        assertEquals(PinAttempt.Unavailable, unlockAttempt(controller, pin))
+        assertTrue(controller.state.value.locked)
+    }
+
     @Test fun `a re-lock while the current pin is hashed removes nothing`() {
         val storage = SpyStorage(recordRaw = rawFor(pin))
         var armed = false

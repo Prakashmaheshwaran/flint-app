@@ -449,7 +449,7 @@ class BlockActivity : ComponentActivity() {
                     val canDisable = GlobalRecoveryPolicy.recoveryChoices(snapshot, deleteTemplates = false).keys
                     GlobalRecoveryPolicy.recoveryChoices(snapshot).map { (key, name) -> RecoveryChoice(key, name, key in canDisable) }
                 }.orEmpty(),
-                confirmation = confirmation, endConfirmation = endPreview?.displayNames,
+                confirmation = confirmation, endConfirmation = if (redacted) null else endPreview?.displayNames,
                 endConfirmationDeletes = endPreview?.deleteTemplates == true, error = error, saving = saving,
                 activeOrdinaryBreaks = ledger?.ordinaryGrants?.values?.count { now != null && it.lifetime.remainingMs(now)?.let { ms -> ms > 0 } == true } ?: 0,
                 activeOpenCredits = snapshot?.openCredits?.active?.values?.count { now != null && com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingMs(it.grant, now) > 0 } ?: 0),

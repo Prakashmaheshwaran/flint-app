@@ -43,6 +43,14 @@ data class RecoveryScreenState(
 const val REDACTED_RECOVERY_NOTE =
     "Commitment names are hidden because recovery was opened from Flint's PIN screen."
 
+/** Per-commitment choices the screen may show: none when redacted, whatever the caller passed. */
+internal fun visibleRecoveryChoices(state: RecoveryScreenState): List<RecoveryChoice> =
+    if (state.redacted) emptyList() else state.choices
+
+/** End-confirmation names the screen may show: none when redacted. */
+internal fun visibleEndConfirmation(state: RecoveryScreenState): List<String>? =
+    if (state.redacted) null else state.endConfirmation
+
 /** Independent in-Flint recovery. Navigation and preview never consume a pass. */
 @Composable
 fun RecoveryScreen(
@@ -59,7 +67,8 @@ fun RecoveryScreen(
     onResumeCredits: () -> Unit,
 ) {
     var selected by remember { mutableStateOf(emptySet<String>()) }
-    val allowed = state.choices.map { it.key }.toSet()
+    val choices = visibleRecoveryChoices(state)
+    val allowed = choices.map { it.key }.toSet()
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -89,9 +98,9 @@ fun RecoveryScreen(
                 state.resumeAt?.let { Text("Protection resumes: $it") }
                 Text("Only commitments still naturally active will resume. Counters and the next pass time stay unchanged.")
                 com.flint.peakfocus.core.common.ui.EmberButton("Resume protection now", onResume, enabled = !state.saving)
-                if (state.choices.isNotEmpty() && !state.redacted) {
+                if (choices.isNotEmpty()) {
                     Text("Choose commitments to change before resuming. Time and Open limits can only be deleted.")
-                    state.choices.forEach { choice ->
+                    choices.forEach { choice ->
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = choice.key in selected,
                             enabled = !state.saving, role = Role.Checkbox,
                             onValueChange = { checked -> selected = if (checked) selected + choice.key else selected - choice.key })) {
@@ -100,7 +109,7 @@ fun RecoveryScreen(
                         }
                     }
                     val selection = selected.intersect(allowed)
-                    OutlinedButton(onClick = { onPreviewEnd(selection, false) }, enabled = canDisableRecoverySelection(state.choices, selection) && !state.saving) {
+                    OutlinedButton(onClick = { onPreviewEnd(selection, false) }, enabled = canDisableRecoverySelection(choices, selection) && !state.saving) {
                         Text("Disable selected rules and resume")
                     }
                     TextButton(onClick = { onPreviewEnd(selection, true) }, enabled = selection.isNotEmpty() && !state.saving) {
@@ -131,7 +140,7 @@ fun RecoveryScreen(
             confirmButton = { TextButton(onClick = onConfirm, enabled = !state.saving) { Text("Confirm 60 minutes of recovery") } },
             dismissButton = { TextButton(onClick = onCancelConfirmation, enabled = !state.saving) { Text("Cancel") } })
     }
-    state.endConfirmation?.let { names ->
+    visibleEndConfirmation(state)?.let { names ->
         AlertDialog(onDismissRequest = { if (!state.saving) onCancelConfirmation() }, title = { Text(if (state.endConfirmationDeletes) "Delete selected templates?" else "Disable selected rules?") },
             text = { Column(Modifier.verticalScroll(rememberScrollState())) {
                 names.forEach { Text("• $it") }
