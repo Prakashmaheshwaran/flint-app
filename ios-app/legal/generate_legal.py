@@ -27,8 +27,9 @@ OFL = "SIL Open Font License, Version 1.1"
 MIT = "MIT License"
 # Licenses already reviewed for the components this repository ships.
 REVIEWED_LICENSES = {"font": OFL, "application": MIT}
-# Build outputs and generated projects are not reviewed sources.
-SKIPPED_DIRECTORIES = frozenset({"DerivedData", "build", ".build"})
+# Build outputs and generated projects at ios-app/ are not reviewed sources. They are
+# matched by location so a resource folder named "build" deeper in the tree is still scanned.
+SKIPPED_ROOT_DIRECTORIES = frozenset({"DerivedData", "build", ".build"})
 # Xcode's Debug bundles carry SwiftUI/Previews artifacts at the bundle root; they are
 # first-party toolchain output, not third-party code.
 ALLOWED_DEBUG_DYLIBS = frozenset({"__preview.dylib"})
@@ -60,7 +61,9 @@ UNSUPPORTED_LINES = (
     (re.compile(r"^=+\s*$"), "setext heading underline"),
     (re.compile(r"^-+\s*$"), "setext heading underline"),
 )
-LINK = re.compile(r"\[[^\]]+\]\([^)\s]+\)")
+# Same pattern as FlintLegalMarkdown.inlineText: no brackets in a label, no parentheses
+# or whitespace in a target.
+LINK = re.compile(r"\[[^\[\]]+\]\([^()\s]+\)")
 HEADING_PREFIXES = ("# ", "## ", "### ")
 FENCE_CLOSE = "```"
 FENCE_OPEN_TEXT = "```text"
@@ -93,14 +96,22 @@ def read_utf8(path, label):
     return text
 
 
-def iter_paths(root):
-    """Yield every path under root, skipping build outputs and generated projects."""
+def _build_output(entry, top):
+    if entry.parent == top and (entry.name in SKIPPED_ROOT_DIRECTORIES or entry.name.endswith(".xcodeproj")):
+        return True
+    # SwiftPM's own build directory beside a local package manifest.
+    return entry.name == ".build" and (entry.parent / "Package.swift").is_file()
+
+
+def iter_paths(root, top=None):
+    """Yield every path under root, skipping ios-app build outputs and generated projects."""
+    top = root if top is None else top
     for entry in sorted(root.iterdir()):
         if entry.is_dir():
-            if entry.name in SKIPPED_DIRECTORIES or entry.name.endswith(".xcodeproj"):
+            if _build_output(entry, top):
                 continue
             if not entry.is_symlink():
-                yield from iter_paths(entry)
+                yield from iter_paths(entry, top)
         yield entry
 
 
@@ -168,6 +179,17 @@ def validate_markdown(text, source):
                 raise LegalError(
                     f"{source}: a heading must be one line, but {lines[0].strip()!r} is followed by "
                     f"{len(lines) - 1} more line(s)")
+        elif lines[0].startswith("- "):
+            # The renderer would fold any other line into the previous item.
+            for line in lines[1:]:
+                if not line.startswith("- "):
+                    raise LegalError(f"{source}: every line of a list must start with '- ': {line.strip()!r}")
+        else:
+            # The renderer would reflow these into the paragraph instead of a heading or list.
+            for line in lines[1:]:
+                if line.startswith(HEADING_PREFIXES) or line.startswith("- "):
+                    raise LegalError(
+                        f"{source}: start a heading or list after a blank line: {line.strip()!r}")
 
 
 # ── Reviewed inventory ────────────────────────────────────────────────────────
@@ -240,7 +262,11 @@ def _reviewed_relative(value, name):
 def validate_policy(repo):
     path = repo / POLICY_SOURCE
     text = read_utf8(path, POLICY_SOURCE.as_posix())
-    validate_markdown(text, POLICY_SOURCE.as_posix())
+    try:
+        validate_markdown(text, POLICY_SOURCE.as_posix())
+    except LegalError as error:
+        raise LegalError(f"{error} (the iOS app renders only the Markdown subset described in "
+                         "ios-app/legal/README.md)") from error
     return path.read_bytes()
 
 
@@ -268,6 +294,10 @@ def validate_project(repo):
             raise LegalError(
                 f"ios-app/{path}/Package.swift: external .package( dependencies are not reviewed; "
                 "Flint ships no third-party Swift packages")
+        if ".binaryTarget(" in package_text:
+            raise LegalError(
+                f"ios-app/{path}/Package.swift: .binaryTarget( artifacts are not reviewed; "
+                "Flint ships no prebuilt third-party binaries")
     for entry in iter_paths(repo / "ios-app"):
         relative_path = relative(repo, entry)
         if entry.name == "Package.resolved":
@@ -430,6 +460,17 @@ def build_outputs(repo, registry):
     notices = render_notices(repo, registry).encode("utf-8")
     validate_markdown(notices.decode("utf-8"), f"{LEGAL_DIR.as_posix()}/{NOTICES_NAME} (generated)")
     return {POLICY_NAME: policy, NOTICES_NAME: notices}
+
+
+def validate_output_directory(repo, outputs):
+    target = repo / LEGAL_DIR
+    if not target.is_dir():
+        return
+    unexpected = sorted(p.name for p in target.iterdir() if p.name not in outputs and p.name != ".DS_Store")
+    if unexpected:
+        raise LegalError(
+            f"{LEGAL_DIR.as_posix()}: unexpected {', '.join(unexpected)}; every file there ships in the "
+            "app, so only the generated documents may live there")
 
 
 def write_outputs(repo, outputs):
@@ -633,6 +674,7 @@ def main(argv=None):
             verify_bundle(repo, registry, args.verify_bundle)
             return 0
         outputs = build_outputs(repo, registry)
+        validate_output_directory(repo, outputs)
         if args.check:
             drifted = check_outputs(repo, outputs)
             if drifted:

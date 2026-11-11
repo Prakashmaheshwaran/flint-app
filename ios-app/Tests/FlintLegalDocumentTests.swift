@@ -57,6 +57,11 @@ final class FlintLegalDocumentTests: XCTestCase {
         ])
     }
 
+    func testVerbatimParagraphsSplitAtBlankLinesAndKeepLineBreaks() {
+        XCTAssertEqual(FlintLegalMarkdown.verbatimParagraphs("A\n  B\n\n \nC\r\nD\n\n"), ["A\n  B", "C\nD"])
+        XCTAssertEqual(FlintLegalMarkdown.verbatimParagraphs("\n \n"), [])
+    }
+
     func testPlainFenceIsEquivalentToTextFence() {
         XCTAssertEqual(FlintLegalMarkdown.parse("```\nraw\n```"), [.verbatim("raw")])
     }

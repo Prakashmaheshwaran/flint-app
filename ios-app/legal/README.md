@@ -38,6 +38,27 @@ Mincho) and Flint's own MIT license. Font provenance and modifications are recor
 `design/fonts/README.md`, and the `*-OFL.txt` copies beside the fonts must stay
 identical to `design/fonts/`.
 
+## Supported Markdown
+
+`docs/privacy-policy.md` is shared with Android, but the iOS app renders it natively, so
+generation fails on anything outside this subset rather than shipping literal markup:
+
+- Blocks are separated by blank lines.
+- `# `, `## ` or `### ` starts a one-line heading.
+- A list is a block in which every line starts with `- `.
+- Any other block is a paragraph; its lines are reflowed with single spaces, and no line
+  after the first may start a heading or a list (add a blank line first).
+- A line exactly ```` ``` ```` or ```` ```text ```` opens a verbatim block, closed by a line exactly
+  ```` ``` ````; it must follow a blank line. Its text, including blank lines, is shown as written.
+- The only inline markup is `[label](url)`, shown as "label (url)"; labels contain no
+  brackets and URLs no parentheses or spaces. Other brackets are rejected.
+- Rejected: block quotes, tables or any `|`, `*`/`+`/numbered lists, `####` headings,
+  setext underlines, HTML or any `<`, images, code spans, `**`/`__`, reference links,
+  and a UTF-8 byte-order mark.
+
+The Swift renderer is `ios-app/Flint/Features/Settings/Legal/FlintLegalDocument.swift`;
+keep both sides in step when the subset changes.
+
 ## Regenerate after a source change
 
 ```sh
@@ -94,14 +115,19 @@ bundle fails as unreviewed.
 
 Generation fails on an unreviewed font file, a changed font or license hash, a license
 copy that differs from `design/fonts/`, or a license name other than the reviewed OFL
-text, so a new binary cannot ship silently.
+text, so a new font cannot ship silently. The scan skips only build outputs by location
+(`ios-app/DerivedData`, `ios-app/build`, `ios-app/.build`, `ios-app/*.xcodeproj` and a
+local package's own `.build`); a resource folder named `build` elsewhere is still
+scanned. Any file in `ios-app/Flint/Resources/Legal/` other than the two generated
+documents also fails, because everything there ships in the app.
 
 ## What ships, and what does not
 
 - No third-party libraries, XCFrameworks, or Swift packages. The only Swift package is
   the first-party, local `ios-app/Packages/FlintCore`; `project.yml` may reference only
   local `Packages/` paths. Generation fails on remote packages (`url:`, `github:`),
-  `Package.resolved`, a `.package(` dependency in a local manifest, `carthage:`, and
+  `Package.resolved`, a `.package(` dependency or `.binaryTarget(` in a local manifest,
+  `carthage:`, and
   binary `framework:` dependencies, and on any vendored `*.framework`, `*.xcframework`,
   `*.a` or `*.dylib` in `ios-app`.
 - Two OFL-licensed font families, bundled by the app and by the Insights report

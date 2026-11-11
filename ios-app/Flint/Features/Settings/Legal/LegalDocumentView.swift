@@ -121,14 +121,19 @@ struct LegalDocumentView: View {
             .padding(.top, 8)
             .accessibilityElement(children: .combine)
         case let .verbatim(text):
-            // Licenses and legal notices keep their line breaks; the card only sets them apart.
+            // Licenses keep their line breaks. One Text per paragraph lets VoiceOver and text
+            // selection move through a long license instead of treating it as one element.
             FlintCard {
-                Text(verbatim: text)
-                    .font(FlintFont.text(14))
-                    .foregroundStyle(FlintBrand.mist)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(FlintLegalMarkdown.verbatimParagraphs(text).enumerated()), id: \.offset) { _, paragraph in
+                        Text(verbatim: paragraph)
+                            .font(FlintFont.text(14))
+                            .foregroundStyle(FlintBrand.mist)
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.top, 12)
         }

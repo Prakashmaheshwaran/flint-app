@@ -221,22 +221,29 @@ final class FlintFixtureUITests: XCTestCase {
         let privacy = app.buttons["settings.legal.privacy"]
         try reveal(privacy)
         try tap(privacy)
-        let title = app.staticTexts["legal.title"]
-        XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertEqual(title.label, "Flint privacy policy")
+        // Both screens use the "legal.title" identifier; match each one by its label so a
+        // screen still animating out can never satisfy the next screen's assertion.
+        let privacyTitle = legalTitle("Flint privacy policy")
+        XCTAssertTrue(privacyTitle.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Bundled with this version of Flint. Available offline."].exists)
         try reveal(app.staticTexts["Retention and deletion"])
         capture("legal-privacy-policy")
 
         try tap(app.navigationBars.buttons.element(boundBy: 0))
+        XCTAssertTrue(privacyTitle.waitForNonExistence(timeout: 5), "Back must leave the policy screen")
         let licenses = app.buttons["settings.legal.licenses"]
         try reveal(licenses)
         try tap(licenses)
-        XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertEqual(title.label, "Open-source licenses")
+        XCTAssertTrue(legalTitle("Open-source licenses").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Hanken Grotesk"].exists, "The notices must name each bundled font family")
         XCTAssertTrue(app.staticTexts["Bundled with this version of Flint. Available offline."].exists)
         try reveal(app.staticTexts["Shippori Mincho"])
         capture("legal-open-source-licenses")
+    }
+
+    private func legalTitle(_ label: String) -> XCUIElement {
+        app.staticTexts.matching(identifier: "legal.title")
+            .matching(NSPredicate(format: "label == %@", label)).firstMatch
     }
 
     private enum ScrollDirection { case up, down }

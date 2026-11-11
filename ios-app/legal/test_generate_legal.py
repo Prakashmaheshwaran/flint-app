@@ -245,6 +245,11 @@ class LegalTestCase(unittest.TestCase):
             ("```text\nunclosed\n", "unclosed code fence"),
             ("```text\nouter\n```inner\n```\n", "nested code fence"),
             ("Paragraph\n```text\nfenced\n```\n", "must start after a blank line"),
+            ("A [a[b](https://example.test/x) link\n", "only [label](url)"),
+            ("- item\n### Heading\n", "every line of a list must start with '- '"),
+            ("- item\ncontinued\n", "every line of a list must start with '- '"),
+            ("Paragraph\n- item\n", "start a heading or list after a blank line"),
+            ("Paragraph\n## Heading\n", "start a heading or list after a blank line"),
         ]
         for text, fragment in cases:
             with self.subTest(text=text):
@@ -264,6 +269,10 @@ class LegalTestCase(unittest.TestCase):
         self.assert_legal_error("byte-order mark")
         self.repo.write_bytes("docs/privacy-policy.md", b"# Policy\n\n\xff\n")
         self.assert_legal_error("not valid UTF-8")
+
+    def test_policy_subset_errors_point_to_the_readme(self):
+        self.repo.write_bytes("docs/privacy-policy.md", b"# Policy\n\n**bold**\n")
+        self.assert_legal_error("ios-app/legal/README.md")
 
     def test_validates_the_generated_notices_too(self):
         self.repo.inventory(intro=["Flint ships | no third-party code."])
@@ -296,6 +305,36 @@ class LegalTestCase(unittest.TestCase):
     def test_rejects_package_manifest_dependencies(self):
         self.repo.package_swift('let package = Package(dependencies: [.package(url: "https://e.test/p", from: "1.0.0")])\n')
         self.assert_legal_error("external .package( dependencies are not reviewed")
+
+    def test_rejects_package_manifest_binary_targets(self):
+        self.repo.package_swift('let package = Package(name: "FlintCore", targets: '
+                                '[.binaryTarget(name: "Vendor", path: "../../Vendor.xcframework")])\n')
+        self.assert_legal_error(".binaryTarget( artifacts are not reviewed")
+
+    def test_scans_resource_folders_named_like_build_outputs(self):
+        for relative in ("ios-app/Flint/Resources/build/Evil.ttf", "ios-app/Flint/Resources/DerivedData/Evil.ttf",
+                         "ios-app/Flint/Resources/.build/Evil.ttf"):
+            with self.subTest(relative=relative):
+                path = self.repo.write_bytes(relative, b"font")
+                try:
+                    self.assert_legal_error("unreviewed=['" + relative + "']")
+                finally:
+                    path.unlink()
+
+    def test_ignores_ios_app_build_outputs(self):
+        for relative in ("ios-app/DerivedData/Build/Products/Flint.app/Evil.ttf",
+                         "ios-app/build/ReleaseDerivedData/Evil.ttf",
+                         "ios-app/Flint.xcodeproj/Evil.ttf",
+                         "ios-app/Packages/FlintCore/.build/Evil.ttf"):
+            self.repo.write_bytes(relative, b"font")
+        self.build()
+
+    def test_rejects_unexpected_files_in_the_bundled_legal_directory(self):
+        self.generate()
+        self.repo.write_bytes("ios-app/Flint/Resources/Legal/privacy-policy 2.md", POLICY)
+        code, _, stderr = self.main("--check")
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected privacy-policy 2.md", stderr)
 
     def test_rejects_resolved_packages_and_vendored_binaries(self):
         for name, relative in (("Package.resolved", "ios-app/Packages/FlintCore/Package.resolved"),

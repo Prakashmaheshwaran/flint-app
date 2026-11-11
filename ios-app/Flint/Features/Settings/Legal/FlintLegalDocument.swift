@@ -107,6 +107,23 @@ enum FlintLegalMarkdown {
         return result
     }
 
+    /// A verbatim block's paragraphs, split at blank lines with their own line breaks kept, so
+    /// VoiceOver and text selection can move through a long license one paragraph at a time.
+    static func verbatimParagraphs(_ text: String) -> [String] {
+        var paragraphs: [String] = []
+        var current: [String] = []
+        for line in normalized(text).components(separatedBy: "\n") {
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                if !current.isEmpty { paragraphs.append(current.joined(separator: "\n")) }
+                current = []
+            } else {
+                current.append(line)
+            }
+        }
+        if !current.isEmpty { paragraphs.append(current.joined(separator: "\n")) }
+        return paragraphs
+    }
+
     private static func normalized(_ source: String) -> String {
         source
             .replacingOccurrences(of: "\r\n", with: "\n")
