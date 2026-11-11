@@ -44,13 +44,13 @@ class TimerAppPickerTest {
         showPicker()
         compose.onNodeWithText("2 SELECTED").assertExists()
         compose.onNodeWithText("2").assertExists() // Footer count.
-        compose.onNodeWithText("Add · 2").assertIsNotEnabled()
+        compose.onNodeWithText("Done · 2 apps").assertIsNotEnabled()
 
         compose.onNodeWithText("Camera").performClick()
 
         compose.onNodeWithText("1 SELECTED").assertExists()
         compose.onNodeWithText("1").assertExists() // Footer count.
-        compose.onNodeWithText("Add · 1").assertIsEnabled()
+        compose.onNodeWithText("Done · 1 app").assertIsEnabled()
     }
 
     @Test fun `searching keeps the pending count while the draft is unchanged`() {
@@ -60,6 +60,6 @@ class TimerAppPickerTest {
 
         compose.onNodeWithText("1 SELECTED").assertExists()
         compose.onNodeWithText("1").assertExists() // Footer count.
-        compose.onNodeWithText("Add · 1").assertIsEnabled()
+        compose.onNodeWithText("Done · 1 app").assertIsEnabled()
     }
 }

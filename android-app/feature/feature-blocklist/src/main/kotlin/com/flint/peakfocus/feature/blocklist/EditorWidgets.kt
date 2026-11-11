@@ -66,6 +66,7 @@ import com.flint.peakfocus.core.common.theme.FlintNumerals
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.ui.FlintBadge
 import com.flint.peakfocus.core.common.ui.FlintSectionLabel
+import com.flint.peakfocus.core.common.ui.FlintSectionTitle
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BreakLevel
@@ -79,7 +80,7 @@ import com.flint.peakfocus.core.model.BreakLevel
 /** Section heading used across the overview and editors — the Flint eyebrow idiom. */
 @Composable
 internal fun SectionLabel(text: String, modifier: Modifier = Modifier) {
-    FlintSectionLabel(text = text, modifier = modifier)
+    FlintSectionTitle(text = text, modifier = modifier)
 }
 
 /** Back arrow + the brand signature: headlineMedium title over the uppercase primary

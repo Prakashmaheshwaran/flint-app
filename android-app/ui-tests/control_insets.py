@@ -17,7 +17,7 @@ def picker_case(ui, name, keyboard):
     ui.prefix = name
     ui.launch()
     ui.select_tab('Today')
-    ui.node('YOUR NEXT SESSION')
+    ui.find('Start focus')
     ui.tap('Start focus')
     ui.find('Choose what rests')
     ui.tap('Choose what rests')
@@ -31,38 +31,38 @@ def picker_case(ui, name, keyboard):
     ui.tap('Chrome')
     if ui.nodes('What rests'):
         ui.node('1 SELECTED')
-    ui.check_controls('Add · 1', 'Cancel')
+    ui.check_controls('Done · 1 app', 'Cancel')
     if keyboard:
         assert 'mInputShown=true' in adb('shell', 'dumpsys', 'input_method').decode()
     ui.capture('selected')
-    ui.tap('Add · 1')  # Center of the actual touch target; not a semantic click.
+    ui.tap('Done · 1 app')  # Center of the actual touch target; not a semantic click.
     # A dialog is created while the old field releases the IME. Observe its
     # settled geometry before checking content or targeting the Close button.
     time.sleep(1)
     ui.root = None
     ui.dump()
     ui.node('Start focus')
-    ui.node('Block 1 app')
+    ui.node('1 app resting')
     ui.node('Chrome')
     ui.capture('confirmed')
     if not keyboard:
         # Both exits discard a pending deselection, retaining the confirmed draft.
         for exit_label in ('Cancel', 'BACK'):
-            ui.tap('Block 1 app')
+            ui.tap('1 app resting')
             ui.find('Chrome')
             ui.tap('Chrome')
             if exit_label == 'BACK':
                 ui.key()
             else:
                 ui.tap(exit_label)
-            ui.node('Block 1 app')
+            ui.node('1 app resting')
             ui.node('Chrome')
     ui.tap('Close')
     time.sleep(.5)
     ui.root = None
     ui.dump()
     # Observe Today itself. A selected tab is not necessarily exposed as clickable.
-    ui.node('YOUR NEXT SESSION')
+    ui.find('Start focus')
     print(json.dumps({'case': name, 'passed': True}), flush=True)
 
 

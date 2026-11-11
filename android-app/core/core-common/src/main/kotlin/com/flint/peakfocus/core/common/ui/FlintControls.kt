@@ -15,6 +15,10 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -104,6 +108,8 @@ fun EmberButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    minHeight: Dp = 56.dp,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
 ) {
     val source = remember { MutableInteractionSource() }
     val scale = pressScale(source)
@@ -116,7 +122,7 @@ fun EmberButton(
         interactionSource = source,
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .heightIn(min = minHeight)
             .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.45f }
             .shadow(if (enabled) 18.dp else 0.dp, CircleShape, ambientColor = FlintPalette.Ember, spotColor = FlintPalette.Ember),
     ) {
@@ -125,8 +131,21 @@ fun EmberButton(
                 .padding(horizontal = 24.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 2,
-                overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (leadingIcon != null) {
+                    Icon(leadingIcon, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+                Text(
+                    text,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -287,7 +306,11 @@ fun FlintChipText(text: String, color: Color = Color.Unspecified) {
     )
 }
 
-/** Pill track with a raised segment — Block/Allow list, break level, Today/7 days. */
+/**
+ * Pill track with a raised segment — Block/Allow list, break level, Today/7 days. Full-width
+ * tracks split into equal segments while every label fits on one line; at large font scales
+ * the segments stack instead, so a label is never broken mid-word ("Hardcor/e").
+ */
 @Composable
 fun <T> FlintSegmented(
     options: List<Pair<T, String>>,
@@ -298,42 +321,65 @@ fun <T> FlintSegmented(
     enabled: Boolean = true,
 ) {
     val reducedMotion = rememberReducedMotion()
-    Row(
-        modifier
-            .clip(RoundedCornerShape(if (compact) 16.dp else 18.dp))
-            .background(if (compact) FlintPalette.BoneFill else FlintPalette.BoneTrack)
-            .padding(if (compact) 3.dp else 4.dp)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp),
-    ) {
-        options.forEach { (value, label) ->
-            val isSelected = value == selected
-            val fill by animateColorAsState(
-                if (isSelected) FlintPalette.Segment else Color.Transparent,
-                tween(if (reducedMotion) 0 else FlintMotion.DurationShort),
-                label = "segmentFill",
+    val labelStyle = MaterialTheme.typography.bodyMedium.copy(
+        fontSize = if (compact) MaterialTheme.typography.bodySmall.fontSize else MaterialTheme.typography.bodyMedium.fontSize,
+        fontWeight = MaterialTheme.typography.titleSmall.fontWeight,
+    )
+    val trackPadding = if (compact) 3.dp else 4.dp
+    val gap = if (compact) 2.dp else 4.dp
+    val segment: @Composable (T, String, Modifier) -> Unit = { value, label, segmentModifier ->
+        val isSelected = value == selected
+        val fill by animateColorAsState(
+            if (isSelected) FlintPalette.Bone else Color.Transparent,
+            tween(if (reducedMotion) 0 else FlintMotion.DurationShort),
+            label = "segmentFill",
+        )
+        Box(
+            segmentModifier
+                .minimumInteractiveComponentSize()
+                .clip(RoundedCornerShape(if (compact) 13.dp else 14.dp))
+                .background(fill)
+                .selectable(isSelected, enabled = enabled, role = Role.Tab) { onSelect(value) }
+                .heightIn(min = if (compact) 32.dp else 40.dp)
+                .padding(horizontal = if (compact) 12.dp else 4.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label,
+                style = labelStyle,
+                color = if (isSelected) FlintPalette.OnBone else FlintPalette.Mist,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
-            Box(
-                (if (compact) Modifier else Modifier.weight(1f))
-                    .minimumInteractiveComponentSize()
-                    .clip(RoundedCornerShape(if (compact) 13.dp else 14.dp))
-                    .background(fill)
-                    .selectable(isSelected, enabled = enabled, role = Role.Tab) { onSelect(value) }
-                    .heightIn(min = if (compact) 36.dp else 40.dp)
-                    .padding(horizontal = if (compact) 12.dp else 4.dp, vertical = 6.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = if (compact) MaterialTheme.typography.bodySmall.fontSize else MaterialTheme.typography.bodyMedium.fontSize,
-                        fontWeight = MaterialTheme.typography.titleSmall.fontWeight,
-                    ),
-                    color = if (isSelected) FlintPalette.Bone else FlintPalette.Mist,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
+        }
+    }
+    val track = Modifier
+        .clip(RoundedCornerShape(if (compact) 16.dp else 18.dp))
+        .background(if (compact) FlintPalette.BoneFill else FlintPalette.BoneTrack)
+        .padding(trackPadding)
+        .selectableGroup()
+    if (compact) {
+        Row(modifier.then(track), horizontalArrangement = Arrangement.spacedBy(gap)) {
+            options.forEach { (value, label) -> segment(value, label, Modifier) }
+        }
+        return
+    }
+    BoxWithConstraints(modifier) {
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val segmentWidth = (maxWidth - trackPadding * 2 - gap * (options.size - 1)) / options.size
+        val fitsInRow = options.all { (_, label) ->
+            val pixels = measurer.measure(AnnotatedString(label), labelStyle, softWrap = false).size.width
+            with(density) { pixels.toDp() } + 8.dp <= segmentWidth
+        }
+        if (fitsInRow) {
+            Row(Modifier.fillMaxWidth().then(track), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                options.forEach { (value, label) -> segment(value, label, Modifier.weight(1f)) }
+            }
+        } else {
+            Column(Modifier.fillMaxWidth().then(track), verticalArrangement = Arrangement.spacedBy(gap)) {
+                options.forEach { (value, label) -> segment(value, label, Modifier.fillMaxWidth()) }
             }
         }
     }
@@ -439,6 +485,68 @@ fun FlintChoiceCard(
     ) {
         Text(title, style = MaterialTheme.typography.titleSmall, color = FlintPalette.Bone)
         Text(hint, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = FlintPalette.Mist)
+    }
+}
+
+/**
+ * The v3 radio row (M04 break levels, M14 editors): ember ring + dot, 15/600 label, 12/500
+ * hint and a quiet tag pill. Selected rows take the ember wash and a 60% ember border.
+ */
+@Composable
+fun FlintRadioCard(
+    title: String,
+    hint: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tag: String? = null,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (selected) FlintPalette.EmberWash else FlintPalette.Card)
+            .border(
+                1.dp,
+                if (selected) FlintPalette.Ember.copy(alpha = 0.6f) else FlintPalette.Hairline,
+                RoundedCornerShape(18.dp),
+            )
+            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .heightIn(min = 62.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier
+                .size(20.dp)
+                .border(1.5.dp, if (selected) FlintPalette.Ember else FlintPalette.Bone.copy(alpha = 0.3f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) Box(Modifier.size(10.dp).background(FlintPalette.Ember, CircleShape))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = FlintPalette.Bone)
+            Text(hint, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = FlintPalette.Mist)
+        }
+        if (tag != null) {
+            Surface(
+                color = if (selected) FlintPalette.Ember.copy(alpha = 0.18f) else FlintPalette.BoneFill,
+                contentColor = if (selected) FlintPalette.EmberText else FlintPalette.Mist,
+                shape = CircleShape,
+            ) {
+                Text(
+                    tag,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 11.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    ),
+                    maxLines = 2,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+        }
     }
 }
 
