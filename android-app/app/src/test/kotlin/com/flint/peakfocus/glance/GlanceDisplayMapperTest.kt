@@ -15,6 +15,25 @@ class GlanceDisplayMapperTest {
     private fun display(reading: ProtectionReading, focus: FocusTodayReading = FocusTodayReading()) =
         GlanceDisplayMapper.map(reading, focus, now, 1_800_000_000_000, ZoneId.of("UTC"), Locale.US)
 
+    @Test fun pomodoroPhaseIsShownOnlyWhileItIsCurrent() {
+        // A planned rest is an active commitment: the widget names the phase and its end.
+        val resting = active.copy(cause = cause.copy(phase = "Rest", phaseEndsAtEpochMs = 1_800_000_120_000,
+            logicalEndElapsedMs = null, tier = GlanceTier.EASY))
+        val fresh = display(resting)
+        assertEquals("Protection active at last check", fresh.status)
+        assertTrue(fresh.detail.startsWith("Focus · Rest"))
+        assertEquals("Rest", resting.cause!!.phase)
+
+        // Past the phase end without a newer publication: no stale focus/rest claim.
+        val stale = display(resting.copy(cause = resting.cause!!.copy(phaseEndsAtEpochMs = 1_800_000_000_000)))
+        assertEquals("Pomodoro phase needs a new check", stale.status)
+        assertFalse(stale.detail.contains("Rest"))
+        assertNull(stale.countdownEndElapsedMs)
+
+        // A surface without phase data keeps making no phase claim.
+        assertFalse(display(active).detail.contains("round"))
+    }
+
     @Test fun unavailableDoesNotInventInactiveOrZero() {
         val result = display(ProtectionReading())
         assertEquals("Protection state unavailable", result.status)
