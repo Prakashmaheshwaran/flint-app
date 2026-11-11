@@ -42,6 +42,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.Button
@@ -51,9 +54,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -83,6 +89,10 @@ import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.model.AppGroup
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BreakLevel
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -98,7 +108,7 @@ import kotlinx.coroutines.launch
  *
  * [onDelete] is null for a new rule (nothing to delete yet).
  */
-@OptIn(ExperimentalFoundationApi::class) // bringIntoViewRequester on older foundation lines.
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class) // bringIntoViewRequester; date picker
 @Composable
 internal fun RuleEditorScreen(
     initialDraft: RuleDraft,
@@ -123,6 +133,7 @@ internal fun RuleEditorScreen(
     var domainError by remember { mutableStateOf(false) }
     var attemptedSave by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
+    var pickingDate by remember { mutableStateOf(false) }
     var pickingApps by remember { mutableStateOf(false) }
     var namingGroup by remember { mutableStateOf(false) }
     var groupName by remember { mutableStateOf("") }
@@ -212,6 +223,8 @@ internal fun RuleEditorScreen(
                             -> targetsRequester
                             RuleDraftError.INVALID_TIME,
                             RuleDraftError.ZERO_LENGTH_WINDOW,
+                            RuleDraftError.DATE_REQUIRED,
+                            RuleDraftError.START_IN_PAST,
                             -> scheduleRequester
                         }
                         scope.launch { requester.bringIntoView() }
@@ -529,71 +542,102 @@ internal fun RuleEditorScreen(
                 SectionLabel("Schedule")
                 Spacer(Modifier.height(FlintSpacing.sm))
                 FlintCard(modifier = Modifier.bringIntoViewRequester(scheduleRequester)) {
-                    LabeledSwitchRow(
-                        title = "Only at certain times",
-                        description = "Off means the rule is active around the clock while " +
-                            "enabled.",
-                        checked = draft.scheduled,
-                        onCheckedChange = { draft = draft.copy(scheduled = it) },
-                    )
-                    AnimatedVisibility(
-                        visible = draft.scheduled,
-                        enter = expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
-                        exit = shrinkVertically(editorRevealSpec()) + fadeOut(editorRevealSpec()),
-                    ) {
-                        Column {
-                            Spacer(Modifier.height(FlintSpacing.cardGap))
-                            DayOfWeekRow(
-                                selected = draft.days,
-                                onToggle = { day ->
-                                    draft = draft.copy(
-                                        days = if (day in draft.days) {
-                                            draft.days - day
-                                        } else {
-                                            draft.days + day
-                                        },
-                                    )
-                                },
-                            )
-                            Spacer(Modifier.height(FlintSpacing.xs))
-                            Text(
-                                text = "No days selected = every day.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(FlintSpacing.cardGap))
-                            Row {
-                                FlintTimeField(
-                                    label = "From",
-                                    valueText = startText,
-                                    onValueText = { startText = it },
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Spacer(Modifier.width(FlintSpacing.cardGap))
-                                FlintTimeField(
-                                    label = "Until",
-                                    valueText = endText,
-                                    onValueText = { endText = it },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            val start = parseMinuteOfDay(startText)
-                            val end = parseMinuteOfDay(endText)
-                            if (start != null && end != null) {
+                    if (draft.id == null && draft.scheduled) {
+                        // Only a NEW rule with a window chooses its kind: an existing rule keeps
+                        // the one it has, so a weekly rule can never be silently rewritten into
+                        // a one-time one. With "Only at certain times" off there is no window at
+                        // all, so there is no kind to choose.
+                        FlintSegmented(
+                            options = listOf(false to "Repeats", true to "One time"),
+                            selected = draft.oneTime,
+                            onSelect = { oneTime ->
+                                haptics.tick()
+                                draft = if (oneTime) {
+                                    draft.copy(oneTime = true, scheduled = true, date = draft.date ?: LocalDate.now())
+                                } else {
+                                    draft.copy(oneTime = false, scheduled = true)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(FlintSpacing.cardGap))
+                    }
+                    if (draft.oneTime) {
+                        OneTimeWindowFields(
+                            date = draft.date,
+                            onPickDate = { pickingDate = true },
+                            startText = startText,
+                            onStartText = { startText = it },
+                            endText = endText,
+                            onEndText = { endText = it },
+                        )
+                    } else {
+                        LabeledSwitchRow(
+                            title = "Only at certain times",
+                            description = "Off means the rule is active around the clock while " +
+                                "enabled.",
+                            checked = draft.scheduled,
+                            onCheckedChange = { draft = draft.copy(scheduled = it) },
+                        )
+                        AnimatedVisibility(
+                            visible = draft.scheduled,
+                            enter = expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
+                            exit = shrinkVertically(editorRevealSpec()) + fadeOut(editorRevealSpec()),
+                        ) {
+                            Column {
                                 Spacer(Modifier.height(FlintSpacing.cardGap))
-                                FlintDayStrip(startMinute = start, endMinute = end)
-                            }
-                            if (start != null && end != null && end != start) {
+                                DayOfWeekRow(
+                                    selected = draft.days,
+                                    onToggle = { day ->
+                                        draft = draft.copy(
+                                            days = if (day in draft.days) {
+                                                draft.days - day
+                                            } else {
+                                                draft.days + day
+                                            },
+                                        )
+                                    },
+                                )
                                 Spacer(Modifier.height(FlintSpacing.xs))
                                 Text(
-                                    text = if (end < start) {
-                                        "Overnight window — runs past midnight into the next day."
-                                    } else {
-                                        "24-hour time, e.g. 21:30."
-                                    },
+                                    text = "No days selected = every day.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                                Spacer(Modifier.height(FlintSpacing.cardGap))
+                                Row {
+                                    FlintTimeField(
+                                        label = "From",
+                                        valueText = startText,
+                                        onValueText = { startText = it },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Spacer(Modifier.width(FlintSpacing.cardGap))
+                                    FlintTimeField(
+                                        label = "Until",
+                                        valueText = endText,
+                                        onValueText = { endText = it },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                                val start = parseMinuteOfDay(startText)
+                                val end = parseMinuteOfDay(endText)
+                                if (start != null && end != null) {
+                                    Spacer(Modifier.height(FlintSpacing.cardGap))
+                                    FlintDayStrip(startMinute = start, endMinute = end)
+                                }
+                                if (start != null && end != null && end != start) {
+                                    Spacer(Modifier.height(FlintSpacing.xs))
+                                    Text(
+                                        text = if (end < start) {
+                                            "Overnight window — runs past midnight into the next day."
+                                        } else {
+                                            "24-hour time, e.g. 21:30."
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
@@ -656,6 +700,39 @@ internal fun RuleEditorScreen(
                     Text("Cancel")
                 }
             }
+        }
+    }
+
+    if (pickingDate) {
+        val today = LocalDate.now()
+        val initial = draft.date ?: today
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            selectableDates = object : SelectableDates {
+                // A one-time session can be any distance ahead, never in the past.
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                    utcTimeMillis >= today.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+
+                override fun isSelectableYear(year: Int): Boolean = year >= today.year
+            },
+        )
+        DatePickerDialog(
+            onDismissRequest = { pickingDate = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        state.selectedDateMillis?.let { millis ->
+                            draft = draft.copy(date = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate())
+                        }
+                        pickingDate = false
+                    },
+                ) { Text("Done") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pickingDate = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = state, title = { Text("One-time session date") })
         }
     }
 
@@ -747,6 +824,87 @@ internal fun RuleEditorScreen(
             dismissButton = {
                 TextButton(onClick = { namingGroup = false }) { Text("Cancel") }
             },
+        )
+    }
+}
+
+/**
+ * The one-time window's own fields: a calendar date (any distance ahead, never in the past) plus
+ * the same From/Until time fields the weekly window uses. There are no weekday pills — a date,
+ * not a weekday, decides when this single occurrence runs.
+ */
+@Composable
+private fun OneTimeWindowFields(
+    date: LocalDate?,
+    onPickDate: () -> Unit,
+    startText: String,
+    onStartText: (String) -> Unit,
+    endText: String,
+    onEndText: (String) -> Unit,
+) {
+    Spacer(Modifier.height(FlintSpacing.cardGap))
+    Surface(
+        onClick = onPickDate,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "Date",
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = date?.let(::oneTimeDateLabel) ?: "Choose a date",
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 30.sp),
+            )
+        }
+    }
+    Spacer(Modifier.height(FlintSpacing.cardGap))
+    Row {
+        FlintTimeField(
+            label = "From",
+            valueText = startText,
+            onValueText = onStartText,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(FlintSpacing.cardGap))
+        FlintTimeField(
+            label = "Until",
+            valueText = endText,
+            onValueText = onEndText,
+            modifier = Modifier.weight(1f),
+        )
+    }
+    val start = parseMinuteOfDay(startText)
+    val end = parseMinuteOfDay(endText)
+    if (start != null && end != null) {
+        val minutes = when {
+            end > start -> end - start
+            end < start -> 1440 - start + end // overnight: ends on the NEXT day
+            else -> 0
+        }
+        if (minutes > 0) {
+            Spacer(Modifier.height(FlintSpacing.xs))
+            Text(
+                text = "Lasts ${formatDailyMinutes(minutes)}" +
+                    if (end < start) " · Ends the next day" else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(FlintSpacing.xs))
+        Text(
+            text = "One-time session on ${date?.let(::oneTimeDateLabel) ?: "the chosen date"} — it " +
+                "runs once and never repeats. Times use this device's time zone (${ZoneId.systemDefault().id}).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

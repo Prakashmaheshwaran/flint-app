@@ -534,7 +534,9 @@ class DataStoreEditorCommitmentStore(
         val current = prefs.editorRules()
         change.upserts.forEach { rule ->
             val old = current.singleOrNull { it.id == rule.id }
-            validateEditorRule(rule, old, now)?.let { return it }
+            // Authoring and activation read one clock: the trusted editor timeline, not the wall.
+            validateEditorRule(rule, old, now, state.causes[ruleCauseKey(rule.id)]?.zoneId ?: defaultZone(),
+                trustedWallEpochMs = logicalClock(state, now).wallEpochMs)?.let { return it }
             if (rule.targets.allowListMode && !safety.resolved && (old == null || !old.enabled || old.targets != rule.targets || (!old.targets.allowListMode && rule.targets.allowListMode))) {
                 return "Calling or Home safety could not be checked. Protection health is degraded; try again before starting allow-list protection."
             }

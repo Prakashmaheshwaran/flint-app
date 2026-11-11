@@ -154,7 +154,7 @@ internal fun dailyOccurrence(zone: String, now: AccessClockStamp): EditorCause {
 internal fun ruleShape(rule: BlockRule, zone: String) = CommitmentPolicy.ProtectionShape(
     name = rule.name, tier = rule.breakLevel, allowListMode = rule.targets.allowListMode,
     apps = rule.targets.apps.map { it.packageName }.toSet(), domains = rule.targets.domains.map { it.domain }.toSet(),
-    window = rule.schedule?.let { CommitmentPolicy.Window(it.startMinuteOfDay, it.endMinuteOfDay, it.daysOfWeek, zone) },
+    window = rule.schedule?.let { CommitmentPolicy.Window(it.startMinuteOfDay, it.endMinuteOfDay, it.daysOfWeek, zone, it.date) },
     endsAtEpochMs = rule.expiresAtEpochMs,
 )
 
@@ -162,7 +162,20 @@ internal fun limitShape(pkg: String, tier: BreakLevel, budget: Int, dailyZoneId:
     name = pkg, tier = tier, allowListMode = false, apps = setOf(pkg), domains = emptySet(), budget = budget, dailyZoneId = dailyZoneId,
 )
 
-internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClockStamp): String? {
+/**
+ * Structural + commitment validation at commit time. [zone] is the rule's saved occurrence zone
+ * (the editor passes its materialized cause zone, else the default zone); a dated one-time start
+ * must not already be in the past *in that zone*, because the stored window is what the engine
+ * will arm and the trusted timeline cannot be rewound to reach it.
+ *
+ * [trustedWallEpochMs] is the editor's trusted "now" (the persisted timeline plus same-boot
+ * elapsed time, i.e. the same `logicalClock` value used to materialize occurrences). A same-boot
+ * wall-clock rewind must not make a start look authorable when the trusted timeline has already
+ * passed it — authoring and activation read one clock.
+ */
+internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClockStamp,
+                                zone: String = TimeZone.getDefault().id,
+                                trustedWallEpochMs: Long = now.wallEpochMs): String? {
     if (rule.name.isBlank()) return "Give this rule a name."
     if (rule.schedule == null && rule.expiresAtEpochMs == null && rule.breakLevel != BreakLevel.EASY &&
         (old == null || old.schedule != null || old.expiresAtEpochMs != null || old.breakLevel != rule.breakLevel || (!old.enabled && rule.enabled))) {
@@ -177,6 +190,20 @@ internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClo
         if (it.startMinuteOfDay !in 0..1439 || it.endMinuteOfDay !in 0..1439 ||
             it.startMinuteOfDay == it.endMinuteOfDay || it.daysOfWeek.any { day -> day !in 1..7 }) {
             return "Choose a valid schedule of at most 26 hours per occurrence."
+        }
+        val dated = it.date
+        if (dated != null) {
+            if (it.daysOfWeek.isNotEmpty()) return "A one-time session runs on its date only."
+            val occurrence = ScheduleOccurrences.onDate(it, ZoneId.of(zone), dated)
+                ?: return "Choose a valid schedule of at most 26 hours per occurrence."
+            // Only a new or date/start-moved window has to be in the future; a rename or a
+            // target edit of an existing one is an ordinary edit (PC-13). "Future" is the
+            // trusted editor timeline, never a rewindable wall clock.
+            val moved = old == null || old.schedule?.date != dated ||
+                old.schedule?.startMinuteOfDay != it.startMinuteOfDay
+            if (moved && occurrence.startsAtEpochMs < trustedWallEpochMs - 60_000) {
+                return "Choose a start time in the future."
+            }
         }
     }
     return null

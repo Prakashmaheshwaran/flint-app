@@ -11,6 +11,7 @@ import com.flint.peakfocus.core.model.DomainRef
 import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.TimeLimit
+import java.time.LocalDate
 
 /**
  * String codec for the typed models kept in Preferences DataStore.
@@ -55,8 +56,9 @@ internal object PrefsCodec {
         .replace("%7C", FIELD)
         .replace("%25", "%")
 
-    // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end[|expiresAt]
-    // (expiresAt appended later for one-shot sessions; decode accepts 10-field legacy lines)
+    // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end[|expiresAt][|date]
+    // (expiresAt appended later for one-shot sessions; date appended for dated one-time schedules
+    //  and ONLY then, so every existing 10- and 11-field record round-trips byte-identically)
 
     fun encodeRules(rules: List<BlockRule>): String =
         rules.joinToString(RECORD) { encodeRule(it) }
@@ -70,7 +72,7 @@ internal object PrefsCodec {
         }
         val domains = rule.targets.domains.joinToString(ITEM) { escape(it.domain) }
         val days = (rule.schedule?.daysOfWeek ?: emptySet()).joinToString(ITEM)
-        return listOf(
+        val fields = mutableListOf(
             escape(rule.id),
             escape(rule.name),
             rule.enabled.toString(),
@@ -82,12 +84,17 @@ internal object PrefsCodec {
             (rule.schedule?.startMinuteOfDay ?: NO_SCHEDULE).toString(),
             (rule.schedule?.endMinuteOfDay ?: NO_SCHEDULE).toString(),
             (rule.expiresAtEpochMs ?: NO_EXPIRY).toString(),
-        ).joinToString(FIELD)
+        )
+        // Appended only for a dated schedule: an older build then sees 12 fields and fails
+        // closed (UNSUPPORTED_VERSION) instead of dropping the one-time date and inventing a
+        // weekly rule. Recurring/manual records keep their exact 10/11-field shape.
+        rule.schedule?.date?.let { fields += it.toString() }
+        return fields.joinToString(FIELD)
     }
 
     private fun decodeRule(line: String): BlockRule? {
         val f = line.split(FIELD)
-        if (f.size != 10 && f.size != 11) return null
+        if (f.size !in 10..12) return null
         val id = unescape(f[0])
         if (id.isEmpty()) return null
 
@@ -110,6 +117,7 @@ internal object PrefsCodec {
                 daysOfWeek = f[7].split(ITEM).mapNotNull { it.toIntOrNull() }.toSet(),
                 startMinuteOfDay = start,
                 endMinuteOfDay = end,
+                date = f.getOrNull(11)?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
             )
         }
 

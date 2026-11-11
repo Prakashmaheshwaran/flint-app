@@ -339,7 +339,9 @@ private fun TodayScene(
         .sortedBy { it.schedule?.startMinuteOfDay ?: 0 }
         .take(2)
     val nextLabel = upNext.firstOrNull()?.let { rule ->
-        rule.schedule?.let { "Starts ${formatMinuteOfDay(it.startMinuteOfDay)}" }
+        // A dated one-time start names its date; only a weekly window can imply "next at HH:MM".
+        if (rule.schedule?.date != null) statuses[rule.id]?.nextChange
+        else rule.schedule?.let { "Starts ${formatMinuteOfDay(it.startMinuteOfDay)}" }
             ?: statuses[rule.id]?.nextChange
     }?.removePrefix("Starts ")
 
@@ -724,7 +726,9 @@ private fun TodayNowCard(
 @Composable
 private fun TodayNextRow(rule: BlockRule, nowMinute: Int, onClick: () -> Unit) {
     val start = rule.schedule?.startMinuteOfDay
-    val relative = start?.let { minutesUntil(it, nowMinute) }?.let(::relativeStartLabel)
+    // "in 5h" is weekday math: a dated one-time start can be any distance ahead, so its row
+    // names the date in the summary line instead of guessing a relative time.
+    val relative = if (rule.schedule?.date != null) null else start?.let { minutesUntil(it, nowMinute) }?.let(::relativeStartLabel)
     Row(
         Modifier
             .fillMaxWidth()
