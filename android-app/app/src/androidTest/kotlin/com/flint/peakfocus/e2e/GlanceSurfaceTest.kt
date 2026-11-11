@@ -71,12 +71,25 @@ class GlanceSurfaceTest : FlintE2EFixture() {
             if (!bound) device.findObject(By.pkg("com.android.settings")
                 .text(java.util.regex.Pattern.compile("(?i)create")))?.let { it.click(); bound = true }
             if (!allowed) device.findObject(By.res("com.android.permissioncontroller", "permission_allow_button"))?.let {
-                it.click(); allowed = true
+                it.click()
+                // The permission dialog can drop a tap while it is still opening. Count only a
+                // grant the package manager recorded; while it is absent and the button is
+                // still shown, the next pass taps it again.
+                allowed = notificationsGrantedWithin(1_500)
             }
             if ((state != "protected" || allowed) && device.findObject(By.text(expected)) != null) return
             SystemClock.sleep(100)
         }
         visible(By.text(expected))
+    }
+
+    private fun notificationsGrantedWithin(millis: Long): Boolean {
+        val deadline = SystemClock.uptimeMillis() + millis
+        do {
+            if (shell("dumpsys package $app").contains("android.permission.POST_NOTIFICATIONS: granted=true")) return true
+            SystemClock.sleep(150)
+        } while (SystemClock.uptimeMillis() < deadline)
+        return false
     }
 
     private fun productionHost() {
