@@ -13,9 +13,15 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -61,7 +67,26 @@ class PomodoroHistoryTest {
             AccessClockStamp(base, 10_000, "boot"), evaluation = projection(current)),
     )
 
+    /** The owner's read-time projection [elapsedMs] of trusted chain time after [base]. */
+    private fun ruleAt(elapsedMs: Long): BlockRule {
+        val phase = plan.phaseAt(elapsedMs)
+        return rule(phase)
+    }
+
     private fun snapshot(current: PomodoroPhase?) = historyRulesSnapshot(StorageState.Ready(listOf(rule(current))))
+
+    private fun snapshotAt(elapsedMs: Long) = historyRulesSnapshot(StorageState.Ready(listOf(ruleAt(elapsedMs))))
+
+    private fun readyAt(elapsedMs: Long) = (snapshotAt(elapsedMs) as HistoryRulesSnapshot.Ready).rules
+
+    private class MutableClock(var now: Long) : Clock() {
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+        override fun withZone(zone: ZoneId): Clock = this
+        override fun instant(): Instant = Instant.ofEpochMilli(millis())
+        override fun millis(): Long = now
+    }
+
+    private fun restGrant(round: Int) = "$id.rest$round"
 
     @Test fun `a resting parent stays an active owner commitment`() {
         val rested = snapshot(firstRest)
@@ -70,27 +95,134 @@ class PomodoroHistoryTest {
         assertTrue(ready.ownerInactiveIds.isEmpty())
         assertEquals(true, ready.rules.single().ownerActive)
         assertEquals(4, ready.rules.single().rounds)
-        assertEquals(listOf("$id.rest1"), ready.rules.single().plannedRests.map { it.grant })
-        assertEquals(base + 25 * minute, ready.rules.single().plannedRests.single().startsAt)
-        assertEquals(base + 30 * minute, ready.rules.single().plannedRests.single().endsAt)
+        assertEquals(firstRest.index, ready.rules.single().phaseIndex)
+        // The whole plan is visible: the reconciler decides which boundaries have passed.
+        assertEquals(listOf("$id.rest1", "$id.rest2", "$id.rest3"),
+            ready.rules.single().plannedRests.map { it.grant })
+        assertEquals(base + 25 * minute, ready.rules.single().plannedRests.first().startsAt)
+        assertEquals(base + 30 * minute, ready.rules.single().plannedRests.first().endsAt)
 
-        // A finished chain is genuinely inactive and has every rest behind it.
+        // A finished chain is genuinely inactive but stays visible for its rests.
         val finished = (snapshot(null) as HistoryRulesSnapshot.Ready)
         assertEquals(setOf(id), finished.ownerInactiveIds)
-        assertTrue(finished.rules.isEmpty())
+        assertEquals(listOf(id), finished.rules.map { it.id })
+        assertEquals(false, finished.rules.single().ownerActive)
+        assertNull(finished.rules.single().phaseIndex)
+    }
+
+    @Test fun `a rest to focus transition is a distinct observable value`() {
+        // The snapshot is the only thing the owner flow deduplicates on: without the phase in
+        // it, rest 1 and focus 2 read identically and the rest end was never observed.
+        val rested = (snapshot(firstRest) as HistoryRulesSnapshot.Ready)
+        val focusAgain = (snapshot(secondFocus) as HistoryRulesSnapshot.Ready)
+        assertNotEquals(rested, focusAgain)
+        assertNotEquals(rested.rules, focusAgain.rules)
+        assertEquals(firstRest.index, rested.rules.single().phaseIndex)
+        assertEquals(secondFocus.index, focusAgain.rules.single().phaseIndex)
+        assertEquals(rested.rules.single().plannedRests, focusAgain.rules.single().plannedRests)
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun `every rest pair of a completed chain is recorded on time`() = runTest {
+        var clockNow = base
+        val clock = object : Clock() {
+            override fun getZone(): ZoneId = ZoneOffset.UTC
+            override fun withZone(zone: ZoneId): Clock = this
+            override fun instant(): Instant = Instant.ofEpochMilli(millis())
+            override fun millis(): Long = clockNow
+        }
+        val store = FocusHistoryStore(temporary.newFolder(), clock)
+        val reconciler = HistoryReconciler(store, clock, { ZoneOffset.UTC })
+        val seen = mutableListOf<HistoryRulesSnapshot>()
+        val reading = backgroundScope.launch {
+            historyOwnerSnapshots(
+                read = { snapshotAt(testScheduler.currentTime) },
+                subscribe = { _callback ->
+                    val unsubscribe: () -> Unit = {}
+                    unsubscribe
+                },
+            ).collect { seen += it }
+        }
+        runCurrent()
+        // Every phase boundary must survive the real owner flow's distinctUntilChanged.
+        val boundaries = listOf(0L, 25L, 30L, 55L, 60L, 85L, 90L, 115L).map { it * minute }
+        boundaries.forEach { at ->
+            if (at > testScheduler.currentTime) advanceTimeBy(at - testScheduler.currentTime)
+            advanceTimeBy(500); runCurrent()
+        }
+        reading.cancel(); runCurrent()
+
+        val delivered = seen.map { (it as HistoryRulesSnapshot.Ready).rules.single().phaseIndex }
+        assertEquals(listOf(0, 1, 2, 3, 4, 5, 6, null), delivered)
+
+        // Replay exactly what the flow delivered, each at its own logical observation time.
+        seen.forEach { snapshot ->
+            val phaseIndex = (snapshot as HistoryRulesSnapshot.Ready).rules.single().phaseIndex
+            clockNow = base + (plan.phases.getOrNull(phaseIndex ?: -1)?.startMs ?: plan.totalMs) + 500
+            runBlocking { reconciler.collectSnapshots(flowOf(snapshot)) }
+        }
+
+        val events = store.load().events
+        val starts = events.filter { it.type == "break_started" }
+        val ends = events.filter { it.type == "break_ended" }
+        assertEquals(listOf("break_started", "break_ended", "break_started", "break_ended",
+            "break_started", "break_ended"),
+            events.filter { it.type.startsWith("break_") }.sortedBy { it.at }.map { it.type })
+        assertEquals(3, starts.size); assertEquals(3, ends.size)
+        // No dangling pair, all three on time, at the logical rest boundaries.
+        assertEquals(starts.map { it.grant }.toSet(), ends.map { it.grant }.toSet())
+        assertEquals(listOf("$id.rest1", "$id.rest2", "$id.rest3"), starts.map { it.grant })
+        assertEquals(starts.map { it.grant }, ends.map { it.grant })
+        assertTrue("an on-time read is not inferred", (starts + ends).none { it.inferred })
+        assertEquals((1..3).map { "$id.rest$it" }, starts.map { it.grant })
+        assertEquals((1..3).map { base + (listOf(25, 55, 85)[it - 1]) * minute }, starts.map { it.at })
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun `a chain that died mid-run still records every rest when first seen after its end`() = runTest {
+        val clock = MutableClock(base + 50 * minute)
+        val store = FocusHistoryStore(temporary.newFolder(), clock)
+        val reconciler = HistoryReconciler(store, clock, { ZoneOffset.UTC })
+        // The process was alive inside focus round 2, so rest 1 was recorded then.
+        reconciler.observe(readyAt(50 * minute))
+        // Killed here; restarted at t=120, past the chain end. The rule is still stored, so the
+        // plan and its committed anchor are still the authority for the rests it never saw.
+        clock.now = base + 120 * minute
+        reconciler.observe(readyAt(120 * minute))
+        // The owner delivers the natural terminal for the same logical end.
+        store.update { listOf(HistoryEvent(type = "completed", session = id, at = chainEnd, tz = "UTC",
+            originRoute = "editor_terminal", reason = "deadline")) }
+
+        val events = store.load().events
+        val rests = events.filter { it.type.startsWith("break_") }
+        assertEquals(6, rests.size)
+        assertTrue("a rest boundary this read missed is inferred", rests.all { it.inferred })
+        assertEquals(setOf("$id.rest1", "$id.rest2", "$id.rest3"), rests.mapNotNull { it.grant }.toSet())
+
+        val session = FocusHistoryAggregator.sessions(events, clock.millis(), emptySet()).single()
+        assertEquals(SessionOutcome.COMPLETED, session.outcome)
+        // 115 committed minutes minus the three five-minute rests; rest is never focus time.
+        assertEquals(100 * minute, session.focusedMs)
+        assertEquals(4, session.pomodoroRoundsCompleted)
+    }
+
+    @Test fun `a planned rest that has not started yet is not recorded`() {
+        val rest = PlannedRest(round = 1, grant = restGrant(1),
+            startsAt = base + 25 * minute, endsAt = base + 30 * minute)
+        // A backward wall change can leave the plan's rest in the future: no event yet.
+        assertTrue(plannedRestEvents(id, listOf(rest), emptyList(), base + 10 * minute, "UTC").isEmpty())
+        assertEquals(listOf(HistoryEventType.BREAK_STARTED),
+            plannedRestEvents(id, listOf(rest), emptyList(), base + 25 * minute, "UTC").map { it.knownType })
+        assertEquals(listOf(HistoryEventType.BREAK_STARTED, HistoryEventType.BREAK_ENDED),
+            plannedRestEvents(id, listOf(rest), emptyList(), base + 30 * minute, "UTC").map { it.knownType })
     }
 
     @Test fun `planned rests are recorded once as planned break pairs`() = runBlocking {
         var now = base + 25 * minute + 1_000
-        val moving = object : Clock() {
-            override fun getZone(): ZoneId = ZoneOffset.UTC
-            override fun withZone(zone: ZoneId): Clock = this
-            override fun instant(): Instant = Instant.ofEpochMilli(millis())
-            override fun millis(): Long = now
-        }
+        val moving = MutableClock(now)
         val store = FocusHistoryStore(temporary.newFolder(), moving)
         val reconciler = HistoryReconciler(store, moving, { ZoneOffset.UTC })
-        val rested = (snapshot(firstRest) as HistoryRulesSnapshot.Ready).rules
+        val rested = readyAt(25 * minute + 1_000)
         reconciler.observe(rested)
         reconciler.observe(rested)
         var events = store.load().events
@@ -106,10 +238,12 @@ class PomodoroHistoryTest {
 
         // Still inside the rest: no end yet. Past it: exactly one end, and repeats dedupe.
         now = base + 29 * minute
-        reconciler.observe((snapshot(firstRest) as HistoryRulesSnapshot.Ready).rules)
+        moving.now = now
+        reconciler.observe(readyAt(29 * minute))
         assertEquals(2, store.load().events.size)
-        now = base + 31 * minute
-        val focusAgain = (snapshot(secondFocus) as HistoryRulesSnapshot.Ready).rules
+        now = base + 30 * minute + 1_000
+        moving.now = now
+        val focusAgain = readyAt(30 * minute + 1_000)
         reconciler.observe(focusAgain)
         reconciler.observe(focusAgain)
         reconciler.observe(focusAgain)
@@ -119,22 +253,18 @@ class PomodoroHistoryTest {
         assertEquals("$id.rest1", closed.grant)
         assertEquals(base + 30 * minute, closed.at)
         assertEquals("planned", closed.kind)
+        assertFalse("the reconciler was running at the boundary", closed.inferred)
         // Stable IDs are what repeated reconciles and restarts deduplicate on.
         assertEquals(events.map { it.id }.distinct().size, events.size)
     }
 
     @Test fun `a late observation keeps the logical boundary and records observedAt`() = runBlocking {
-        var now = base + 40 * minute
-        val moving = object : Clock() {
-            override fun getZone(): ZoneId = ZoneOffset.UTC
-            override fun withZone(zone: ZoneId): Clock = this
-            override fun instant(): Instant = Instant.ofEpochMilli(millis())
-            override fun millis(): Long = now
-        }
-        val store = FocusHistoryStore(temporary.newFolder(), moving)
-        val reconciler = HistoryReconciler(store, moving, { ZoneOffset.UTC })
+        val now = base + 40 * minute
+        val clock = MutableClock(now)
+        val store = FocusHistoryStore(temporary.newFolder(), clock)
+        val reconciler = HistoryReconciler(store, clock, { ZoneOffset.UTC })
         // First observation ever: focus round 2, so rest 1 is already behind us.
-        reconciler.observe((snapshot(secondFocus) as HistoryRulesSnapshot.Ready).rules)
+        reconciler.observe(readyAt(40 * minute))
         val events = store.load().events
         val opened = events.single { it.type == "break_started" }
         assertEquals(base + 25 * minute, opened.at)
