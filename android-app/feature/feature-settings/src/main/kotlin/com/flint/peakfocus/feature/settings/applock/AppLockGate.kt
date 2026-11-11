@@ -175,6 +175,7 @@ private fun PinGateScreen(
     var wrongPin by remember { mutableStateOf(false) }
     var unavailable by remember { mutableStateOf(false) }
     var announceLockout by remember { mutableStateOf(false) }
+    var submitting by remember { mutableStateOf(false) }
     val lockedOut = state.lockoutRemainingMs > 0
 
     lockoutTicker(remaining = { state.lockoutRemainingMs }, refresh = controller::refreshLockout)
@@ -191,24 +192,29 @@ private fun PinGateScreen(
     }
 
     fun submit() {
-        if (pin.isEmpty() || state.busy || lockedOut) return
+        if (pin.isEmpty() || submitting || state.busy || lockedOut) return
         wrongPin = false
         unavailable = false
+        submitting = true
         scope.launch {
-            when (controller.unlock(pin)) {
-                PinAttempt.Success -> pin = ""
-                is PinAttempt.Wrong -> {
-                    pin = ""
-                    wrongPin = true
+            try {
+                when (controller.unlock(pin)) {
+                    PinAttempt.Success -> pin = ""
+                    is PinAttempt.Wrong -> {
+                        pin = ""
+                        wrongPin = true
+                    }
+                    is PinAttempt.LockedOut -> {
+                        pin = ""
+                        controller.refreshLockout()
+                    }
+                    PinAttempt.Unavailable -> {
+                        pin = ""
+                        unavailable = true
+                    }
                 }
-                is PinAttempt.LockedOut -> {
-                    pin = ""
-                    controller.refreshLockout()
-                }
-                PinAttempt.Unavailable -> {
-                    pin = ""
-                    unavailable = true
-                }
+            } finally {
+                submitting = false
             }
         }
     }
@@ -319,7 +325,7 @@ private fun PinGateScreen(
                 EmberButton(
                     text = "Unlock",
                     onClick = { submit() },
-                    enabled = pin.isNotEmpty() && !state.busy && !lockedOut,
+                    enabled = pin.isNotEmpty() && !submitting && !state.busy && !lockedOut,
                 )
             }
 
