@@ -67,6 +67,9 @@ class OwnMainActivityStandDownTest {
         window(service.packageName, "${service.packageName}.MainActivity")
         assertEquals("com.instagram.android", visiblePackage())
         assertEquals("com.instagram.android", field("lastForegroundPackage"))
+        // Nor is the applicationId-derived name: no class `app.flint.focus.MainActivity` exists.
+        window(service.packageName, "${FlintIdentity.APPLICATION_ID}.MainActivity")
+        assertEquals("com.instagram.android", visiblePackage())
 
         window(service.packageName, FlintIdentity.MAIN_ACTIVITY_CLASS)
         assertNull("a real MainActivity visit hides the shield", visiblePackage())

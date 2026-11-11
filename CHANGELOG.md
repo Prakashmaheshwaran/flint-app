@@ -12,7 +12,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   `app.flint.focus.test`), matching the iOS re-key in ADR-008. The public v0.1.0 debug APK
   and any earlier preview install as a different app: they cannot update in place, and their
   local rules, limits and history do not carry over. Recreate rules in the new app, then
-  uninstall the old one. The Gradle namespace and Kotlin packages stay `com.flint.peakfocus`.
+  uninstall the old one. While both are installed, the new app treats the old one as an
+  ordinary app (it appears in pickers and can be blocked) and two Flint entries appear in
+  Accessibility settings. The Gradle namespace and Kotlin packages stay `com.flint.peakfocus`.
 - **Android:** opening Flint's own MainActivity is now recognised by its class name rather
   than `packageName + ".MainActivity"`, which the re-key would have broken; the editor's
   safety floor names the new package through one shared `FlintIdentity` constant.

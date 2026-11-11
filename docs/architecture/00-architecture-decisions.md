@@ -204,10 +204,11 @@ is unchanged for now.
 **Amendment (2026-11-11).** The Android applicationId was re-keyed to `app.flint.focus` (debug
 and release; instrumentation APK `app.flint.focus.test`) so both platforms share one identifier
 family. The Gradle `namespace` and Kotlin packages stay `com.flint.peakfocus` to avoid churn, so
-component names must use fully qualified class names (e.g.
-`app.flint.focus/com.flint.peakfocus.MainActivity`), never `.Class` shorthand or
-`packageName + ".Class"`. Installs from the old package cannot update in place and do not carry
-local data.
+runtime component strings (adb `-n`, `ComponentName`, `setClassName`, Orca `--activity`) must use
+fully qualified class names (e.g. `app.flint.focus/com.flint.peakfocus.MainActivity`), never
+`pkg/.Class` shorthand or `packageName + ".Class"`. Manifest declarations such as
+`android:name=".MainActivity"` still resolve against the namespace and need no change. Installs
+from the old package cannot update in place and do not carry local data.
 
 **Fork note (documented in CONTRIBUTING).** Anyone shipping their own build must (a) change the
 bundle/application IDs to identifiers they control, and (b) for iOS, request their own
