@@ -49,8 +49,13 @@ enum FlintEmergencyPassScope {
             }
         if let active {
             if let object = defaults.object(forKey: "flint.activeSession.selection") {
+                // A legacy owner restored behind an unapplied replacement still finds that
+                // replacement's snapshot. Its own targets are unknown either way, exactly as for
+                // a legacy owner with no snapshot, so a readable foreign snapshot is no scope
+                // fault for it (R-04). Contract-versioned owners still need their own snapshot.
                 guard let data = object as? Data,
-                      let saved = try? JSONDecoder().decode(SessionSelection.self, from: data), saved.sessionID == active.id else {
+                      let saved = try? JSONDecoder().decode(SessionSelection.self, from: data),
+                      saved.sessionID == active.id || active.contractVersion == nil else {
                     throw FlintEmergencyPassError.scopeUnavailable
                 }
             } else if active.contractVersion != nil {
