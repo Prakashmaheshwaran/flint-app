@@ -576,6 +576,7 @@ private final class RemovalSessionShield: FlintSessionShielding {
     func fingerprint(of selection: FamilyActivitySelection) -> String { "A" }
     func applyBlockList(_ selection: FamilyActivitySelection) throws { if failApply { throw RemovalGuardHarness.Failure.injected } }
     func clear() {}
+    func retainsAppliedSettings() -> Bool { false }
 }
 private struct RemovalSessionWeb: FlintSessionWebRestricting { func reconcile(_ session: FlintActiveSession, clock: FlintClock) {} }
 private final class RemovalSessionRegistrar: FlintSessionActivityRegistering {

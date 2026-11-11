@@ -71,13 +71,21 @@ class TimeLimitBootstrapMigrationTest {
         try { usage.measurementContext("app", at); fail("missing capture initialized Time") }
         catch (failure: StorageUnavailableException) { assertEquals(StorageFailure.IO, failure.reason) }
         assertEquals(before, values.value)
+        // The read surface reports the same retryable reason as the writers, not CORRUPT.
+        assertEquals(com.flint.peakfocus.core.model.StorageState.Unavailable(StorageFailure.IO),
+            usage.state.first { it !is com.flint.peakfocus.core.model.StorageState.Loading })
         val shared = DataStoreProtectionTransactionStore(disk, { at }, { "UTC" })
         assertTrue(shared.transact { ProtectionMutation(it.focus, true) } is ProtectionCommit.Committed)
         assertNull(values.value[TIME_USAGE_SCHEMA])
         val migration = TimeLimitBootstrapMigration({ at }, { "GMT+05:30" }, { setOf("legacy-only") })
         values.value = migration.migrate(values.value)
+        // Capture recovered but no writer has initialized the ledger yet: still retryable.
+        assertEquals(com.flint.peakfocus.core.model.StorageState.Unavailable(StorageFailure.IO),
+            usage.state.first { it !is com.flint.peakfocus.core.model.StorageState.Loading })
         editor.reconcile(at)
         assertEquals(setOf("app", "legacy-only"), readTimeLimitUsage(values.value).targets.keys)
+        assertTrue(usage.state.first { it !is com.flint.peakfocus.core.model.StorageState.Loading }
+            is com.flint.peakfocus.core.model.StorageState.Ready)
         val recoveredDay = usage.measurementContext("app", at).committedDay!!
         assertEquals("GMT+05:30", recoveredDay.zoneId)
         assertEquals(66_600_000L, recoveredDay.reset.remainingToResetMs)
@@ -155,8 +163,9 @@ class TimeLimitBootstrapMigrationTest {
                 is com.flint.peakfocus.core.model.StorageState.Ready)
             assertTrue(DataStoreLimitsStore(disk).openLimitsState.first { it !is com.flint.peakfocus.core.model.StorageState.Loading }
                 is com.flint.peakfocus.core.model.StorageState.Ready)
-            assertTrue(DataStoreTimeLimitUsageStore(disk).state.first { it !is com.flint.peakfocus.core.model.StorageState.Loading }
-                is com.flint.peakfocus.core.model.StorageState.Unavailable)
+            // A recorded capture failure keeps its own reason; it is not relabelled retryable.
+            assertEquals(com.flint.peakfocus.core.model.StorageState.Unavailable(StorageFailure.CORRUPT),
+                DataStoreTimeLimitUsageStore(disk).state.first { it !is com.flint.peakfocus.core.model.StorageState.Loading })
             disk.edit { it[stringPreferencesKey("unrelated")] = "still writable" }
             assertEquals("still writable", disk.data.first()[stringPreferencesKey("unrelated")])
         } finally {

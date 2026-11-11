@@ -79,6 +79,27 @@ class TimerViewModelTest {
         assertTrue(vm.uiState.value.canStart)
     }
 
+    @Test fun `opening the sheet requests a fresh protection evaluation`() = runTest(dispatcher) {
+        var evaluations = 0
+        val store = InMemoryBlockRulesStore()
+        val vm = TimerViewModel(store, { listOf(app, otherApp) },
+            EditorTestStore(store, now = { clock }), TestHarderWaitStore(),
+            now = { clock }, newId = { "test-id" }, ioDispatcher = dispatcher,
+            protectionClock = { com.flint.peakfocus.core.model.AccessClockStamp(clock, dispatcher.scheduler.currentTime, "boot") },
+            safety = { com.flint.peakfocus.core.datastore.EditorSafety(true) },
+            protectionStatus = MutableStateFlow(readyTimerStatus(com.flint.peakfocus.core.model.AccessClockStamp(clock, dispatcher.scheduler.currentTime, "boot"))),
+            loadPermissions = { TimerPermissions(accessibilityEnabled = true) }, livePathA = { true },
+            requestEvaluation = { evaluations++ })
+        ViewModelStore().also { it.put("timer", vm); owners += it }
+        runCurrent()
+        evaluations = 0
+        vm.setVisible(true)
+        runCurrent()
+        assertEquals("Arrival must wake the detectors so a stale floor cannot disable Begin",
+            1, evaluations)
+        vm.setVisible(false)
+    }
+
     @Test fun `start persists a frozen preset and tier without replacing unrelated rules`() = runTest(dispatcher) {
         val work = session("work-rule").copy(expiresAtEpochMs = null)
         val store = ControlledStore(listOf(work))

@@ -40,7 +40,11 @@ enum FlintRuleOccurrenceClock {
         guard let anchor = rule.protection?.timeAnchor else { return clock.now() }
         // A corrupt/future anchor proves no elapsed time. Re-anchor once at the start of the
         // retained finite occurrence, preserving its policy and daily exhaustion conservatively.
-        guard anchor.isValid else { return rule.protection?.occurrence?.start ?? clock.now() }
+        // Without a frozen occurrence, a retained queue window is the remaining finite
+        // evidence; its start keeps the queued weakening from becoming due on wall time.
+        guard anchor.isValid else {
+            return rule.protection?.occurrence?.start ?? rule.protection?.queuedChange?.window.start ?? clock.now()
+        }
         let checkpoint = FlintLedgerInstant(wall: anchor.wall, monotonic: anchor.monotonic, bootID: anchor.bootID)
         let instant = FlintLedgerInstant(clock: clock)
         if let elapsed = checkpoint.elapsed(until: instant) {

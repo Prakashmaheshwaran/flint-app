@@ -89,8 +89,9 @@ class BlockScreenCoordinator(
     /**
      * Invoked when [surfaceHost] cannot attach an overlay (Path B without the
      * SYSTEM_ALERT_WINDOW grant) — e.g. launch the full-screen [BlockActivity] fallback.
+     * Returns false when the launch request itself failed (nothing was delivered).
      */
-    private val onBlockSurfaceUnavailable: ((Context, String, String?, BlockCause) -> Unit)? = null,
+    private val onBlockSurfaceUnavailable: ((Context, String, String?, BlockCause) -> Boolean)? = null,
     /**
      * Invoked (on [scope]) when a break/pass exemption granted here runs out, so an
      * event-driven detector can re-evaluate the foreground app without waiting for the next
@@ -336,7 +337,8 @@ class BlockScreenCoordinator(
                     ProtectionStatusHub.status.value.detectors.degradedReasons,
                 timeMeasurementUnavailable = TimeLimitMeasurementHealth.publisher.unavailable(budgets, now),
                 timeMeasurementStorageUnavailable = timeState.value is StorageState.Unavailable ||
-                    TimeLimitMeasurementHealth.publisher.storageUnavailable(budgets))
+                    TimeLimitMeasurementHealth.publisher.storageUnavailable(budgets),
+                blockSurface = BlockSurfaceMountHealth.publisher.latest)
             synchronized(statusLock) {
                 val connected = EnforcementSignals.detectors.pathAConnected
                 val health = snapshot.detectors.copy(accessibilityConnected = connected,
@@ -903,17 +905,27 @@ class BlockScreenCoordinator(
             onEmergencyPassRequested = { handleGrantRequested(packageName, requests, emergency = true) },
         )
         view.render(screenState(packageName, appLabel, cause, now))
-        val mounted = if (surfaceHost.attach(view)) {
+        // A throwing host (e.g. WindowManager.addView BadTokenException) is an unavailable
+        // surface, not a Main-thread crash: fall through to the fallback and retry next tick.
+        val attached = runCatching { surfaceHost.attach(view) }.getOrDefault(false)
+        val mounted = if (attached) {
             shownView = view
             visiblePackage = packageName
             startTicker()
             true
         } else {
             onBlockSurfaceUnavailable?.let { fallback ->
-                fallback(appContext, packageName, appLabel, cause)
-                true
+                runCatching { fallback(appContext, packageName, appLabel, cause) }.getOrDefault(false)
             } ?: false
         }
+        // R-30: health/Armed must not claim a shield the user never received. Recording is
+        // observe-only; the block cause, its retries and the fallback are unchanged.
+        val outcome = when {
+            attached -> BlockSurfaceMountPublisher.Outcome.CLEAR
+            mounted -> BlockSurfaceMountPublisher.Outcome.FALLBACK_ONLY
+            else -> BlockSurfaceMountPublisher.Outcome.FAILED
+        }
+        if (BlockSurfaceMountHealth.publisher.record(outcome)) invalidateProtectionStatus()
         // Once per new block of this package that actually reached the user (Path B's fallback
         // re-launches every poll tick while the overlay is unavailable; those are not new
         // interceptions, and a failed attach with no fallback blocked nothing).
