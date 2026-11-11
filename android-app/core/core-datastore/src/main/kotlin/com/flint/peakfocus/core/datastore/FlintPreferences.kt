@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Production entry point for the DataStore-backed stores. Lives in its own file so the
@@ -18,8 +21,24 @@ private val Context.rawFlintPreferencesDataStore: DataStore<Preferences> by pref
     produceMigrations = ::timeLimitBootstrapMigrations,
 )
 
+private val timeBootstrapRetryLock = Any()
+@Volatile private var timeBootstrapRetry: TimeLimitBootstrapRetry? = null
+
+/** One retry per process, bound to the single backing DataStore (R-18b capture-absent lastGood). */
+private fun Context.timeBootstrapRetry(raw: DataStore<Preferences>): TimeLimitBootstrapRetry =
+    timeBootstrapRetry ?: synchronized(timeBootstrapRetryLock) {
+        timeBootstrapRetry ?: TimeLimitBootstrapRetry(raw, timeLimitBootstrapMigration(this),
+            // Same first-load ledger initialization EditorMigratingLimitsStore runs after a capture.
+            onCaptured = { DataStoreEditorCommitmentStore(TimeBootstrapRequiredDataStore(raw),
+                clockAtCommit = ProtectionClock::now).reconcile(ProtectionClock.now()) },
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)).also { timeBootstrapRetry = it }
+    }
+
 private val Context.flintPreferencesDataStore: DataStore<Preferences>
-    get() = TimeBootstrapRequiredDataStore(rawFlintPreferencesDataStore)
+    get() = applicationContext.let { app ->
+        val raw = app.rawFlintPreferencesDataStore
+        TimeBootstrapRequiredDataStore(raw, app.timeBootstrapRetry(raw))
+    }
 
 object FlintPreferences {
 

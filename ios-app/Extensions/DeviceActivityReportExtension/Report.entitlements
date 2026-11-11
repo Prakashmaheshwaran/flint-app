@@ -6,7 +6,7 @@
 	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.flint.peakfocus</string>
+		<string>group.app.flint.focus</string>
 	</array>
 </dict>
 </plist>

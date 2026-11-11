@@ -105,7 +105,7 @@ final class FlintGlanceProtectionAdapterTests: XCTestCase {
             XCTAssertEqual(FlintProtectionStatus.load(now: self.now, from: defaults)?.session?.id, active.id)
             order.append("reload")
         }, postDarwinNotification: { name in
-            XCTAssertEqual(name, "com.flint.peakfocus.status.changed")
+            XCTAssertEqual(name, "app.flint.focus.status.changed")
             XCTAssertEqual(order, ["reload"])
             order.append("darwin")
         })

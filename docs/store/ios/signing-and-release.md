@@ -46,14 +46,16 @@ not upload authorization or proof of capability/signing.
 
 ## Human prerequisites
 
-1. Inspect the intended Apple Developer team and existing Family Controls
-   distribution approval for `com.flint.peakfocus`, `.monitor`, `.shield-config`,
-   `.shield-action` and `.report`. Check each ID separately; status is unknown.
-   Confirm those five profiles contain Family Controls and the shared
-   `group.com.flint.peakfocus` entitlement. The sixth bundle,
-   `com.flint.peakfocus.widgets`, needs its own signing/profile association and
-   the same App Group, but no Family Controls entitlement. Use the unsent request drafts in
-   [review-notes.md](review-notes.md) when available; avoid duplicate requests.
+1. Set the owner's Apple Developer team (Individual enrolment) in the local
+   `Signing.local.xcconfig` only. Apple assigned the Family Controls (Distribution)
+   entitlement to that account on 2026-11-01 (request `2CLYP9S4H2`, account-level).
+   Enable **Family Controls (Distribution)** plus **App Groups**
+   (`group.app.flint.focus`) on the five App IDs `app.flint.focus`, `.monitor`,
+   `.shield-config`, `.shield-action` and `.report`, then regenerate their
+   profiles and confirm each contains both entitlements. The sixth bundle,
+   `app.flint.focus.widgets`, needs its own App ID, profile and the same App
+   Group, but no Family Controls entitlement. The registered App IDs use the
+   `app.flint.focus` prefix because `com.flint.peakfocus` belongs to another team.
 2. Provision the intended signing identity and profiles in the owner's keychain
    and Xcode account configuration. Do not grant CI access to the Apple account.
 3. Record the reviewed integration commit, green iOS Debug/Release CI,

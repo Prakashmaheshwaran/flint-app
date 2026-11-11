@@ -168,7 +168,7 @@ privacy-sensitive; a label does not mean the app has no local data.
   anchored elapsed/boot checkpoints, generation/tombstone/start-operation receipts, frozen
   active targets/revisions, queued edits, timed credit counters/grants and global recovery/
   ordinary-break outboxes in the cross-process protection ledger locally in
-  `group.com.flint.peakfocus`. Captured removal consent and pending off use
+  `group.app.flint.focus`. Captured removal consent and pending off use
   `flint.removalGuard.preference`; legacy guard migration uses
   `flint.removalGuard.sessionStoreMigration.v1`. Clearing focus history does not reset them.
 - **Durable focus history:**
