@@ -132,8 +132,9 @@ class HistoryReconciler(
                 }
             }
             sessions.values.forEach { rule ->
-                // Only a live parent can move its plan; an ended plan is already final.
-                if (rule.id !in current) return@forEach
+                // A finished plan's endpoint is final; its owner terminal carries the effective
+                // plan. A live parent, and every plain rule, may still have a late recovered plan.
+                if (rule.phaseIndex == null && rule.plannedRests.isNotEmpty()) return@forEach
                 val group = known[rule.id].orEmpty()
                 if (group.any { it.knownType?.terminal == true }) return@forEach
                 val plan = group.sortedBy { it.observedAt ?: it.at }.lastOrNull {

@@ -198,6 +198,8 @@ class PomodoroHistoryTest {
         assertEquals(6, rests.size)
         assertTrue("a rest boundary this read missed is inferred", rests.all { it.inferred })
         assertEquals(setOf("$id.rest1", "$id.rest2", "$id.rest3"), rests.mapNotNull { it.grant }.toSet())
+        // A finished plan is not a recovered plan: the post-end read must not rewrite it.
+        assertTrue(events.none { it.type == "rescheduled" || it.type == "ended_early" })
 
         val session = FocusHistoryAggregator.sessions(events, clock.millis(), emptySet()).single()
         assertEquals(SessionOutcome.COMPLETED, session.outcome)
