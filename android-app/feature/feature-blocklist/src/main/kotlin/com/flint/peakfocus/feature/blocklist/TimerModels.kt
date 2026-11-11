@@ -4,6 +4,7 @@ import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.model.PomodoroPlan
 import com.flint.peakfocus.core.datastore.NATIVE_TIMER_ID_PREFIX
 import com.flint.peakfocus.core.datastore.CONTRACT_TIMER_ID_PREFIX
 import com.flint.peakfocus.core.datastore.EditorCommitmentState
@@ -40,7 +41,31 @@ internal data class TimerDraft(
     val durationMinutes: Int = 30,
     val presetId: String? = null,
     val breakLevel: BreakLevel = BreakLevel.EASY,
+    /**
+     * F01: a repeated Pomodoro chain instead of one plain Timer. The plan is frozen at start;
+     * [durationMinutes] is then ignored in favour of the plan's own chain end.
+     */
+    val pomodoro: Boolean = false,
+    val focusMinutes: Int = 25,
+    val restMinutes: Int = 5,
+    val rounds: Int = 4,
+    val longRestMinutes: Int? = null,
+    val longRestEvery: Int? = null,
 )
+
+/** The draft's plan, or null when the draft is a plain Timer or the plan is not valid. */
+internal fun draftPomodoroPlan(draft: TimerDraft): PomodoroPlan? {
+    if (!draft.pomodoro) return null
+    return runCatching {
+        PomodoroPlan(focusMinutes = draft.focusMinutes, restMinutes = draft.restMinutes,
+            rounds = draft.rounds, longRestMinutes = draft.longRestMinutes,
+            longRestEvery = draft.longRestEvery)
+    }.getOrNull()
+}
+
+/** Plain-Timer duration choices, and the whole-chain length of a Pomodoro draft. */
+internal fun draftChainMinutes(draft: TimerDraft): Int =
+    draftPomodoroPlan(draft)?.let { (it.totalMs / 60_000L).toInt() } ?: draft.durationMinutes
 
 internal data class TimerUiState(
     val draft: TimerDraft = TimerDraft(),
@@ -68,16 +93,24 @@ internal data class TimerUiState(
 internal fun timerStartFailureText(reason: String): String = if (reason == "Resume protection first.")
     "Protection recovery is active. Try again after recovery ends." else reason
 
-internal fun validTimerDraft(draft: TimerDraft): Boolean =
-    draft.apps.isNotEmpty() && draft.apps.all { it.packageName.isNotBlank() } &&
-        isValidNewSessionDuration(draft.durationMinutes * 60_000L) &&
+internal fun validTimerDraft(draft: TimerDraft): Boolean {
+    if (draft.apps.isEmpty() || draft.apps.any { it.packageName.isBlank() }) return false
+    if (draft.pomodoro) {
+        // The whole chain is the committed duration, capped like any finite session (§1/§2).
+        val plan = draftPomodoroPlan(draft) ?: return false
+        return PomodoroPlan.validationError(plan) == null && isValidNewSessionDuration(plan.totalMs)
+    }
+    return isValidNewSessionDuration(draft.durationMinutes * 60_000L) &&
         (draft.durationMinutes in timerDurationChoices ||
             timerPresets.any { it.detox && it.minutes == draft.durationMinutes })
+}
 
 /** Snapshot app targets at start; editing a later draft can never alter a running session. */
 internal fun timerRule(draft: TimerDraft, nowEpochMs: Long, uniqueId: String): BlockRule {
     require(validTimerDraft(draft)) { "Choose apps and a finite timer duration" }
-    require(nowEpochMs >= 0 && nowEpochMs <= Long.MAX_VALUE - draft.durationMinutes * 60_000L)
+    val plan = draftPomodoroPlan(draft)
+    val durationMs = plan?.totalMs ?: (draft.durationMinutes * 60_000L)
+    require(nowEpochMs >= 0 && nowEpochMs <= Long.MAX_VALUE - durationMs)
     require(uniqueId.isNotBlank())
     val preset = timerPresets.firstOrNull {
         it.id == draft.presetId && it.minutes == draft.durationMinutes
@@ -85,11 +118,29 @@ internal fun timerRule(draft: TimerDraft, nowEpochMs: Long, uniqueId: String): B
     return BlockRule(
         // The ID's start and deadline use the same instant; the UUID supplies no clock.
         id = CONTRACT_TIMER_ID_PREFIX + "$nowEpochMs-$uniqueId",
-        name = preset?.name ?: "Focus timer",
+        name = if (plan != null) pomodoroTimerName(plan) else preset?.name ?: "Focus timer",
         targets = BlockTargets(apps = draft.apps.distinctBy { it.packageName }.toSet()),
         breakLevel = draft.breakLevel,
-        expiresAtEpochMs = nowEpochMs + draft.durationMinutes * 60_000L,
+        // A Pomodoro parent's deadline covers the whole chain, from the first focus round.
+        expiresAtEpochMs = nowEpochMs + durationMs,
+        pomodoro = plan,
     )
+}
+
+/** Stable display name for a Pomodoro parent; the plan itself identifies the chain. */
+internal fun pomodoroTimerName(plan: PomodoroPlan): String = "Pomodoro · ${plan.rounds} rounds"
+
+/** "Focus · round 2 of 4 · 24:59 left" / "Rest · focus resumes in 04:59". */
+internal fun pomodoroCardLine(plan: PomodoroPlan, elapsedMs: Long): String? {
+    val elapsed = elapsedMs.coerceAtLeast(0L)
+    val phase = plan.phaseAt(elapsed) ?: return null
+    val left = timerCountdown(phase.endMs - elapsed)
+    return when (phase.kind) {
+        com.flint.peakfocus.core.model.PomodoroPhaseKind.FOCUS ->
+            "Focus · round ${phase.round} of ${plan.rounds} · $left left"
+        com.flint.peakfocus.core.model.PomodoroPhaseKind.REST -> "Rest · focus resumes in $left"
+        com.flint.peakfocus.core.model.PomodoroPhaseKind.LONG_REST -> "Long rest · focus resumes in $left"
+    }
 }
 
 /** Includes older Home sessions and malformed sessions with no deadline so none are hidden. */

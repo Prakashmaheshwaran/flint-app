@@ -24,6 +24,7 @@ import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.EnforcementSignals
+import com.flint.peakfocus.core.model.PomodoroPlan
 import com.flint.peakfocus.blocking.overlay.ProtectionStatus
 import com.flint.peakfocus.blocking.overlay.ProtectionStatusHub
 import com.flint.peakfocus.permissions.AccessibilityPermission
@@ -263,6 +264,7 @@ internal class TimerViewModel(
 
     fun selectDuration(minutes: Int) {
         if (!state.value.canEdit || minutes !in timerDurationChoices) return
+        if (state.value.draft.pomodoro) return
         state.update { it.copy(draft = it.draft.copy(durationMinutes = minutes, presetId = null)) }
     }
 
@@ -270,12 +272,77 @@ internal class TimerViewModel(
         if (!state.value.canEdit) return
         val preset = timerPresets.firstOrNull { it.id == id } ?: return
         state.update {
-            it.copy(draft = it.draft.copy(durationMinutes = preset.minutes, presetId = preset.id))
+            // A preset is one plain Timer: choosing one leaves Pomodoro mode.
+            it.copy(draft = it.draft.copy(durationMinutes = preset.minutes, presetId = preset.id,
+                pomodoro = false, longRestMinutes = null, longRestEvery = null))
         }
     }
 
     fun selectBreakLevel(level: BreakLevel) {
         if (state.value.canEdit) state.update { it.copy(draft = it.draft.copy(breakLevel = level)) }
+    }
+
+    /** F01: switch between one plain Timer and a repeated focus/rest chain. */
+    fun selectPomodoro(enabled: Boolean) {
+        if (!state.value.canEdit) return
+        state.update {
+            it.copy(draft = it.draft.copy(pomodoro = enabled,
+                presetId = if (enabled) null else it.draft.presetId,
+                longRestMinutes = if (enabled) it.draft.longRestMinutes else null,
+                longRestEvery = if (enabled) it.draft.longRestEvery else null))
+        }
+    }
+
+    fun selectFocusMinutes(minutes: Int) {
+        if (!state.value.canEdit || !state.value.draft.pomodoro || minutes !in PomodoroPlan.focusChoices) return
+        state.update { it.copy(draft = it.draft.copy(focusMinutes = minutes)) }
+    }
+
+    fun selectRestMinutes(minutes: Int) {
+        if (!state.value.canEdit || !state.value.draft.pomodoro ||
+            minutes !in PomodoroPlan.MIN_REST_MINUTES..PomodoroPlan.MAX_REST_MINUTES) return
+        state.update { current ->
+            val long = current.draft.longRestMinutes?.coerceAtLeast(minutes)
+            current.copy(draft = current.draft.copy(restMinutes = minutes, longRestMinutes = long))
+        }
+    }
+
+    fun selectRounds(rounds: Int) {
+        if (!state.value.canEdit || !state.value.draft.pomodoro || rounds !in PomodoroPlan.roundChoices) return
+        state.update { current ->
+            val every = current.draft.longRestEvery?.takeIf { it in 2 until rounds }
+            current.copy(draft = current.draft.copy(rounds = rounds,
+                longRestEvery = if (current.draft.longRestMinutes == null) null else every ?: 2.takeIf { rounds > 2 }))
+        }
+    }
+
+    /** Optional long rest; both long-rest fields are set together or not at all (§2). */
+    fun selectLongRest(enabled: Boolean) {
+        if (!state.value.canEdit || !state.value.draft.pomodoro) return
+        state.update { current ->
+            val draft = current.draft
+            val every = 2.takeIf { draft.rounds > 2 }
+            val updated = if (enabled && every != null) draft.copy(
+                longRestMinutes = draft.restMinutes.coerceAtLeast(15).coerceIn(
+                    PomodoroPlan.MIN_LONG_REST_MINUTES, PomodoroPlan.MAX_LONG_REST_MINUTES),
+                longRestEvery = every,
+            ) else draft.copy(longRestMinutes = null, longRestEvery = null)
+            current.copy(draft = updated)
+        }
+    }
+
+    fun selectLongRestMinutes(minutes: Int) {
+        if (!state.value.canEdit || state.value.draft.longRestMinutes == null) return
+        val draft = state.value.draft
+        if (minutes !in PomodoroPlan.MIN_LONG_REST_MINUTES..PomodoroPlan.MAX_LONG_REST_MINUTES ||
+            minutes < draft.restMinutes) return
+        state.update { it.copy(draft = it.draft.copy(longRestMinutes = minutes)) }
+    }
+
+    fun selectLongRestEvery(every: Int) {
+        if (!state.value.canEdit || state.value.draft.longRestMinutes == null) return
+        if (every !in 2 until state.value.draft.rounds) return
+        state.update { it.copy(draft = it.draft.copy(longRestEvery = every)) }
     }
 
     fun start() {
