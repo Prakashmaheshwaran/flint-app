@@ -2,6 +2,7 @@ package com.flint.peakfocus.core.history
 
 import java.time.Clock
 import java.time.ZoneId
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,15 @@ data class HistoryRule(
     val id: String, val name: String, val tier: String, val plannedEnd: Long?,
     /** Public owner activity is independent of the stable logical history endpoint. */
     val ownerActive: Boolean? = null,
+    /** F01: planned round count of a Pomodoro parent, else null. */
+    val rounds: Int? = null,
+    /** F01: every planned rest of the chain; the reconciler gates each on the trusted clock. */
+    val plannedRests: List<PlannedRest> = emptyList(),
+    /**
+     * F01: the current phase index, so a rest→focus transition is a distinct observable value.
+     * Null when the chain has finished or the rule has no plan.
+     */
+    val phaseIndex: Int? = null,
 ) {
     internal fun isActiveAt(now: Long): Boolean = ownerActive ?: (plannedEnd == null || plannedEnd > now)
 }
@@ -99,6 +109,7 @@ class HistoryReconciler(
                     val start = timestamp?.takeIf { it > 1_500_000_000_000L && (rule.plannedEnd == null || it < rule.plannedEnd) } ?: now
                     events += event(HistoryEventType.STARTED, rule.id, start).copy(
                         plannedEnd = rule.plannedEnd, tier = rule.tier, name = rule.name.take(64),
+                        rounds = rule.rounds,
                         source = when {
                             !native -> "legacy"
                             rule.name == "Focus timer" -> "manual"
@@ -108,7 +119,22 @@ class HistoryReconciler(
                     )
                 }
             }
+            // F01 §7: each planned rest is a `planned` break pair. Events are written only when
+            // this reconciler observes that the trusted elapsed clock passed the boundary; the
+            // logical boundary time is kept, a late observation is marked inferred. A parent that
+            // ended early stopped the chain where it was, so its plan is not evidence of later
+            // rests; a completed parent's rests all happened before its terminal.
             sessions.values.forEach { rule ->
+                val group = known[rule.id].orEmpty()
+                val terminated = group.firstOrNull { it.knownType?.terminal == true }
+                if (terminated == null || terminated.knownType == HistoryEventType.COMPLETED) {
+                    events += plannedRestEvents(rule.id, rule.plannedRests, group, now, zone().id)
+                }
+            }
+            sessions.values.forEach { rule ->
+                // A finished plan's endpoint is final; its owner terminal carries the effective
+                // plan. A live parent, and every plain rule, may still have a late recovered plan.
+                if (rule.phaseIndex == null && rule.plannedRests.isNotEmpty()) return@forEach
                 val group = known[rule.id].orEmpty()
                 if (group.any { it.knownType?.terminal == true }) return@forEach
                 val plan = group.sortedBy { it.observedAt ?: it.at }.lastOrNull {
@@ -166,3 +192,52 @@ class HistoryReconciler(
             "Quiet Day", "Digital Sabbath", "Retreat")
     }
 }
+
+/**
+ * F01 §7: `break_started` at a planned rest's logical start and `break_ended` at its logical end,
+ * both kind `planned` with grant `<ruleId>.rest<k>`. A boundary after [now] is not an event yet,
+ * so a backward wall change cannot record a future rest. Stable IDs make repeated reconciles,
+ * restarted processes and the owner's terminal delivery deduplicate; a recorded grant is never
+ * rewritten. [observedAt] is the actual observation (defaults to [now]): the logical boundary is
+ * kept and a late observation is marked inferred.
+ */
+fun plannedRestEvents(sessionId: String, rests: List<PlannedRest>, known: List<HistoryEvent>,
+                      now: Long, tz: String, observedAt: Long = now): List<HistoryEvent> {
+    if (rests.isEmpty()) return emptyList()
+    val started = known.filter { it.knownType == HistoryEventType.BREAK_STARTED }
+        .mapNotNullTo(mutableSetOf()) { it.grant }
+    val ended = known.filter { it.knownType == HistoryEventType.BREAK_ENDED }
+        .mapNotNullTo(mutableSetOf()) { it.grant }
+    val into = mutableListOf<HistoryEvent>()
+    for (rest in rests) {
+        if (rest.startsAt !in FocusHistoryAggregator.SUPPORTED_TIMES || rest.endsAt <= rest.startsAt ||
+            rest.startsAt > now) continue
+        if (rest.grant !in started) {
+            into += HistoryEvent(type = HistoryEventType.BREAK_STARTED.wireName, session = sessionId,
+                at = rest.startsAt, tz = tz).copy(
+                id = plannedRestId(sessionId, rest.round, "started"), breakEnd = rest.endsAt,
+                kind = PLANNED_BREAK_KIND, grant = rest.grant, originRoute = "pomodoro_plan",
+                observedAt = observedAt, inferred = rest.startsAt < observedAt - LATE_OBSERVATION_MS,
+            )
+        }
+        if (rest.grant !in ended && now >= rest.endsAt) {
+            into += HistoryEvent(type = HistoryEventType.BREAK_ENDED.wireName, session = sessionId,
+                at = rest.endsAt, tz = tz).copy(
+                id = plannedRestId(sessionId, rest.round, "ended"),
+                kind = PLANNED_BREAK_KIND, grant = rest.grant, originRoute = "pomodoro_plan",
+                observedAt = observedAt, inferred = rest.endsAt < observedAt - LATE_OBSERVATION_MS,
+            )
+        }
+    }
+    return into
+}
+
+private fun plannedRestId(id: String, round: Int, boundary: String): String =
+    UUID.nameUUIDFromBytes("$id|$PLANNED_BREAK_KIND|$round|$boundary".toByteArray(Charsets.UTF_8)).toString()
+
+/**
+ * A boundary observed later than this is recorded as inferred: the logical time is
+ * still the boundary, and `observedAt` keeps the actual observation.
+ */
+private const val LATE_OBSERVATION_MS = 5_000L
+

@@ -23,6 +23,10 @@ object FocusHistoryText {
             else summary.days.lastOrNull()?.focusedMs?.let(::duration) ?: "No data"
     }
     fun breaks(count: Int) = "$count ${if (count == 1) "break" else "breaks"}"
+    /** F01: "Pomodoro · 2 of 4 rounds", only when the planned count is known. */
+    fun rounds(session: FocusSession): String? = session.pomodoroRounds?.let { planned ->
+        "Pomodoro · ${session.pomodoroRoundsCompleted.coerceIn(0, planned)} of $planned rounds"
+    }
     fun opensStopped(count: Int) = "$count ${if (count == 1) "open" else "opens"} stopped"
     fun weekLabel(days: List<FocusDay>): String {
         val first = days.firstOrNull { it.focusedMs != null } ?: return "Last 7 days"

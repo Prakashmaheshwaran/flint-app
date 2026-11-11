@@ -48,8 +48,9 @@ internal fun liveProtectionHistorySessions(
     val live = mutableSetOf<String>()
     for (rule in state.value.filter { it.enabled && it.id.startsWith("session-") && it.schedule == null }) {
         val runtime = rule.runtime
+        // F01: a planned rest is still a live commitment; only a finished chain is not live.
         val active = if (runtime == null) rule.expiresAtEpochMs?.let { it > nowEpochMs } ?: true
-            else runtime.evaluation?.active ?: return null // Unprojected runtime is unknown.
+            else runtime.evaluation?.let { it.active || it.phase != null } ?: return null // Unprojected runtime is unknown.
         if (active) live += rule.id
     }
     return live

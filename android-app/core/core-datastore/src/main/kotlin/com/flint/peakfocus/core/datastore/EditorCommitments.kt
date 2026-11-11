@@ -156,6 +156,7 @@ internal fun ruleShape(rule: BlockRule, zone: String) = CommitmentPolicy.Protect
     apps = rule.targets.apps.map { it.packageName }.toSet(), domains = rule.targets.domains.map { it.domain }.toSet(),
     window = rule.schedule?.let { CommitmentPolicy.Window(it.startMinuteOfDay, it.endMinuteOfDay, it.daysOfWeek, zone) },
     endsAtEpochMs = rule.expiresAtEpochMs,
+    pomodoro = rule.pomodoro,
 )
 
 internal fun limitShape(pkg: String, tier: BreakLevel, budget: Int, dailyZoneId: String? = null) = CommitmentPolicy.ProtectionShape(
@@ -170,6 +171,19 @@ internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClo
     }
     rule.expiresAtEpochMs?.let {
         if (old?.expiresAtEpochMs != it && !isValidNewSessionDuration(it - now.wallEpochMs)) {
+            return "Choose a duration of at most 24 hours."
+        }
+    }
+    // F01: a plan is frozen with its parent. A malformed plan is never silently dropped into
+    // an unrestricted Timer, and its whole chain must stay inside the session cap.
+    rule.pomodoro?.let { plan ->
+        PomodoroPlan.validationError(plan)?.let { return it }
+        // The phase table needs the parent's own finite end. A repeating window would replay
+        // the same plan as a second occurrence, so it never carries one.
+        if (rule.schedule != null || rule.expiresAtEpochMs == null) {
+            return "A Pomodoro chain needs a finite Timer, not a schedule."
+        }
+        if (old?.pomodoro != plan && !isValidNewSessionDuration(plan.totalMs)) {
             return "Choose a duration of at most 24 hours."
         }
     }

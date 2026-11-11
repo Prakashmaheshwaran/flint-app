@@ -353,6 +353,8 @@ class BlockActivity : ComponentActivity() {
                 ruleId = getStringExtra(EXTRA_RULE_ID),
                 displayEnd = if (getBooleanExtra(EXTRA_HAS_DISPLAY_END, false))
                     BlockDisplayEnd(getLongExtra(EXTRA_DISPLAY_END, NO_END).takeIf { it > 0L }) else null,
+                pomodoroNote = getStringExtra(EXTRA_POMODORO_NOTE),
+                pomodoroPhaseEndsAtEpochMs = getLongExtra(EXTRA_POMODORO_PHASE_END, NO_END).takeIf { it > 0L },
             ),
         )
     }
@@ -485,6 +487,8 @@ class BlockActivity : ComponentActivity() {
         const val EXTRA_RULE_ID = "flint.rule_id"
         internal const val EXTRA_HAS_DISPLAY_END = "flint.has_display_end"
         internal const val EXTRA_DISPLAY_END = "flint.display_end"
+        internal const val EXTRA_POMODORO_NOTE = "flint.pomodoro_note"
+        internal const val EXTRA_POMODORO_PHASE_END = "flint.pomodoro_phase_end"
         const val EXTRA_RECOVERY = "flint.protection_recovery"
         private const val NO_END = -1L
 
@@ -518,6 +522,8 @@ class BlockActivity : ComponentActivity() {
                         .putExtra(EXTRA_ENDS_AT_EPOCH_MS, cause.endsAtEpochMs ?: NO_END)
                         .putExtra(EXTRA_HAS_DISPLAY_END, cause.displayEnd != null)
                         .putExtra(EXTRA_DISPLAY_END, cause.displayEnd?.endsAtEpochMs ?: NO_END)
+                        .putExtra(EXTRA_POMODORO_NOTE, cause.pomodoroNote)
+                        .putExtra(EXTRA_POMODORO_PHASE_END, cause.pomodoroPhaseEndsAtEpochMs ?: NO_END)
                         .putExtra(EXTRA_RULE_ID, cause.ruleId),
                 )
             }.isSuccess

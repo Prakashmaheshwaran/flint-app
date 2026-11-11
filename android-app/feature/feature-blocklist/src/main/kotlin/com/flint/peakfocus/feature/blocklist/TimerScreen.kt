@@ -100,6 +100,7 @@ import com.flint.peakfocus.core.common.ui.TodayHero
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.model.PomodoroPlan
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.history.FocusHistoryText
 import com.flint.peakfocus.core.history.FocusSession
@@ -231,6 +232,13 @@ fun TimerScreen(
             onDuration = viewModel::selectDuration,
             onPreset = viewModel::selectPreset,
             onBreakLevel = viewModel::selectBreakLevel,
+            onPomodoro = viewModel::selectPomodoro,
+            onFocusMinutes = viewModel::selectFocusMinutes,
+            onRestMinutes = viewModel::selectRestMinutes,
+            onRounds = viewModel::selectRounds,
+            onLongRest = viewModel::selectLongRest,
+            onLongRestMinutes = viewModel::selectLongRestMinutes,
+            onLongRestEvery = viewModel::selectLongRestEvery,
             onRetryApps = viewModel::retryApps,
             onStart = viewModel::start,
             onRetryProtection = viewModel::retryStartProtection,
@@ -780,6 +788,14 @@ internal fun StartFocusSheet(
     onRetryProtection: () -> Unit,
     onSetup: () -> Unit,
     setupAvailable: Boolean = true,
+    // F01 Pomodoro plan controls; defaults keep the plain-Timer call sites unchanged.
+    onPomodoro: (Boolean) -> Unit = {},
+    onFocusMinutes: (Int) -> Unit = {},
+    onRestMinutes: (Int) -> Unit = {},
+    onRounds: (Int) -> Unit = {},
+    onLongRest: (Boolean) -> Unit = {},
+    onLongRestMinutes: (Int) -> Unit = {},
+    onLongRestEvery: (Int) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -820,7 +836,8 @@ internal fun StartFocusSheet(
                 }
             }
 
-            Row(Modifier.fillMaxWidth().padding(top = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+            val plan = draftPomodoroPlan(state.draft)
+            if (plan == null) Row(Modifier.fillMaxWidth().padding(top = 22.dp), verticalAlignment = Alignment.CenterVertically) {
                 FlintCircleButton(
                     onClick = { choices.lastOrNull { it < minutes }?.let(onDuration) },
                     contentDescription = "Less time",
@@ -851,7 +868,7 @@ internal fun StartFocusSheet(
                 ) { Icon(FlintGlyphs.plus, contentDescription = null, modifier = Modifier.size(20.dp)) }
             }
 
-            Row(
+            if (plan == null) Row(
                 Modifier.fillMaxWidth().padding(top = 18.dp).horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -922,6 +939,19 @@ internal fun StartFocusSheet(
                 }
             }
 
+            PomodoroDraftSection(
+                draft = state.draft,
+                enabled = state.canEdit,
+                plan = plan,
+                onPomodoro = onPomodoro,
+                onFocusMinutes = onFocusMinutes,
+                onRestMinutes = onRestMinutes,
+                onRounds = onRounds,
+                onLongRest = onLongRest,
+                onLongRestMinutes = onLongRestMinutes,
+                onLongRestEvery = onLongRestEvery,
+            )
+
             FlintSectionTitle("Break level", Modifier.padding(top = 22.dp))
             Column(
                 Modifier.fillMaxWidth().padding(top = 10.dp).selectableGroup(),
@@ -987,8 +1017,31 @@ internal fun StartFocusSheet(
                     if (setupAvailable) TextButton(onClick = onSetup, enabled = !state.busy) { Text("Check setup") }
                 }
             }
+            val footerPlan = draftPomodoroPlan(state.draft)
+            if (footerPlan != null) {
+                Text(
+                    pomodoroDisclosure(footerPlan),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FlintPalette.Mist,
+                    modifier = Modifier.padding(bottom = 10.dp).semantics(mergeDescendants = true) { },
+                )
+            }
+            // A plan that lost its long-rest interval must say why Begin is disabled, rather
+            // than silently falling back to the plain duration controls.
+            pomodoroDraftError(state.draft)?.takeIf { footerPlan == null }?.let { problem ->
+                Text(
+                    problem,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FlintPalette.Danger,
+                    modifier = Modifier.padding(bottom = 10.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+            if (state.draft.breakLevel == BreakLevel.HARDCORE && footerPlan != null) {
+                Column(Modifier.padding(bottom = 10.dp)) { HardcoreCommitmentDisclosure() }
+            }
             EmberButton(
-                if (state.busy) "Starting…" else "Begin ${timerDurationLabel(minutes)}",
+                if (state.busy) "Starting…" else if (footerPlan != null)
+                    "Begin · ${footerPlan.rounds} × ${footerPlan.focusMinutes}m" else "Begin ${timerDurationLabel(minutes)}",
                 onStart,
                 enabled = state.canStart && state.startPrerequisite == null,
             )
@@ -1000,6 +1053,111 @@ internal fun StartFocusSheet(
             }
         }
     }
+}
+
+/** F01 — the Pomodoro plan picker. Rests are disclosed as part of the commitment (§1/§6). */
+@Composable
+private fun PomodoroDraftSection(
+    draft: TimerDraft,
+    enabled: Boolean,
+    plan: PomodoroPlan?,
+    onPomodoro: (Boolean) -> Unit,
+    onFocusMinutes: (Int) -> Unit,
+    onRestMinutes: (Int) -> Unit,
+    onRounds: (Int) -> Unit,
+    onLongRest: (Boolean) -> Unit,
+    onLongRestMinutes: (Int) -> Unit,
+    onLongRestEvery: (Int) -> Unit,
+) {
+    FlintSectionTitle("Pomodoro", Modifier.padding(top = 22.dp))
+    Row(
+        Modifier.fillMaxWidth().padding(top = 10.dp).horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FlintChip(onClick = { onPomodoro(false) }, selected = !draft.pomodoro, enabled = enabled, height = 38.dp) {
+            FlintChipText("Single session")
+            FlintChipText(timerDurationLabel(draft.durationMinutes), color = FlintPalette.Mist)
+        }
+        FlintChip(onClick = { onPomodoro(true) }, selected = draft.pomodoro, enabled = enabled, height = 38.dp) {
+            FlintChipText("Repeated rounds")
+            if (plan != null) FlintChipText(timerDurationLabel((plan.totalMs / 60_000L).toInt()), color = FlintPalette.Mist)
+        }
+    }
+    if (!draft.pomodoro) {
+        Text(
+            "One focus block. Choose repeated rounds for a focus/rest chain.",
+            style = MaterialTheme.typography.bodySmall,
+            color = FlintPalette.Mist,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        return
+    }
+    PomodoroChoiceRow("Focus minutes", POMODORO_FOCUS_CHOICES, draft.focusMinutes, enabled, onFocusMinutes)
+    PomodoroChoiceRow("Rest minutes", POMODORO_REST_CHOICES, draft.restMinutes, enabled, onRestMinutes)
+    PomodoroChoiceRow("Rounds", PomodoroPlan.roundChoices, draft.rounds, enabled, onRounds)
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp).horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FlintChip(onClick = { onLongRest(draft.longRestMinutes == null) },
+            selected = draft.longRestMinutes != null,
+            // A set long rest stays switchable off even when the round count no longer fits it.
+            enabled = enabled && longRestToggleEnabled(draft), height = 36.dp) {
+            FlintChipText(if (draft.longRestMinutes == null) "Add a long rest" else "No long rest")
+        }
+    }
+    draft.longRestMinutes?.let { longMinutes ->
+        PomodoroChoiceRow("Long rest minutes",
+            POMODORO_LONG_REST_CHOICES.filter { it >= draft.restMinutes }, longMinutes, enabled, onLongRestMinutes)
+        PomodoroChoiceRow("Long rest every", (2 until draft.rounds).toList(), draft.longRestEvery ?: 2, enabled, onLongRestEvery)
+    }
+    plan?.let {
+        Text(
+            pomodoroDisclosure(it),
+            style = MaterialTheme.typography.bodySmall,
+            color = FlintPalette.Mist,
+            modifier = Modifier.padding(top = 10.dp),
+        )
+    }
+}
+
+@Composable
+private fun PomodoroChoiceRow(
+    label: String,
+    values: List<Int>,
+    selected: Int,
+    enabled: Boolean,
+    onSelect: (Int) -> Unit,
+) {
+    if (values.isEmpty()) return
+    FlintEyebrow(label, Modifier.padding(top = 12.dp))
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp).horizontalScroll(rememberScrollState()).selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        values.forEach { value ->
+            FlintChip(onClick = { onSelect(value) }, selected = value == selected, enabled = enabled, height = 34.dp) {
+                FlintChipText(value.toString())
+            }
+        }
+    }
+}
+
+internal val POMODORO_FOCUS_CHOICES: List<Int> =
+    listOf(5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 75, 90, 100, 120)
+internal val POMODORO_REST_CHOICES: List<Int> = listOf(1, 2, 3, 5, 8, 10, 15, 20, 30, 45, 60)
+internal val POMODORO_LONG_REST_CHOICES: List<Int> = listOf(5, 10, 15, 20, 25, 30, 45, 60)
+
+/**
+ * The start disclosure (§1, §6): the plan, that rests are planned and part of the commitment,
+ * that the tier covers the whole chain, and that there is no skip or extend operation.
+ */
+internal fun pomodoroDisclosure(plan: PomodoroPlan): String {
+    val long = plan.longRestMinutes?.let { " and a $it-minute long rest every ${plan.longRestEvery} rounds" } ?: ""
+    val total = timerDurationLabel((plan.totalMs / 60_000L).toInt().coerceAtLeast(1))
+    return "${plan.rounds} focus rounds of ${plan.focusMinutes} minutes with " +
+        "${plan.restMinutes}-minute rests$long. Rests are planned and part of the commitment; " +
+        "your break level applies to the whole chain ($total). You cannot skip, shorten or extend a round."
 }
 
 /** E06 — a running timer: the ember travels its arc, breath rings around it. */
@@ -1063,8 +1221,25 @@ internal fun SessionScene(
                         contentDescription = if (armed) "$remaining remaining" else "$remaining remaining in saved plan"
                     },
                 )
+                session.pomodoro?.let { plan ->
+                    pomodoroCardLine(plan, (plan.totalMs - (deadline - nowEpochMs).coerceAtLeast(0L)).coerceAtLeast(0L))
+                        ?.let { line ->
+                            Text(
+                                line,
+                                style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp),
+                                color = if (armed) FlintPalette.Bone else FlintPalette.Mist,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(top = 10.dp).semantics {
+                                    contentDescription = line
+                                },
+                            )
+                        }
+                }
                 Text(
-                    "ends at ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(deadline))}" +
+                    if (session.pomodoro != null)
+                        "chain ends at ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(deadline))}" +
+                            (start?.let { " · ${sessionLengthLabel(it, deadline)} committed" } ?: "")
+                    else "ends at ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(deadline))}" +
                         (start?.let { " · ${sessionLengthLabel(it, deadline)} session" } ?: ""),
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
                     color = FlintPalette.Mist,
@@ -1258,6 +1433,15 @@ private fun CompleteScene(
                 color = FlintPalette.Mist,
                 modifier = Modifier.padding(top = 10.dp),
             )
+            // F01 §7: the rounds this history proves — a committed completion proves all of them.
+            FocusHistoryText.rounds(session)?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FlintPalette.Mist,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
             session.breaks?.let { Text(FocusHistoryText.breaks(it), color = FlintPalette.Mist, modifier = Modifier.padding(top = 6.dp)) }
             Spacer(Modifier.weight(1f).heightIn(min = 26.dp))
             CompleteStatsRow(session = session, summary = summary)

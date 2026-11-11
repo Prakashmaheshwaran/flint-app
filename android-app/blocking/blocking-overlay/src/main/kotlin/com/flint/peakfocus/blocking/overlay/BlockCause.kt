@@ -32,6 +32,13 @@ data class BlockCause(
     val ruleId: String? = null,
     /** Display-only combined end; never replaces this cause's own expiry or exit authority. */
     val displayEnd: BlockDisplayEnd? = null,
+    /**
+     * F01: "Focus round 2 of 4 · rest at 10:25" for a Pomodoro parent's focus phase. Display
+     * only; the chain end stays the commitment end in [endsAtEpochMs].
+     */
+    val pomodoroNote: String? = null,
+    /** F01: when this focus phase — and this rule's own enforcement — pauses. */
+    val pomodoroPhaseEndsAtEpochMs: Long? = null,
 ) {
     /**
      * Historical v1 adapter classification. Production timed-credit exhaustion breaks
@@ -65,7 +72,9 @@ fun ruleBlockCause(rule: BlockRule?, nowEpochMs: Long, utcOffsetMs: Long): Block
     }
     val localMinute = (floorMod(nowEpochMs + utcOffsetMs, DAY_MS) / 60_000L).toInt()
     val endsAt = rule?.let { ruleWindowEnd(it, nowEpochMs, localMinute) }
-    return BlockCause(reason = reason, breakLevel = level, endsAtEpochMs = endsAt, ruleId = rule?.id)
+    val pomodoro = rule?.let { pomodoroFocus(rule = it, nowEpochMs = nowEpochMs, utcOffsetMs = utcOffsetMs) }
+    return BlockCause(reason = reason, breakLevel = level, endsAtEpochMs = endsAt, ruleId = rule?.id,
+        pomodoroNote = pomodoro?.first, pomodoroPhaseEndsAtEpochMs = pomodoro?.second)
 }
 
 /** Legacy display factory. Production replaces its estimate with the saved quota reset. */
@@ -122,13 +131,33 @@ fun blockScreenState(
         appLabel = appLabel,
         reason = cause.reason,
         breakLevel = cause.breakLevel,
-        remainingMillis = (if (cause.displayEnd != null) cause.displayEnd.endsAtEpochMs else cause.endsAtEpochMs)
-            ?.let { (it - nowEpochMs).coerceAtLeast(0L) },
+        // A Pomodoro focus phase pauses at its own boundary; counting to the chain end would
+        // claim access returns much later than it does. Another contributor's combined end wins.
+        remainingMillis = (if (cause.displayEnd != null) cause.displayEnd.endsAtEpochMs
+            else cause.pomodoroPhaseEndsAtEpochMs ?: cause.endsAtEpochMs)?.let { (it - nowEpochMs).coerceAtLeast(0L) },
         combinedEnd = cause.displayEnd != null,
+        pomodoroNote = cause.pomodoroNote,
         breakWaitRemainingMillis = breakWait,
         breakWaitTotalMillis = breakWaitTotal,
         emergencyPassAvailable = emergencyPassAvailable,
     )
+}
+
+/**
+ * The Pomodoro focus note and its phase end, from the rule's projected phase. Null for every
+ * other rule and for a rest (this rule is not enforcing then, so it never makes a block cause).
+ */
+internal fun pomodoroFocus(rule: BlockRule, nowEpochMs: Long, utcOffsetMs: Long): Pair<String, Long>? {
+    val plan = rule.pomodoro ?: return null
+    val evaluation = rule.runtime?.evaluation ?: return null
+    val phase = evaluation.phase ?: return null
+    if (!phase.isFocus) return null
+    val remaining = (evaluation.endsAtEpochMs ?: return null) - nowEpochMs
+    val elapsed = (plan.totalMs - remaining).coerceAtLeast(0L)
+    val phaseEndWall = nowEpochMs + (phase.endMs - elapsed).coerceAtLeast(0L)
+    val local = floorMod(phaseEndWall + utcOffsetMs, DAY_MS)
+    val clock = "%02d:%02d".format(local / 3_600_000L, local / 60_000L % 60)
+    return "Focus round ${phase.round} of ${plan.rounds} · rest at $clock" to phaseEndWall
 }
 
 internal const val DAY_MS: Long = 24L * 60L * 60L * 1000L
