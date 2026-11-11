@@ -6,6 +6,9 @@ import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.DomainRef
 import com.flint.peakfocus.core.model.Schedule
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -193,5 +196,99 @@ class RuleDraftTest {
     @Test
     fun `every error carries a non-blank user-facing message`() {
         RuleDraftError.entries.forEach { assertTrue(it.message.isNotBlank()) }
+    }
+
+    // ---- One-time windows ----
+
+    private val oneTime = validDraft().copy(
+        scheduled = true,
+        oneTime = true,
+        date = LocalDate.parse("2026-11-20"),
+        days = setOf(1, 2, 3),
+    )
+    private val earlyFriday = LocalDateTime.of(2026, 11, 20, 8, 0)
+    private val utc = ZoneId.of("UTC")
+
+    @Test
+    fun `one time draft persists a dated window with no weekday gate`() {
+        val schedule = oneTime.toRule(id = "x").schedule!!
+        assertEquals(LocalDate.parse("2026-11-20"), schedule.date)
+        assertTrue(schedule.daysOfWeek.isEmpty())
+        assertEquals(9 * 60, schedule.startMinuteOfDay)
+        assertEquals(17 * 60, schedule.endMinuteOfDay)
+    }
+
+    @Test
+    fun `dated rule loads back into a one time draft`() {
+        val rule = oneTime.toRule(id = "x")
+        val draft = ruleDraftOf(rule)
+        assertTrue(draft.scheduled)
+        assertTrue(draft.oneTime)
+        assertEquals(LocalDate.parse("2026-11-20"), draft.date)
+        assertEquals(rule, draft.toRule(id = rule.id))
+        assertFalse(ruleDraftOf(validDraft().copy(scheduled = true, days = setOf(1)).toRule(id = "y")).oneTime)
+    }
+
+    @Test
+    fun `one time draft needs a date`() {
+        val errors = validate(oneTime.copy(date = null), earlyFriday, utc)
+        assertTrue(errors.contains(RuleDraftError.DATE_REQUIRED))
+    }
+
+    @Test
+    fun `one time start must not already be in the past`() {
+        assertTrue(validate(oneTime, earlyFriday, utc).isEmpty())
+        // 60 s grace covers the composer's second of skew.
+        assertTrue(validate(oneTime, LocalDateTime.of(2026, 11, 20, 9, 0, 30), utc).isEmpty())
+        assertTrue(validate(oneTime, LocalDateTime.of(2026, 11, 20, 9, 1), utc).isEmpty())
+        assertTrue(validate(oneTime, LocalDateTime.of(2026, 11, 20, 9, 2), utc).contains(RuleDraftError.START_IN_PAST))
+        assertTrue(validate(oneTime.copy(date = LocalDate.parse("2026-11-19")), earlyFriday, utc)
+            .contains(RuleDraftError.START_IN_PAST))
+    }
+
+    @Test
+    fun `an active or finished one time rule keeps its past start when edited`() {
+        // Saved 09:00-17:00 on Nov 20; it is now 10:00 that day (active) and later (finished).
+        val saved = oneTime.copy(id = "saved")
+        val active = LocalDateTime.of(2026, 11, 20, 10, 0)
+        val finished = LocalDateTime.of(2026, 11, 22, 10, 0)
+        for (now in listOf(active, finished)) {
+            // Extending the end, renaming or adding a target is an ordinary edit; the commit-time
+            // tier gate decides its rights, so the pre-save gate must not refuse it.
+            assertTrue(validate(saved.copy(endMinuteOfDay = 18 * 60), now, utc, original = saved).isEmpty())
+            assertTrue(validate(saved.copy(name = "Renamed"), now, utc, original = saved).isEmpty())
+            // Moving the start (or the date) is a new window and must still be in the future.
+            assertTrue(validate(saved.copy(startMinuteOfDay = 9 * 60 + 30), now, utc, original = saved)
+                .contains(RuleDraftError.START_IN_PAST))
+            assertTrue(validate(saved.copy(date = LocalDate.parse("2026-11-19")), now, utc, original = saved)
+                .contains(RuleDraftError.START_IN_PAST))
+        }
+        // A finished rule moved to a future date is a fresh pending window.
+        assertTrue(validate(saved.copy(date = LocalDate.parse("2026-11-30")), finished, utc, original = saved).isEmpty())
+        // Without a saved baseline (a new rule) the same past window is refused.
+        assertTrue(validate(saved.copy(endMinuteOfDay = 18 * 60), active, utc).contains(RuleDraftError.START_IN_PAST))
+    }
+
+    @Test
+    fun `one time overnight window is valid and ends the next day`() {
+        val overnight = oneTime.copy(startMinuteOfDay = 22 * 60, endMinuteOfDay = 6 * 60)
+        assertTrue(validate(overnight, earlyFriday, utc).isEmpty())
+        // Its start is still the dated evening, so the window exists and is not zero length.
+        val schedule = overnight.toRule(id = "x").schedule!!
+        assertEquals(LocalDate.parse("2026-11-20"), schedule.date)
+    }
+
+    @Test
+    fun `one time window keeps the shared time checks`() {
+        assertTrue(validate(oneTime.copy(startMinuteOfDay = 600, endMinuteOfDay = 600), earlyFriday, utc)
+            .contains(RuleDraftError.ZERO_LENGTH_WINDOW))
+        assertTrue(validate(oneTime.copy(startMinuteOfDay = -1), earlyFriday, utc)
+            .contains(RuleDraftError.INVALID_TIME))
+    }
+
+    @Test
+    fun `weekly draft never gains a date`() {
+        assertNull(oneTime.copy(oneTime = false).toRule(id = "x").schedule?.date)
+        assertNull(validDraft().toRule(id = "x").schedule)
     }
 }

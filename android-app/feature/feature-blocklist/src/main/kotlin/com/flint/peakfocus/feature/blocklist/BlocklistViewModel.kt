@@ -248,7 +248,13 @@ internal class BlocklistViewModel(
      * drafts are refused outright — the editor gates Save on [validate], this is defense.
      */
     fun saveRule(draft: RuleDraft, onSaved: () -> Unit = {}) {
-        if (validate(draft).isNotEmpty()) return
+        // The saved record is the baseline, as in the editor: an active or finished one-time
+        // rule's past start is not re-judged. If the list isn't loaded yet, the editor already
+        // gated this edit against its baseline; the commit gate remains the authority either way.
+        val saved = draft.id?.let { id ->
+            (rules.value as? RulesUiState.Ready)?.rules?.singleOrNull { it.id == id }?.let(::ruleDraftOf) ?: draft
+        }
+        if (validate(draft, original = saved).isNotEmpty()) return
         val rule = draft.toRule(id = draft.id ?: newRuleId())
         request(EditorChange("Save ${rule.name}", upserts = listOf(rule)), onSaved)
     }
@@ -356,12 +362,19 @@ private fun secondTicks(clock: () -> AccessClockStamp): Flow<AccessClockStamp> =
 }
 
 /** One rule's live schedule state for the overview: biting right now, plus the next edge
- *  ("Starts 21:00" / "Until 07:00"). Null [nextChange] = no edge worth naming. */
-internal data class RuleLiveStatus(val activeNow: Boolean, val nextChange: String?)
+ *  ("Starts 21:00" / "Until 07:00"). Null [nextChange] = no edge worth naming. A dated
+ *  one-time rule also carries its [oneTimePhase] so the list can say pending/active/finished
+ *  and hide the switch once it is finished. */
+internal data class RuleLiveStatus(
+    val activeNow: Boolean,
+    val nextChange: String?,
+    val oneTimePhase: OneTimePhase? = null,
+)
 
 /**
- * Statuses for every rule at [nowMillis] local time. Calendar, not java.time (minSdk 23, no
- * desugaring); Calendar's Sunday-first weekday is mapped to the model's ISO numbering.
+ * Statuses for every rule at [nowMillis] local time. Calendar, not java.time, for the weekly
+ * window (minSdk 23 friendly); Calendar's Sunday-first weekday is mapped to the model's ISO
+ * numbering. A dated one-time rule is evaluated from its own occurrence instead.
  */
 internal fun ruleLiveStatuses(
     rules: List<BlockRule>,
@@ -370,7 +383,7 @@ internal fun ruleLiveStatuses(
     val calendar = Calendar.getInstance().apply { timeInMillis = nowMillis }
     val isoDay = ((calendar.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
     val minuteOfDay = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
-    return rules.associate { it.id to ruleLiveStatus(it, isoDay, minuteOfDay) }
+    return rules.associate { it.id to ruleLiveStatus(it, isoDay, minuteOfDay, nowMillis) }
 }
 
 /**
@@ -378,11 +391,29 @@ internal fun ruleLiveStatuses(
  * window's post-midnight tail belongs to the previous day's night) so the overview can say
  * "Active now" without reaching into the engine module. The next-change label names only the
  * time — the card's schedule summary line already carries the days.
+ *
+ * A dated one-time window is never given weekday semantics: it is pending, active or finished
+ * relative to [nowMillis] (display-only, in the device zone; the engine uses the saved zone).
+ * [nowMillis] < 0 means "no clock supplied" and only the display path may fall back to now.
  */
-internal fun ruleLiveStatus(rule: BlockRule, isoDay: Int, minuteOfDay: Int): RuleLiveStatus {
-    if (!rule.enabled) return RuleLiveStatus(activeNow = false, nextChange = null)
+internal fun ruleLiveStatus(rule: BlockRule, isoDay: Int, minuteOfDay: Int, nowMillis: Long = -1L): RuleLiveStatus {
     val schedule = rule.schedule
-        ?: return RuleLiveStatus(activeNow = true, nextChange = null)
+    if (schedule?.date != null) {
+        val phase = oneTimePhase(schedule, nowMillis.takeIf { it >= 0 } ?: System.currentTimeMillis())
+        return RuleLiveStatus(
+            activeNow = rule.enabled && phase == OneTimePhase.ACTIVE,
+            // Finished keeps a named status, so the list shows history instead of dropping it.
+            nextChange = when (phase) {
+                OneTimePhase.PENDING -> oneTimeStatusLabel(schedule, OneTimePhase.PENDING)
+                OneTimePhase.ACTIVE -> "Until ${formatMinuteOfDay(schedule.endMinuteOfDay)}"
+                OneTimePhase.FINISHED -> oneTimeStatusLabel(schedule, OneTimePhase.FINISHED)
+                null -> null
+            },
+            oneTimePhase = phase,
+        )
+    }
+    if (!rule.enabled) return RuleLiveStatus(activeNow = false, nextChange = null)
+    schedule ?: return RuleLiveStatus(activeNow = true, nextChange = null)
     val start = schedule.startMinuteOfDay
     val end = schedule.endMinuteOfDay
     if (start !in MINUTE_OF_DAY_RANGE || end !in MINUTE_OF_DAY_RANGE || start == end) {

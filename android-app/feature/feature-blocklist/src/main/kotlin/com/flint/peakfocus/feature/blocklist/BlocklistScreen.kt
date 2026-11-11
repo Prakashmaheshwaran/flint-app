@@ -797,6 +797,8 @@ private fun ScheduleCard(
     modifier: Modifier = Modifier,
 ) {
     val active = status?.activeNow == true && rule.enabled
+    // A finished one-time rule has no future window to arm: its switch would be a lie.
+    val finished = status?.oneTimePhase == OneTimePhase.FINISHED
     val left = if (active) scheduleMinutesLeft(rule.schedule, nowMinute) else null
     val shape = RoundedCornerShape(22.dp)
     Column(
@@ -845,6 +847,7 @@ private fun ScheduleCard(
             }
         }
         when {
+            finished -> FlintStatusPill("Finished", emphasized = false)
             !rule.enabled -> FlintStatusPill("Off", emphasized = false)
             active -> FlintStatusPill("${left?.let { shortDuration(it) + " left" } ?: "Active now"}", emphasized = true)
             status?.nextChange != null -> FlintStatusPill(
@@ -892,14 +895,16 @@ private fun ScheduleCard(
                 )
             }
             Spacer(Modifier.weight(1f))
-            Switch(
-                colors = flintSwitchColors(),
-                checked = rule.enabled,
-                onCheckedChange = onToggle,
-                modifier = Modifier
-                    .scale(0.78f)
-                    .semantics { contentDescription = "${rule.name} rule" },
-            )
+            if (!finished) {
+                Switch(
+                    colors = flintSwitchColors(),
+                    checked = rule.enabled,
+                    onCheckedChange = onToggle,
+                    modifier = Modifier
+                        .scale(0.78f)
+                        .semantics { contentDescription = "${rule.name} rule" },
+                )
+            }
         }
     }
 }

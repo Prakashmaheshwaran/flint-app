@@ -2,6 +2,7 @@ package com.flint.peakfocus.core.datastore
 
 import androidx.datastore.preferences.core.Preferences
 import com.flint.peakfocus.core.model.*
+import java.time.LocalDate
 import java.time.ZoneId
 
 /**
@@ -61,8 +62,8 @@ internal object StrictPrefsCodec {
     fun rules(encoded: String): List<BlockRule> {
         rows(encoded).forEach { row ->
             val f = row.split('|')
-            if (f.size > 11) future()
-            check(f.size == 10 || f.size == 11)
+            if (f.size > 12) future()
+            check(f.size in 10..12)
             atom(f[0], true); atom(f[1])
             check(f[2].toBooleanStrictOrNull() != null && f[4].toBooleanStrictOrNull() != null)
             level(f[3]); targets(f[5], f[6])
@@ -70,7 +71,13 @@ internal object StrictPrefsCodec {
             val start = f[8].toIntOrNull() ?: corrupt()
             val end = f[9].toIntOrNull() ?: corrupt()
             check((start == -1 && end == -1 && f[7].isEmpty()) || (start in 0..1439 && end in 0..1439))
-            if (f.size == 11) check(f[10].toLongOrNull()?.let { it == -1L || it >= 0 } == true)
+            if (f.size >= 11) check(f[10].toLongOrNull()?.let { it == -1L || it >= 0 } == true)
+            if (f.size == 12) {
+                // A dated one-time schedule: a real ISO date on a real window whose weekday
+                // gate is empty, so a damaged record can never read as a weekly rule.
+                check(start in 0..1439 && end in 0..1439 && start != end && f[7].isEmpty())
+                check(runCatching { LocalDate.parse(f[11]) }.getOrNull() != null)
+            }
         }
         return PrefsCodec.decodeRules(encoded).also { result -> check(result.map { it.id }.distinct().size == result.size) }
     }
