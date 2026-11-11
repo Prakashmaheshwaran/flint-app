@@ -76,6 +76,7 @@ public final class FlintOrdinaryBreakService {
     private let gate: () -> Bool
     private let reportFailure: (String, String) -> Void
     private let reportRecovery: ([String]) -> Void
+    private let history: FlintProtectionHistoryProjection.BreakAppend?
 
     public init(ledger: FlintProtectionLedger, clock: FlintClock,
                 transition: @escaping (() -> Void) -> Bool,
@@ -85,11 +86,13 @@ public final class FlintOrdinaryBreakService {
                 apply: @escaping ([FlintOrdinaryGrantState.Record], FlintBreakContext?, FlintLedgerInstant) throws -> Void,
                 gate: @escaping () -> Bool = { true },
                 reportFailure: @escaping (String, String) -> Void = { _, _ in },
-                reportRecovery: @escaping ([String]) -> Void = { _ in }) {
+                reportRecovery: @escaping ([String]) -> Void = { _ in },
+                history: FlintProtectionHistoryProjection.BreakAppend? = nil) {
         self.ledger = ledger; self.clock = clock; self.transition = transition; self.context = context
         self.register = register; self.registered = registered; self.stop = stop; self.apply = apply; self.gate = gate
         self.reportFailure = reportFailure
         self.reportRecovery = reportRecovery
+        self.history = history
     }
 
     public func request(scope: FlintBreakScope, operationID: String? = nil) -> FlintBreakOutcome {
@@ -249,7 +252,17 @@ public final class FlintOrdinaryBreakService {
         return success
     }
 
+    /// Every break transition in any process passes through here. After the enforcement
+    /// work, committed break intents are projected into history (ADR-012 §11). Projection
+    /// is best effort and never changes this result: a failed receipt leaves the intent in
+    /// the ledger outbox for the next drain or host refresh.
     private func reconcileLocked(activity: String? = nil, callback: Callback? = nil) -> Bool {
+        let result = reconcileEnforcementLocked(activity: activity, callback: callback)
+        if let history { FlintProtectionHistoryProjection.drainOrdinaryBreaks(ledger: ledger, append: history) }
+        return result
+    }
+
+    private func reconcileEnforcementLocked(activity: String?, callback: Callback?) -> Bool {
         let result = ledger.transaction { state -> [FlintOrdinaryGrantState.Record] in
             guard var grants = state.ordinaryGrants else { return [] }
             let now = FlintLedgerInstant(clock: self.clock)
@@ -330,35 +343,13 @@ public final class FlintOrdinaryBreakService {
         return applied
     }
 
-    /// Until F2 supplies an append receipt the live adapter does not call this. A sink retry
-    /// uses the stable row ID, so a crash after append but before ack does not duplicate history.
-    public func drainEvents(append: (FlintOrdinaryGrantState.EventIntent, String) -> Bool) -> Bool {
+    /// Delivers committed break intents to `append` (a durable history receipt) under the
+    /// same transition as every break mutation. A retry reuses each row's stable ID, so a
+    /// crash after append but before acknowledgement does not duplicate history.
+    public func drainEvents(append: FlintProtectionHistoryProjection.BreakAppend) -> Bool {
         var success = false
         guard transition({
-            success = (try? self.ledger.transaction { state in
-                guard var grants = state.ordinaryGrants else { return }
-                for i in grants.records.indices {
-                    for j in grants.records[i].events.indices {
-                        let event = grants.records[i].events[j]
-                        for session in event.focusSessionIDs.subtracting(event.acknowledgedSessionIDs).sorted() {
-                            if append(event, session) { grants.records[i].events[j].acknowledgedSessionIDs.insert(session) }
-                        }
-                    }
-                }
-                var retained: [Data] = []
-                for raw in grants.eventOutbox {
-                    guard var event = try? FlintProtectionLedger.makeDecoder().decode(FlintOrdinaryGrantState.EventIntent.self, from: raw) else {
-                        retained.append(raw); continue // quarantine in place; not authorization
-                    }
-                    for session in event.focusSessionIDs.subtracting(event.acknowledgedSessionIDs).sorted() {
-                        if append(event, session) { event.acknowledgedSessionIDs.insert(session) }
-                    }
-                    if !event.isAcknowledged { retained.append(try FlintProtectionLedger.makeEncoder().encode(event)) }
-                }
-                grants.eventOutbox = retained
-                grants.trimAudit()
-                try grants.archiveFinished(); state.ordinaryGrants = grants
-            }.get()) != nil
+            success = FlintProtectionHistoryProjection.drainOrdinaryBreaks(ledger: self.ledger, append: append)
         }) else { return false }
         return success
     }

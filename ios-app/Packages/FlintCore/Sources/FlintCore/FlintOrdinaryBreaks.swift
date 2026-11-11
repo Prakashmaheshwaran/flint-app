@@ -212,7 +212,8 @@ public enum FlintOrdinaryBreaks {
         }, registered: { center.activities.contains(.init($0)) && center.schedule(for: .init($0)) != nil },
         stop: { FlintScheduling.stopMonitoring([$0]) }, apply: apply,
         gate: { FlintPassRecoveryGate.read().permitsApplication },
-        reportFailure: { recordHealthFailure($0, reason: $1) }, reportRecovery: { clearHealthFailures(activeActivities: $0) })
+        reportFailure: { recordHealthFailure($0, reason: $1) }, reportRecovery: { clearHealthFailures(activeActivities: $0) },
+        history: FlintProtectionHistoryProjection.liveBreakAppend)
     }
 
     static func recordHealthFailure(_ name: String, reason: String, in group: FlintGroupStore? = FlintGroupStore()) {

@@ -364,10 +364,14 @@ private extension FlintHistoryEvent {
 public enum FlintHistoryReconciler {
     /// Drain committed outbox records and maintain retention. History is a projection:
     /// only the lifecycle owner may commit an end, including during cold-start recovery.
+    /// `project` publishes owner-committed intents left in other outboxes (the protection
+    /// ledger's breaks and pass) to the inbox; the reads below drain them.
     public static func reconcile(store: FlintHistoryStore, activeSession: FlintActiveSession?, now: Date,
-                                 calendar: Calendar = .current) -> FlintHistorySnapshot {
+                                 calendar: Calendar = .current,
+                                 project: ((FlintHistoryStore, FlintHistorySnapshot) -> Void)? = nil) -> FlintHistorySnapshot {
         let snapshot = store.read()
         guard snapshot.availability != .unavailable else { return snapshot }
+        project?(store, snapshot)
         store.compactIfNeeded()
         return store.read()
     }
