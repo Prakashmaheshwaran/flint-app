@@ -36,10 +36,13 @@ struct StartFocusSheet: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
-                        durationPicker.padding(.top, 24)
-                        presets.padding(.top, 18)
-                        modeToggle.padding(.top, 18)
-                        if vm.isPomodoro { pomodoroSection.padding(.top, 14) }
+                        modeToggle.padding(.top, 24)
+                        if vm.isPomodoro {
+                            pomodoroSection.padding(.top, 14)
+                        } else {
+                            durationPicker.padding(.top, 18)
+                            presets.padding(.top, 18)
+                        }
                         blockRow.padding(.top, 22)
                         if !vm.savedGroups.isEmpty || vm.selectionCount > 0 { groupChips.padding(.top, 12) }
                         Text("Break level").flintSection().padding(.top, 26).padding(.horizontal, 4)
@@ -104,7 +107,7 @@ struct StartFocusSheet: View {
                     .padding(.vertical, 12)
             }
             .buttonStyle(EmberButtonStyle())
-            .disabled(vm.selectionCount == 0)
+            .disabled(vm.selectionCount == 0 || (vm.isPomodoro && vm.pomodoroPlan == nil))
             if let error = vm.errorText {
                 Text(error)
                     .font(FlintFont.text(13))
@@ -238,11 +241,15 @@ struct StartFocusSheet: View {
             }
             pomodoroRow("Rounds", value: vm.pomodoroRounds, unit: "", range: 2...8, step: 1) {
                 vm.pomodoroRounds = $0
-                if let every = vm.pomodoroLongRestEvery, every > $0 - 1 {
+                // A long rest needs a round it can follow: every 2...(rounds - 1).
+                if $0 < 3 {
+                    vm.pomodoroLongRestMinutes = nil
+                    vm.pomodoroLongRestEvery = nil
+                } else if let every = vm.pomodoroLongRestEvery, every > $0 - 1 {
                     vm.pomodoroLongRestEvery = max(2, $0 - 1)
                 }
             }
-            longRestControls
+            if vm.pomodoroRounds > 2 { longRestControls }
             Text(pomodoroSummary)
                 .flintSecondary(12)
                 .fixedSize(horizontal: false, vertical: true)
