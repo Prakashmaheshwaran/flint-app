@@ -127,6 +127,26 @@ class AppLockControllerTest {
         assertEquals(PinAttempt.Success, unlockAttempt(rebooted, pin))
     }
 
+    @Test fun `a lockout waited out on this boot is not restarted by a later reboot`() {
+        val clock = FakeClock(elapsed = 10_000, boot = "boot-a")
+        val storage = SpyStorage(recordRaw = rawFor(pin))
+        repeat(5) { unlockAttempt(newController(storage, clock), "0000") }
+        val controller = newController(storage, clock)
+
+        clock.elapsed += 30_000
+        controller.refreshLockout()
+        assertEquals(0L, controller.state.value.lockoutRemainingMs)
+        assertEquals(ThrottleState(failures = 5), storage.throttle)
+
+        clock.boot = "boot-b"
+        clock.elapsed = 0
+        val rebooted = newController(storage, clock)
+        assertEquals(0L, rebooted.state.value.lockoutRemainingMs)
+        // The count is kept, so the next wrong PIN still escalates.
+        assertEquals(PinAttempt.Wrong(60_000L), unlockAttempt(rebooted, "0000"))
+        assertEquals(PinAttempt.LockedOut(60_000L), unlockAttempt(rebooted, pin))
+    }
+
     @Test fun `a clock change that looks like a reboot only lengthens the lockout`() {
         val clock = FakeClock(elapsed = 10_000, boot = "boot-a")
         val storage = SpyStorage(recordRaw = rawFor(pin))

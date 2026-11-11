@@ -337,6 +337,10 @@ class AppLockController(
         if (remaining > 0 && throttle.lockoutBootId != bootId && persistRestart) {
             // A new boot restarts the window in full; persist the new anchor so it cannot replay.
             writeThrottle(throttle.copy(lockoutStartElapsedMs = now, lockoutBootId = bootId))
+        } else if (remaining == 0L && throttle.lockoutBootId == bootId && persistRestart) {
+            // A window observed to have ended on this boot is closed (the failure count stays),
+            // so a later reboot cannot restart a lockout the user already waited out.
+            writeThrottle(throttle.copy(lockoutStartElapsedMs = 0L, lockoutMillis = 0L, lockoutBootId = null))
         }
         return remaining
     }
