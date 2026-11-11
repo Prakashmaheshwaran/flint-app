@@ -42,8 +42,9 @@ apply only where Orca is installed.
    after a successful transition; never blindly repeat a tap. Orca iOS `tap`
    can acknowledge `ok` without observable input, intermittently and depending
    on the device. Prefer iPhone 17, exact UDID
-   `1BD4732B-EC1A-4074-8C70-6AC369607185`, for UI-driving verification: most
-   recorded runs worked, while the latest iPhone 17e run persistently failed
+   `284643C6-B980-454C-9FF6-7FF2A863AC46` (recreated 2026-11-11; the earlier
+   `1BD4732B-…` device was removed), for UI-driving verification: most
+   recorded runs on the earlier iPhone 17 worked, while the latest iPhone 17e run persistently failed
    even with a fresh helper. Boot origin does not explain the failures; both
    helper-driven and explicit simctl boots have successful and failed runs.
    This remains unresolved. Preserve screenshot + AX postconditions and report
