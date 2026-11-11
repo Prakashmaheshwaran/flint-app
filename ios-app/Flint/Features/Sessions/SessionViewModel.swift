@@ -292,7 +292,10 @@ final class SessionViewModel: ObservableObject {
                 return
             }
             if startAttempt == nil || !confirmed {
-                let source: FlintSessionSource = appliedGroupSelection == selection ? .preset : .manual
+                // A chain is a Pomodoro cause (policy kind and history source), whatever selection
+                // it blocks.
+                let source: FlintSessionSource = plan != nil ? .pomodoro
+                    : appliedGroupSelection == selection ? .preset : .manual
                 let duration = plan?.totalDuration ?? TimeInterval(durationMinutes * 60)
                 let token = try controller.prepareStartToken(selection: selection, duration: duration,
                     breakLevel: breakLevel, source: source, origin: .appUI,

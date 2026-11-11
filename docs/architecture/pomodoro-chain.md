@@ -93,16 +93,19 @@ whole chain, so its tier still governs stopping, replacing and editing during a 
   a rest is in progress and rewritten when focus resumes. Shield writes derive the phase
   under the session transition lock.
 - **Carriers:** each planned rest gets its own DeviceActivity carrier, named
-  `flint.pomo.<parentToken>.<restIndex>`. `parentToken` is the parent's `monitorName`
-  token. The `flint.pomo.` prefix is deliberately outside `isSessionActivity`.
+  `flint.pomo.<chainToken>.<restIndex>`. `chainToken` is derived from the parent's
+  immutable session id, not from its `monitorName`. A re-armed parent end (time zone
+  change, premature end, dropped registration) gets a new `monitorName`, but its rest
+  carriers keep reconciling the same chain. The `flint.pomo.` prefix is deliberately
+  outside `isSessionActivity`.
   - Interval: from the rest's start to `max(rest end, rest start + 15 min)`.
   - A rest shorter than 15 minutes gets `warningTime = 15 − restMinutes`, using the §4
     deadline adapter, so the warning lands on the logical rest end.
 - **Callbacks:** `intervalDidStart`, `intervalWillEndWarning` and `intervalDidEnd` only
   trigger a phase reconcile. The monitor checks that the carrier's token matches the
-  current parent; a carrier that does not match is stale and is stopped. The monitor then
-  derives the logical phase and writes the shield to match. A callback never acts on its
-  own name:
+  current parent's chain token; a carrier that does not match is stale and is stopped, and
+  its wake-up still reconciles the current parent's phase. The monitor derives the logical
+  phase and writes the shield to match. A callback never acts on its own name:
   - An early `intervalDidStart` during focus leaves the shield on.
   - A late or missed callback can only delay a rest (fail-closed). The exception is the
     clock-back case below.
@@ -115,9 +118,11 @@ whole chain, so its tier still governs stopping, replacing and editing during a 
     This keeps room for break, credit and recovery carriers.
 - **Teardown:** every terminal transition (`completed`, `ended_early`, pass, `superseded`,
   failed apply) stops all of the parent's rest carriers.
-- **Clock changes:** after a discontinuity or a time zone change, the host reconcile
-  re-registers the remaining future rest carriers from logical times, within the existing
-  clock-rearm budget.
+- **Clock changes:** after a time zone change or a same-boot wall-clock drift of more than
+  5 seconds, the host reconcile re-registers the remaining rest carriers from logical times,
+  within the existing clock-rearm budget. A future rest gets its full carrier. The rest in
+  progress gets a carrier that starts now and warns at its logical end. A carrier that iOS
+  dropped is re-registered the same way.
 - **Known limit (device gate):** if the wall clock moves backward during a rest while the
   host is not running, the rest-end callback can arrive late. The shield returns at the next
   callback or host reconcile. Ordinary-break carriers have the same limitation.

@@ -4,8 +4,8 @@ import FlintCore
 
 /// A whole Pomodoro focus/rest chain: one commitment spanning every focus round and the planned
 /// rests between them (F01). Every parameter defaults to the saved cadence in Flint, so a bare
-/// "Start Pomodoro" keeps working. A single round (or an out-of-bounds cadence) runs as one plain
-/// focus session, exactly as the legacy intent did.
+/// "Start Pomodoro" keeps working. A single round runs as one plain focus session, exactly as the
+/// legacy intent did; a chain outside the plan bounds is refused with its limits.
 struct StartPomodoroIntent: AppIntent {
     static var title: LocalizedStringResource = "Start Pomodoro"
     static var description = IntentDescription("Start a Pomodoro chain over your blocked apps: focus rounds with planned rests between them, all one commitment. Use your saved Flint cadence, or set the lengths here.")
@@ -66,7 +66,9 @@ struct StartPomodoroIntent: AppIntent {
                 }
                 return .result(dialog: "Pomodoro started: \(plan.rounds) rounds of \(plan.focusMinutes) minutes with \(Self.restText(plan)) rests. \(plan.totalMinutes) minutes in all.")
             }
-            // A single round (or an out-of-bounds cadence) is an ordinary focus session.
+            // A chain the plan bounds reject is refused with its limits rather than silently run
+            // as something else; only a single round is an ordinary focus session.
+            guard config.rounds <= 1 else { throw FlintShortcutsError.invalidPomodoroPlan }
             let request = FlintShortcutsRunner.pomodoroRoundRequest(config, appGroupID: appGroup?.id,
                                                                    breakLevel: level)
             let prepared = try FlintShortcutsRunner.prepare(request, source: .pomodoro, requestID: requestID)

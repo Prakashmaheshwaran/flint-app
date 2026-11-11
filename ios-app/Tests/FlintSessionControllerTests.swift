@@ -820,6 +820,18 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertNil(store.active)
     }
 
+    func testAnOutOfBoundsChainIsRefusedRatherThanRunAsOneRoundF01() {
+        let invalid = FlintPomodoroConfig(focusMinutes: 7, breakMinutes: 5, rounds: 4)
+        XCTAssertThrowsError(try FlintShortcutsRunner.startPomodoro(invalid, appGroupID: nil, breakLevel: .easy,
+            confirmed: true, controller: controller(), selectionResolver: { _ in self.selectionA })) {
+            guard case FlintShortcutsError.invalidPomodoroPlan = $0 else {
+                return XCTFail("expected invalidPomodoroPlan, got \($0)")
+            }
+        }
+        XCTAssertNil(store.active)
+        XCTAssertTrue(registrar.started.isEmpty, "nothing is registered for a refused chain")
+    }
+
     func testSingleRoundCadenceStaysAPlainFocusSessionF01() throws {
         let legacy = FlintPomodoroConfig(focusMinutes: 20, breakMinutes: 30, rounds: 1)
         let session = try FlintShortcutsRunner.startPomodoro(legacy, appGroupID: nil, breakLevel: .easy,

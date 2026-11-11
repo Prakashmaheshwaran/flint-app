@@ -558,18 +558,23 @@ public final class FlintSessionController {
         name.hasPrefix(pomodoroCarrierPrefix) && pomodoroToken(of: name) != nil
     }
 
-    /// The parent token a session or rest registration belongs to. A rest carrier only affects
-    /// the parent whose token it carries; everything else must be treated as stale.
+    /// The chain token a rest carrier carries. A rest carrier only affects the parent whose
+    /// token it carries; everything else must be treated as stale.
     static func pomodoroToken(of name: String) -> String? {
-        if name.hasPrefix(pomodoroCarrierPrefix) {
-            let rest = name.dropFirst(pomodoroCarrierPrefix.count)
-            guard let dot = rest.firstIndex(of: ".") else { return nil }
-            let token = rest[rest.startIndex..<dot]
-            guard !token.isEmpty, rest[rest.index(after: dot)...].allSatisfy(\.isNumber) else { return nil }
-            return String(token)
-        }
-        guard isSessionActivity(name), name != monitorName else { return nil }
-        return String(name.dropFirst(monitorName.count + 1))
+        guard name.hasPrefix(pomodoroCarrierPrefix) else { return nil }
+        let rest = name.dropFirst(pomodoroCarrierPrefix.count)
+        guard let dot = rest.firstIndex(of: ".") else { return nil }
+        let token = rest[rest.startIndex..<dot]
+        guard !token.isEmpty, rest[rest.index(after: dot)...].allSatisfy(\.isNumber) else { return nil }
+        return String(token)
+    }
+
+    /// The parent's stable chain token, derived from its immutable session id. It deliberately
+    /// does not follow the parent's `monitorName`: a re-armed parent end (time-zone change,
+    /// premature end, dropped registration) gets a new name, and its already-registered rest
+    /// carriers must keep reconciling the same chain instead of turning stale.
+    static func pomodoroChainToken(for session: FlintActiveSession) -> String {
+        SHA256.hash(data: Data(session.id.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
     static func pomodoroCarrierName(sessionToken: String, restIndex: Int) -> String {
@@ -579,12 +584,11 @@ public final class FlintSessionController {
     /// Every rest carrier the parent's frozen plan registers.
     static func pomodoroCarrierNames(for session: FlintActiveSession) -> [String] {
         guard let plan = session.pomodoro else { return [] }
-        return pomodoroCarrierNames(monitorName: session.monitorName, plan: plan)
+        return pomodoroCarrierNames(chainToken: pomodoroChainToken(for: session), plan: plan)
     }
 
-    static func pomodoroCarrierNames(monitorName: String, plan: FlintPomodoroPlan) -> [String] {
-        guard let token = pomodoroToken(of: monitorName) else { return [] }
-        return plan.rests.map { pomodoroCarrierName(sessionToken: token, restIndex: $0.index) }
+    static func pomodoroCarrierNames(chainToken token: String, plan: FlintPomodoroPlan) -> [String] {
+        plan.rests.map { pomodoroCarrierName(sessionToken: token, restIndex: $0.index) }
     }
 
     /// A rest carrier's registration: the rest's own wall span. A rest under DeviceActivity's
@@ -704,12 +708,14 @@ public final class FlintSessionController {
             env.registrar.stopMonitoring([activity])
             return
         }
-        guard let token = Self.pomodoroToken(of: activity),
-              token == Self.pomodoroToken(of: session.monitorName) else {
+        let now = env.clock.now()
+        if Self.pomodoroToken(of: activity) != Self.pomodoroChainToken(for: session) {
+            // Not this chain's carrier: retire it. Its wake-up still reconciles the current
+            // parent's phase, which is derived from logical time alone and is idempotent.
             env.registrar.stopMonitoring([activity])
+            if session.pomodoro != nil, !isOver(session) { reconcilePomodoroPhase(session, in: store, now: now) }
             return
         }
-        let now = env.clock.now()
         if isOver(session) {
             end(session, route: .completed, at: now, in: store)
             return
@@ -904,7 +910,9 @@ public final class FlintSessionController {
         guard env.webRestrictions.prepareReplacement(session, replacing: previous, clock: env.clock) else {
             throw FlintSessionError.protectionStateUnavailable
         }
-        let restCarrierNames = pomodoro.map { Self.pomodoroCarrierNames(monitorName: monitorName, plan: $0) } ?? []
+        let restCarrierNames = pomodoro.map {
+            Self.pomodoroCarrierNames(chainToken: Self.pomodoroChainToken(for: session), plan: $0)
+        } ?? []
 
         // 1. The out-of-app end, before anything changes. A Pomodoro chain also pre-registers a
         //    carrier for every planned rest here, before acceptance commits (design §4): an
@@ -1422,12 +1430,12 @@ public final class FlintSessionController {
         }
 
         var zoneMoved = false
+        var drifted = false
         if let store, session.endsAt != nil {
             zoneMoved = !FlintSessionAutoClearPlan.isCurrent(for: session, in: env.clock.calendar())
             let missing = !env.registrar.registeredActivityNames().contains(session.monitorName)
             // A same-boot wall-clock change moved the registered wall end away from the logical
             // end: re-register so iOS ends it at the right moment (ADR-012 §9).
-            var drifted = false
             if let wallEnd = session.endsAt, let logicalEnd = session.logicalEnd(clock: env.clock) {
                 drifted = abs(wallEnd.timeIntervalSince(logicalEnd)) > FlintTimeIntegrity.discontinuityThreshold
             }
@@ -1459,12 +1467,12 @@ public final class FlintSessionController {
                 // A time-zone change or forward clock jump moved the rest carriers' wall
                 // instants: re-register the future ones from logical time, bounded by the
                 // existing clock-rearm budget (design §4).
-                repairPomodoroCarriers(current, plan: plan, in: store, now: now, timeZoneMoved: zoneMoved)
+                repairPomodoroCarriers(current, plan: plan, in: store, now: now, wallMoved: zoneMoved || drifted)
                 if let updated = store.loadActiveSession(), updated.id == current.id {
                     observePlannedRests(updated, plan: plan, in: store, now: now)
                 }
             }
-            stopOrphanPomodoroCarriers(keepingToken: Self.pomodoroToken(of: current.monitorName))
+            stopOrphanPomodoroCarriers(keepingToken: current.pomodoro == nil ? nil : Self.pomodoroChainToken(for: current))
         } else {
             stopOrphanPomodoroCarriers(keepingToken: nil)
         }
@@ -1473,33 +1481,40 @@ public final class FlintSessionController {
     }
 
     /// Register the rest carriers that are missing for the chain's remaining rests, anchored to
-    /// the parent's logical times. A time-zone change re-registers the future carriers whose wall
-    /// components were computed in the old zone. Bounded by the clock-change re-arm budget so a
-    /// device that keeps dropping registrations cannot drain the shared pool.
+    /// the parent's logical times. After a time-zone change or a same-boot wall-clock drift the
+    /// existing registrations land on the wrong wall instants, so the remaining ones are replaced.
+    /// A rest already under way is re-armed from now to its logical end, so focus still resumes
+    /// on time without the host. Bounded by the clock-change re-arm budget so a device that keeps
+    /// dropping registrations cannot drain the shared pool.
     private func repairPomodoroCarriers(_ session: FlintActiveSession, plan: FlintPomodoroPlan,
                                         in store: FlintSessionStateStoring, now: Date,
-                                        timeZoneMoved: Bool) {
+                                        wallMoved: Bool) {
         guard let elapsed = session.pomodoroElapsed(clock: env.clock),
               (session.clockRearmCount ?? 0) < Self.maximumClockChangeRearms else { return }
-        let names = Self.pomodoroCarrierNames(monitorName: session.monitorName, plan: plan)
+        let names = Self.pomodoroCarrierNames(for: session)
         let registered = env.registrar.registeredActivityNames()
         // The chain's wall-equivalent start after any same-boot clock change.
         let anchor = now.addingTimeInterval(-elapsed)
         var registeredAny = false
         for rest in plan.rests {
-            // Only future rests are re-registered: a rest already under way has no boundary left
-            // to arm, and its phase is repaired by the shield write above (design §4). After a
-            // time-zone change the existing registration lands on the wrong wall instant, so it
-            // is replaced too.
-            guard anchor.addingTimeInterval(rest.start) > now, rest.index - 1 < names.count else { continue }
+            let restStart = anchor.addingTimeInterval(rest.start)
+            let restEnd = anchor.addingTimeInterval(rest.end)
+            // A finished rest has no boundary left to arm.
+            guard restEnd > now, rest.index - 1 < names.count else { continue }
             let name = names[rest.index - 1]
-            guard timeZoneMoved || !registered.contains(name) else { continue }
-            // `DeviceActivityCenter` replaces the schedule for an existing name, so a zone repair
+            guard wallMoved || !registered.contains(name) else { continue }
+            // A rest under way keeps only its end: its carrier restarts now, with the §4
+            // deadline adapter landing on the logical rest end.
+            let carrier = restStart > now
+                ? Self.pomodoroCarrierPlan(rest: rest, start: anchor, calendar: env.clock.calendar(),
+                                           strategy: env.shortSessionStrategy)
+                : FlintSessionAutoClearPlan.make(start: FlintSessionAutoClearPlan.wholeSecond(atOrAfter: now),
+                                                 end: restEnd, calendar: env.clock.calendar(),
+                                                 strategy: env.shortSessionStrategy)
+            // `DeviceActivityCenter` replaces the schedule for an existing name, so a repair
             // re-registers in place without a window in which the boundary cannot fire.
             do {
-                try env.registrar.startMonitoring(name, plan: Self.pomodoroCarrierPlan(
-                    rest: rest, start: anchor, calendar: env.clock.calendar(),
-                    strategy: env.shortSessionStrategy))
+                try env.registrar.startMonitoring(name, plan: carrier)
                 registeredAny = true
             } catch {
                 FlintSessionHealth.update(in: env.healthDefaults()) {

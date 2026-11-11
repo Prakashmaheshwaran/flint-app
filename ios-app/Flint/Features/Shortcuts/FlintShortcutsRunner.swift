@@ -45,6 +45,8 @@ enum FlintShortcutsError: Error, LocalizedError {
     /// Harder: the wait has passed; the final confirmation happens in Flint (ADR-012 §2).
     case confirmInFlint
     case stateUnavailable
+    /// A Pomodoro chain (2+ rounds) outside the plan bounds (design §2).
+    case invalidPomodoroPlan
 
     var errorDescription: String? {
         switch self {
@@ -61,6 +63,8 @@ enum FlintShortcutsError: Error, LocalizedError {
             return "The wait is over, but a Harder session only ends after you confirm in Flint. Open Flint to end it."
         case .stateUnavailable:
             return "Flint couldn't read its protection state, so nothing was changed. Open Flint to check."
+        case .invalidPomodoroPlan:
+            return "That Pomodoro can't start: focus must be 5–120 minutes in steps of 5, rests 1–60 minutes, and 2–8 rounds. A long rest needs both its length (5–60 minutes, at least the normal rest) and how often it comes (every 2 rounds up to one fewer than the total). Use 1 round for a single focus session."
         }
     }
 }
@@ -148,8 +152,8 @@ enum FlintShortcutsRunner {
         return try start(prepared, confirmed: confirmed, controller: controller)
     }
 
-    /// A saved cadence starts its whole chain when it forms a valid plan; an out-of-bounds or
-    /// single-round cadence keeps the legacy one-round behavior.
+    /// A saved cadence starts its whole chain when it forms a valid plan; a single-round cadence
+    /// keeps the legacy one-round behavior and an out-of-bounds chain is refused.
     @discardableResult
     static func startPomodoro(
         _ config: FlintPomodoroConfig,
@@ -161,6 +165,9 @@ enum FlintShortcutsRunner {
         selectionResolver: ((FlintSessionRequest) -> FamilyActivitySelection?)? = nil
     ) throws -> FlintActiveSession {
         guard let plan = FlintPomodoroPlan(config: config) else {
+            // Only a single round runs as an ordinary focus session; a chain outside the plan
+            // bounds is refused with its limits instead of silently running as one round.
+            guard config.rounds <= 1 else { throw FlintShortcutsError.invalidPomodoroPlan }
             let request = pomodoroRoundRequest(config, appGroupID: appGroupID, breakLevel: breakLevel)
             return try start(request, source: .pomodoro, confirmed: confirmed, requestID: requestID,
                 controller: controller, selectionResolver: selectionResolver)

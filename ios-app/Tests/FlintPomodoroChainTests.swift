@@ -294,17 +294,16 @@ final class FlintPomodoroSessionTests: XCTestCase {
         XCTAssertTrue(plannedRestEvents(.started).isEmpty)
     }
 
-    func testAStaleTokenCarrierIsStoppedAndChangesNothingElseF01() throws {
+    func testAStaleTokenCarrierIsStoppedAndNeverReleasesFocusF01() throws {
         let c = controller()
-        _ = try start(c, plan: plan)
+        let session = try start(c, plan: plan)
         let stale = "flint.pomo.deadbeefdeadbeef.1"
         registrar.registered.insert(stale)
         let clearest = shield.clearCount
-        let applies = shield.applyCount
         c.handlePomodoroCarrier(.intervalDidStart, activity: stale)
         XCTAssertTrue(registrar.stopped.contains(stale))
-        XCTAssertEqual(shield.clearCount, clearest)
-        XCTAssertEqual(shield.applyCount, applies)
+        XCTAssertEqual(shield.clearCount, clearest, "a stale wake-up during focus releases nothing")
+        XCTAssertFalse(carriers(session).contains(where: registrar.stopped.contains), "the live chain keeps its carriers")
     }
 
     func testSameBootWallJumpForwardOrBackDoesNotMoveThePhaseF01() throws {
@@ -405,25 +404,76 @@ final class FlintPomodoroSessionTests: XCTestCase {
         XCTAssertNotNil(store.active, "the live parent is untouched")
     }
 
-    func testATimeZoneChangeReRegistersTheFutureRestCarriersF01() throws {
+    func testATimeZoneChangeReRegistersTheRemainingRestCarriersF01() throws {
         let c = controller()
         let session = try start(c, plan: plan)
-        let oldNames = carriers(session)
-        clock.advance(25 * 60 + 30) // inside rest 1
+        let names = carriers(session)
+        clock.advance(25 * 60 + 60) // inside rest 1
         clock.timeZone = TimeZone(identifier: "UTC")!
         let startedBefore = registrar.started.count
         _ = c.reconcile()
         let current = try XCTUnwrap(store.active)
         XCTAssertNotEqual(current.monitorName, session.monitorName, "the parent end is re-registered")
-        let newNames = carriers(current)
-        XCTAssertEqual(newNames.count, 3)
-        let rearmed = Set(registrar.started.dropFirst(startedBefore).map(\.name))
-        XCTAssertFalse(rearmed.contains(newNames[0]), "the rest in progress has no boundary left to arm")
-        XCTAssertTrue(rearmed.contains(newNames[1]))
-        XCTAssertTrue(rearmed.contains(newNames[2]))
-        XCTAssertTrue(oldNames.allSatisfy(registrar.stopped.contains), "old-token carriers are stale")
-        XCTAssertTrue(registrar.registered.contains(newNames[1]))
-        XCTAssertTrue(registrar.registered.contains(newNames[2]))
+        XCTAssertEqual(carriers(current), names, "rest carriers keep the chain's stable token")
+        let rearmed = registrar.started.dropFirst(startedBefore)
+        XCTAssertEqual(Set(rearmed.map(\.name)).intersection(names), Set(names),
+                       "the rest under way and both future rests are re-registered")
+        // The rest under way restarts now, in the new zone, and warns at its logical end.
+        let inProgress = try XCTUnwrap(rearmed.last { $0.name == names[0] }?.plan)
+        let utc = clock.flintClock.calendar()
+        XCTAssertEqual(inProgress.intervalStart.hour, utc.component(.hour, from: clock.now))
+        XCTAssertEqual(inProgress.intervalStart.minute, utc.component(.minute, from: clock.now))
+        XCTAssertEqual(inProgress.warningTime?.minute, 11, "4 minutes of rest left in a 15-minute carrier")
+        XCTAssertFalse(names.contains(where: registrar.stopped.contains), "the chain's carriers are not stale")
+        for name in names { XCTAssertTrue(registrar.registered.contains(name)) }
+    }
+
+    func testAReArmedParentKeepsItsRestCarriersReconcilingTheChainF01() throws {
+        let c = controller()
+        let session = try start(c, plan: plan)
+        let names = carriers(session)
+        clock.advance(25 * 60 + 60) // inside rest 1
+        clock.timeZone = TimeZone(identifier: "UTC")!
+        _ = c.reconcile() // re-arms the parent end under a new monitor name
+        let current = try XCTUnwrap(store.active)
+        XCTAssertNotEqual(current.monitorName, session.monitorName)
+        let applies = shield.applyCount
+        clock.advance(4 * 60) // rest 1 ends, focus 2 begins
+        c.handlePomodoroCarrier(.intervalWillEndWarning, activity: names[0])
+        XCTAssertEqual(shield.applyCount, applies + 1, "focus resumes from the re-armed parent's carrier")
+        XCTAssertFalse(registrar.stopped.contains(names[0]), "the carrier is still this chain's")
+        XCTAssertEqual(plannedRestEvents(.ended, index: 1).count, 1)
+    }
+
+    func testAWallClockDriftDuringARestReArmsItsEndAtTheLogicalEndF01() throws {
+        let c = controller()
+        let session = try start(c, plan: plan)
+        let names = carriers(session)
+        clock.advance(25 * 60 + 60) // inside rest 1, 4 minutes left
+        clock.now = clock.now.addingTimeInterval(-3600) // wall moves back an hour, same boot
+        let startedBefore = registrar.started.count
+        _ = c.reconcile()
+        let rearmed = registrar.started.dropFirst(startedBefore)
+        let inProgress = try XCTUnwrap(rearmed.last { $0.name == names[0] }?.plan,
+                                       "the rest under way is re-armed after the drift")
+        let calendar = clock.flintClock.calendar()
+        XCTAssertEqual(inProgress.intervalStart.hour, calendar.component(.hour, from: clock.now))
+        XCTAssertEqual(inProgress.intervalStart.minute, calendar.component(.minute, from: clock.now))
+        XCTAssertEqual(inProgress.warningTime?.minute, 11, "the warning lands on the logical rest end")
+        XCTAssertTrue(rearmed.contains { $0.name == names[1] }, "future rests move with the drift")
+        XCTAssertTrue(rearmed.contains { $0.name == names[2] })
+        XCTAssertEqual(store.active?.pomodoroPhase(clock: clock.flintClock)?.phase?.kind, .rest)
+    }
+
+    func testAStaleCarrierStillReconcilesTheCurrentChainPhaseF01() throws {
+        let c = controller()
+        _ = try start(c, plan: plan)
+        clock.advance(25 * 60 + 60) // inside rest 1
+        let stale = "flint.pomo.deadbeefdeadbeef.1"
+        registrar.registered.insert(stale)
+        c.handlePomodoroCarrier(.intervalDidStart, activity: stale)
+        XCTAssertTrue(registrar.stopped.contains(stale))
+        XCTAssertEqual(shield.clearCount, 1, "the wake-up reconciles the live chain's phase")
     }
 
     // MARK: History

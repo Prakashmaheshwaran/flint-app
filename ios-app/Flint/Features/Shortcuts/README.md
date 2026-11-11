@@ -41,7 +41,7 @@ target count at 5; App Intents ship inside the host app).
   an optional long rest, defaulted from the saved in-app cadence, and starts one parent session that
   spans every round and its planned rests. The plan is frozen at acceptance, each rest is
   pre-registered as its own DeviceActivity carrier, and the tier governs the whole chain. One round
-  (or an out-of-bounds cadence) runs as one ordinary focus session. Physical-device delivery of the
+  runs as one ordinary focus session; a chain outside the plan bounds is refused with its limits. Physical-device delivery of the
   rest carriers, locked-device latency and a backward clock change while the app is closed remain
   device gates.
 - **Start retries (R-25, PC-03/10).** A supplied Retry key binds the exact parameters to one accepted
