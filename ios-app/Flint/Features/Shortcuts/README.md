@@ -37,9 +37,13 @@ target count at 5; App Intents ship inside the host app).
   and Hardcore sessions need a set number of minutes (0 = until stopped is Easy-only).
 - **Simulator evidence is limited.** Builds and injected adapter tests prove compilation and
   transition logic. Physical-device verification is required for Screen Time enforcement.
-- **Pomodoro starts one round (R-24 interim).** The intent exposes focus minutes only. It does not
-  save a cadence or schedule breaks and later rounds. Legacy runner calls carrying break/round
-  values still execute one focus round. The durable multi-round state machine remains separate work.
+- **Pomodoro starts a whole chain (F01).** The intent takes focus minutes, rest minutes, rounds and
+  an optional long rest, defaulted from the saved in-app cadence, and starts one parent session that
+  spans every round and its planned rests. The plan is frozen at acceptance, each rest is
+  pre-registered as its own DeviceActivity carrier, and the tier governs the whole chain. One round
+  (or an out-of-bounds cadence) runs as one ordinary focus session. Physical-device delivery of the
+  rest carriers, locked-device latency and a backward clock change while the app is closed remain
+  device gates.
 - **Start retries (R-25, PC-03/10).** A supplied Retry key binds the exact parameters to one accepted
   session and its terminal outcome. Keep that key for retries and use a new key for a new start.
   Without a key, identical Shortcut parameters share a durable attempt for 120 seconds while it
