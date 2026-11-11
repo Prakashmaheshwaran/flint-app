@@ -27,6 +27,8 @@ final class FlintFixtureUITests: XCTestCase {
     func testScheduleValidationAtAccessibilitySize() throws { try scheduleValidation(accessibility: true) }
     func testInsightsUnavailableAtDefaultSize() throws { try insights(accessibility: false) }
     func testInsightsUnavailableAtAccessibilitySize() throws { try insights(accessibility: true) }
+    func testLegalDocumentsAtDefaultSize() throws { try legalDocuments(accessibility: false) }
+    func testLegalDocumentsAtAccessibilitySize() throws { try legalDocuments(accessibility: true) }
 
     private func launch(accessibility: Bool, approved: Bool = true, onboarded: Bool = true) {
         app = XCUIApplication()
@@ -209,6 +211,32 @@ final class FlintFixtureUITests: XCTestCase {
         try tap(app.buttons["Insights"])
         try reveal(app.staticTexts["Screen Time access needed"])
         XCTAssertFalse(app.staticTexts["No screen time recorded"].exists)
+    }
+
+    /// Both bundled legal documents open from You → Legal and render offline, with no WebView,
+    /// link opening or network path. This is fixture UI evidence, not legal review or device proof.
+    private func legalDocuments(accessibility: Bool) throws {
+        launch(accessibility: accessibility)
+        try tap(app.buttons["You"])
+        let privacy = app.buttons["settings.legal.privacy"]
+        try reveal(privacy)
+        try tap(privacy)
+        let title = app.staticTexts["legal.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.label, "Flint privacy policy")
+        XCTAssertTrue(app.staticTexts["Bundled with this version of Flint. Available offline."].exists)
+        try reveal(app.staticTexts["Retention and deletion"])
+        capture("legal-privacy-policy")
+
+        try tap(app.navigationBars.buttons.element(boundBy: 0))
+        let licenses = app.buttons["settings.legal.licenses"]
+        try reveal(licenses)
+        try tap(licenses)
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.label, "Open-source licenses")
+        XCTAssertTrue(app.staticTexts["Bundled with this version of Flint. Available offline."].exists)
+        try reveal(app.staticTexts["Shippori Mincho"])
+        capture("legal-open-source-licenses")
     }
 
     private enum ScrollDirection { case up, down }
