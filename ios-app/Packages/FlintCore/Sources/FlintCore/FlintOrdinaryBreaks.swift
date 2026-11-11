@@ -341,16 +341,20 @@ public enum FlintOrdinaryBreaks {
     /// Restore the owner's frozen policy, including an existing untimed Easy commitment.
     /// An expired finite owner is never recreated; reboot re-anchoring belongs to session reconcile.
     /// Every session reuses the `flint` store, so a session owner is restored only while it is
-    /// verifiably the current session. With no verifiable current owner (a successor, no session,
-    /// an unreadable record, or an owner saved without a session ID) nothing is written: a stale
-    /// owner's narrower policy would release targets the current commitment blocks (R2p2-N02).
-    /// The current session's own reconcile repairs its store.
+    /// verifiably the current session: the readable projection, or, when the projection is absent
+    /// or unreadable, the ledger's applied session authority it mirrors. With no verifiable current
+    /// owner (a successor, no session, an installing or idle authority, or an owner saved without a
+    /// session ID) nothing is written: a stale owner's narrower policy would release targets the
+    /// current commitment blocks (R2p2-N02). The current session's own reconcile repairs its store.
     static func restoreUnavailableAuthorities(_ records: [FlintOrdinaryGrantState.Record], at now: FlintLedgerInstant,
                                              writer: ((String) -> FlintRuleShieldWriting)? = nil,
-                                             currentSessionID: () -> String? = { FlintGroupStore()?.loadActiveSession()?.id }) throws {
+                                             currentSessionID: () -> String? = { FlintGroupStore()?.loadActiveSession()?.id },
+                                             sessionAuthority: () -> FlintSessionAuthority? = {
+                                                 (try? FlintProtectionLedger.appGroup()?.peek().get())?.sessionAuthority
+                                             }) throws {
         var current: String?? // read at most once; `.some(nil)` caches "no verifiable session"
         func isCurrent(_ sessionID: String) -> Bool {
-            if current == nil { current = .some(currentSessionID()) }
+            if current == nil { current = .some(currentSessionID() ?? appliedSessionID(sessionAuthority())) }
             return current! == sessionID
         }
         for record in records {
@@ -364,6 +368,16 @@ public enum FlintOrdinaryBreaks {
                 try write(selection, storeName: owner.storeName, releasing: [], to: writer?(owner.storeName))
             }
         }
+    }
+
+    /// The session the ledger records as applied, for when the projection can't be read. The
+    /// projection only mirrors this authority: a successor installs its own generation before
+    /// its projection is written, and an end commits the idle tombstone before clearing it, so a
+    /// stale owner is never the applied latest generation (R2p2-N02 double fault).
+    static func appliedSessionID(_ authority: FlintSessionAuthority?) -> String? {
+        guard let authority, authority.isValid, !authority.provesIdle,
+              let latest = authority.latest, latest.phase == .applied else { return nil }
+        return latest.session.id
     }
 
     static func write(_ selection: FlintBreakContributor.Selection, storeName: String,
