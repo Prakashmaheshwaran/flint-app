@@ -8,7 +8,6 @@ import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.StorageFailure
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -64,8 +63,9 @@ class DatedRuleCodecTest {
     }
 
     @Test
-    fun `an older build meeting a dated row reports a future store instead of dropping it`() {
+    fun `a later schema row with more fields is unsupported rather than dropped`() {
         // 13 fields is what a LATER schema would write; the current strict reader must fail closed.
+        // (Builds before this schema apply the same `> 11 fields` rule to a 12-field dated row.)
         val thirteen = PrefsCodec.encodeRules(listOf(dated)) + "|extra"
         assertEquals(StorageFailure.UNSUPPORTED_VERSION, corrupting { StrictPrefsCodec.rules(thirteen) })
     }
@@ -93,11 +93,12 @@ class DatedRuleCodecTest {
     @Test
     fun `lenient decoding drops an undecodable date rather than inventing a weekly rule`() {
         val fields = PrefsCodec.encodeRules(listOf(dated)).split('|')
-        val encoded = fields.toMutableList().apply { this[11] = "not-a-date" }.joinToString("|")
-        val decoded = PrefsCodec.decodeRules(encoded).single()
-        assertNull(decoded.schedule?.date)
-        // The days are empty, so this damaged record is a "every day" window, never the Friday
-        // pattern a weekly interpretation would invent.
-        assertTrue(decoded.schedule!!.daysOfWeek.isEmpty())
+        for (bad in listOf("not-a-date", "", "2026-13-40")) {
+            val encoded = fields.toMutableList().apply { this[11] = bad }.joinToString("|")
+            // An undated fallback would be an every-day window; the record is dropped instead.
+            assertTrue(bad, PrefsCodec.decodeRules(encoded).isEmpty())
+        }
+        val noWindow = fields.toMutableList().apply { this[8] = "-1"; this[9] = "-1" }.joinToString("|")
+        assertTrue(PrefsCodec.decodeRules(noWindow).isEmpty())
     }
 }

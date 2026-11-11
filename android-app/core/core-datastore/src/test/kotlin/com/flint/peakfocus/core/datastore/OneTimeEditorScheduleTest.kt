@@ -249,4 +249,22 @@ class OneTimeEditorScheduleTest {
             store.confirm((preview as EditorCommitResult.Preview).pending.id, rewound, safe))
         assertEquals(listOf(later), DataStoreBlockRulesStore(disk).rules.first())
     }
+
+    @Test fun `a one-time window stretched past 24 elapsed hours by a DST fold is refused like iOS`() = runBlocking {
+        val disk = Disk()
+        val store = DataStoreEditorCommitmentStore(disk, defaultZone = { "America/New_York" })
+        val now = AccessClockStamp(java.time.Instant.parse("2026-10-30T12:00:00Z").toEpochMilli(), 10_000, "boot")
+        store.reconcile(now)
+        // 01:30 Oct 31 -> 01:15 Nov 1 is 23 h 45 m on the wall, but the 2026-11-01 fold repeats
+        // 01:00-02:00 and the later ambiguous end is taken (§9): 24 h 45 m elapsed.
+        val stretched = rule(onDate = LocalDate.parse("2026-10-31"), tier = BreakLevel.EASY).copy(
+            schedule = Schedule(startMinuteOfDay = 90, endMinuteOfDay = 75, date = LocalDate.parse("2026-10-31")))
+        assertEquals(EditorCommitResult.Rejected("A one-time session must end within 24 hours of its start."),
+            store.request(EditorChange("Save", upserts = listOf(stretched)), now, safe))
+        assertTrue(DataStoreBlockRulesStore(disk).rules.first().isEmpty())
+        // 05:00 Oct 31 -> 03:00 Nov 1 crosses the same fold but stays under 24 elapsed hours (23 h).
+        val within = stretched.copy(schedule = stretched.schedule!!.copy(startMinuteOfDay = 5 * 60, endMinuteOfDay = 3 * 60))
+        val preview = store.request(EditorChange("Save", upserts = listOf(within)), now, safe)
+        assertTrue("$preview", preview is EditorCommitResult.Preview)
+    }
 }

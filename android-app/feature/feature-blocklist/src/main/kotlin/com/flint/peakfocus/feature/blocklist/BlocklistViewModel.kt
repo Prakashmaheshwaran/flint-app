@@ -248,7 +248,12 @@ internal class BlocklistViewModel(
      * drafts are refused outright — the editor gates Save on [validate], this is defense.
      */
     fun saveRule(draft: RuleDraft, onSaved: () -> Unit = {}) {
-        if (validate(draft).isNotEmpty()) return
+        // The saved record is the baseline, as in the editor: an active or finished one-time
+        // rule's past start is not re-judged. The commit gate remains the authority.
+        val saved = draft.id?.let { id ->
+            (rules.value as? RulesUiState.Ready)?.rules?.singleOrNull { it.id == id }?.let(::ruleDraftOf)
+        }
+        if (validate(draft, original = saved).isNotEmpty()) return
         val rule = draft.toRule(id = draft.id ?: newRuleId())
         request(EditorChange("Save ${rule.name}", upserts = listOf(rule)), onSaved)
     }

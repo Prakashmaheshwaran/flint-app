@@ -334,8 +334,11 @@ private fun TodayScene(
     }
     val statuses = ready?.statuses.orEmpty()
     val active = authored.firstOrNull { statuses[it.id]?.activeNow == true }
+    // A one-time rule belongs to Today only on its own date (never a later date's start time).
+    val today = java.time.Instant.ofEpochMilli(state.nowEpochMs).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
     val upNext = authored
         .filter { statuses[it.id]?.nextChange?.startsWith("Starts") == true }
+        .filter { rule -> rule.schedule?.date?.let { it == today } ?: true }
         .sortedBy { it.schedule?.startMinuteOfDay ?: 0 }
         .take(2)
     val nextLabel = upNext.firstOrNull()?.let { rule ->

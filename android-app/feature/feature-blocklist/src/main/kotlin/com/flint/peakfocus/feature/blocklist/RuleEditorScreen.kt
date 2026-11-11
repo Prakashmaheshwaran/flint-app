@@ -170,7 +170,9 @@ internal fun RuleEditorScreen(
         startMinuteOfDay = parseMinuteOfDay(startText) ?: -1,
         endMinuteOfDay = parseMinuteOfDay(endText) ?: -1,
     )
-    val errors = if (attemptedSave) validate(candidate) else emptyList()
+    // An existing rule's saved window is the baseline: its past start is never re-judged.
+    val savedDraft = initialDraft.takeIf { it.id != null }
+    val errors = if (attemptedSave) validate(candidate, original = savedDraft) else emptyList()
 
     AnimatedContent(
         targetState = pickingApps,
@@ -209,7 +211,7 @@ internal fun RuleEditorScreen(
             ) {
                 val attemptSave: () -> Unit = {
                     attemptedSave = true
-                    val problems = validate(candidate)
+                    val problems = validate(candidate, original = savedDraft)
                     if (problems.isEmpty()) {
                         haptics.confirm()
                         onSave(candidate)

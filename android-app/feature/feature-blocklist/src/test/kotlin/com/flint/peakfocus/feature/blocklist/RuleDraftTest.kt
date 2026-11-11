@@ -247,6 +247,29 @@ class RuleDraftTest {
     }
 
     @Test
+    fun `an active or finished one time rule keeps its past start when edited`() {
+        // Saved 09:00-17:00 on Nov 20; it is now 10:00 that day (active) and later (finished).
+        val saved = oneTime.copy(id = "saved")
+        val active = LocalDateTime.of(2026, 11, 20, 10, 0)
+        val finished = LocalDateTime.of(2026, 11, 22, 10, 0)
+        for (now in listOf(active, finished)) {
+            // Extending the end, renaming or adding a target is an ordinary edit; the commit-time
+            // tier gate decides its rights, so the pre-save gate must not refuse it.
+            assertTrue(validate(saved.copy(endMinuteOfDay = 18 * 60), now, utc, original = saved).isEmpty())
+            assertTrue(validate(saved.copy(name = "Renamed"), now, utc, original = saved).isEmpty())
+            // Moving the start (or the date) is a new window and must still be in the future.
+            assertTrue(validate(saved.copy(startMinuteOfDay = 9 * 60 + 30), now, utc, original = saved)
+                .contains(RuleDraftError.START_IN_PAST))
+            assertTrue(validate(saved.copy(date = LocalDate.parse("2026-11-19")), now, utc, original = saved)
+                .contains(RuleDraftError.START_IN_PAST))
+        }
+        // A finished rule moved to a future date is a fresh pending window.
+        assertTrue(validate(saved.copy(date = LocalDate.parse("2026-11-30")), finished, utc, original = saved).isEmpty())
+        // Without a saved baseline (a new rule) the same past window is refused.
+        assertTrue(validate(saved.copy(endMinuteOfDay = 18 * 60), active, utc).contains(RuleDraftError.START_IN_PAST))
+    }
+
+    @Test
     fun `one time overnight window is valid and ends the next day`() {
         val overnight = oneTime.copy(startMinuteOfDay = 22 * 60, endMinuteOfDay = 6 * 60)
         assertTrue(validate(overnight, earlyFriday, utc).isEmpty())

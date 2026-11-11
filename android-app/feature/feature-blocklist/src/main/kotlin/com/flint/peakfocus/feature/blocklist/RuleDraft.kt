@@ -126,11 +126,17 @@ internal enum class RuleDraftError(val message: String) {
  * [zone] (the zone the window will be saved in; a new rule captures the device zone). [now] and
  * [zone] are parameters so this stays pure and testable. The engine's committed check repeats the
  * past-start rule against the rule's saved zone — this is the honest pre-save gate, not authority.
+ *
+ * [original] is the saved draft being edited (null for a new rule). Like the commit gate, only a
+ * new window or one whose date/start moved must start in the future: an active or finished
+ * one-time rule keeps its past start, so renaming it, adding targets or extending its end is an
+ * ordinary edit whose rights the commit-time tier gate decides (ADR-012 PC-11/13/14).
  */
 internal fun validate(
     draft: RuleDraft,
     now: LocalDateTime = LocalDateTime.now(),
     zone: ZoneId = ZoneId.systemDefault(),
+    original: RuleDraft? = null,
 ): List<RuleDraftError> {
     val errors = mutableListOf<RuleDraftError>()
     if (draft.name.isBlank()) errors += RuleDraftError.NAME_REQUIRED
@@ -149,8 +155,10 @@ internal fun validate(
             if (date == null) {
                 errors += RuleDraftError.DATE_REQUIRED
             } else {
+                val moved = original == null || !original.oneTime || original.date != date ||
+                    original.startMinuteOfDay != draft.startMinuteOfDay
                 val startsAt = ScheduleOccurrences.onDate(draft.window(date = date), zone, date)?.startsAtEpochMs
-                if (startsAt != null && startsAt < now.atZone(zone).toInstant().toEpochMilli() - 60_000L) {
+                if (moved && startsAt != null && startsAt < now.atZone(zone).toInstant().toEpochMilli() - 60_000L) {
                     errors += RuleDraftError.START_IN_PAST
                 }
             }

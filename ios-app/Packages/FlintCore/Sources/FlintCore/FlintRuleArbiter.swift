@@ -568,6 +568,12 @@ final class FlintRuleArbiter {
         guard next.enabled else { return true }
         _ = FlintWebRestrictionRuleAdapter.freeze([next], environment: env, existingWebStores: env.existingWebStores)
         if next.activityName == old?.activityName { return true } // cosmetic: no restart/counter reset
+        // A one-shot whose window is already over on its trusted timeline has nothing left to
+        // arm (e.g. a queued change applied at its end, or an edit of a finished one-shot).
+        // Registering its past non-repeating interval could only be refused or fire stale.
+        if let window = next.absoluteWindow, FlintRuleOccurrenceClock.isOver(window, for: next, clock: env.clock) {
+            return true
+        }
         if let old = old as? FlintLimitRule, old.enabled, old.occurrence(at: env.clock.now(), clock: env.clock) != nil {
             if #available(iOS 17.4, *) {} else { return false } // cannot reset already-used daily usage
         }

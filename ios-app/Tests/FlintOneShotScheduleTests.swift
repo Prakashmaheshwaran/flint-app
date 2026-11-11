@@ -368,6 +368,68 @@ final class FlintOneShotScheduleTests: XCTestCase {
         guard case .invalid = arbiter.upsert(replacing(retained, window: movedDate)) else {
             return XCTFail("a rule with a queued change only accepts a strengthen")
         }
+
+        // At the trusted end the queued shortening applies without re-registering the now-past
+        // non-repeating interval, and nothing is left retrying (PC-14).
+        let startsBefore = h.center.starts
+        h.advance(to: longer.end)
+        XCTAssertTrue(FlintSchedulesController(environment: h.environment).reload().isEmpty)
+        let applied = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        XCTAssertEqual(applied.oneShot, shorter, "the accepted shortening is persisted at the trusted end")
+        XCTAssertNil(applied.protection?.queuedChange, "the queue is consumed, not stuck retrying")
+        XCTAssertEqual(applied.oneShotPhase(at: h.now, clock: h.clock)?.isFinished, true)
+        XCTAssertEqual(h.center.starts, startsBefore, "a finished window's past interval is never registered")
+        XCTAssertNil(h.center.held[.init(applied.monitorName)])
+        XCTAssertFalse(h.reports["schedules"]?.failures.contains { $0.reason.contains("couldn't be applied") } ?? false)
+    }
+
+    func testFinishedOneShotIsHistoryNotADegradedCause() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let window = offsetWindow(daysAhead: 1, from: h.now)
+        XCTAssertEqual(FlintRuleArbiter(environment: h.environment).upsert(oneShotRule(window), creating: true), .applied)
+        let saved = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        // Pending and unregistered: a real cause whose missing registration must stay visible.
+        let pending = FlintProtectionStatusBuilder.RuleInput.schedule(saved, armed: false, observed: false,
+            now: h.now, calendar: calendar(utc), clock: h.clock)
+        XCTAssertTrue(pending.enabled)
+        // Finished: deliberately unregistered, so it must not publish registration_* reasons.
+        h.advance(to: window.end.addingTimeInterval(60))
+        let finished = FlintProtectionStatusBuilder.RuleInput.schedule(saved, armed: false, observed: false,
+            now: h.now, calendar: calendar(utc), clock: h.clock)
+        XCTAssertFalse(finished.enabled)
+        XCTAssertNil(finished.currentWindow); XCTAssertNil(finished.nextWindow)
+        let snapshot = FlintProtectionStatusBuilder.make(.init(now: h.now, quotaCalendar: calendar(utc),
+            rules: [finished], authorized: true, pass: .init(eligibility: .available),
+            timeIntegrity: nil, timeIntegrityApplies: false))
+        XCTAssertNotEqual(snapshot.state, .degraded)
+        XCTAssertTrue(snapshot.degradedReasons.isEmpty)
+        // A legacy record without versioned metadata is still never projected weekly.
+        var legacy = saved; legacy.protection = nil
+        let legacyInput = FlintProtectionStatusBuilder.RuleInput.schedule(legacy, armed: false, observed: false,
+            now: h.now.addingTimeInterval(7 * 86400 - 3600), calendar: calendar(utc), clock: h.clock)
+        XCTAssertFalse(legacyInput.enabled)
+        XCTAssertNil(legacyInput.nextWindow, "a one-shot's mirror weekday never yields a next week")
+    }
+
+    /// iOS keeps a trusted timeline per rule: a brand-new rule's anchor is born at the wall clock
+    /// it was authored against, and its registration uses that same reading. Authoring after a
+    /// same-boot wall rewind therefore activates after the real elapsed time the user picked.
+    func testNewOneShotAuthoredAfterWallRewindStartsAfterTheChosenRealDelay() throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        h.now = date("2026-10-28T12:00:00Z")
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        h.now.addTimeInterval(-3 * 3600) // wall dragged back three hours; monotonic unchanged
+        let window = FlintRuleWindow(start: h.now.addingTimeInterval(30 * 60), end: h.now.addingTimeInterval(90 * 60))
+        XCTAssertEqual(arbiter.upsert(oneShotRule(window), creating: true), .applied)
+        let saved = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        XCTAssertEqual(saved.oneShotPhase(at: h.now, clock: h.clock)?.isPending, true)
+        XCTAssertTrue(FlintSchedulesController(environment: h.environment).reload().isEmpty)
+        let natively = try XCTUnwrap(h.center.schedule(for: .init(saved.monitorName)))
+        XCTAssertEqual(natively.intervalStart.hour, calendar(utc).component(.hour, from: window.start))
+        XCTAssertEqual(natively.intervalStart.minute, calendar(utc).component(.minute, from: window.start))
+        h.advance(30 * 60)
+        XCTAssertEqual(h.load(FlintScheduleRule.self).first?.oneShotPhase(at: h.now, clock: h.clock)?.isActive, true,
+                       "it starts 30 real minutes after authoring, not three hours late or never")
     }
 
     func testPendingOneShotCanBeToggledOffWhileActiveHardcoreCannotPC13PC14() throws {

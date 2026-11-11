@@ -110,6 +110,10 @@ internal object PrefsCodec {
 
         val start = f[8].toIntOrNull() ?: NO_SCHEDULE
         val end = f[9].toIntOrNull() ?: NO_SCHEDULE
+        // A 12th field is always a one-time date. If it is damaged, or there is no window to
+        // date, drop the record: falling back to an undated window would invent a weekly rule.
+        val date = if (f.size == 12) runCatching { LocalDate.parse(f[11]) }.getOrNull() ?: return null else null
+        if (date != null && start == NO_SCHEDULE) return null
         val schedule = if (start == NO_SCHEDULE) {
             null
         } else {
@@ -117,7 +121,7 @@ internal object PrefsCodec {
                 daysOfWeek = f[7].split(ITEM).mapNotNull { it.toIntOrNull() }.toSet(),
                 startMinuteOfDay = start,
                 endMinuteOfDay = end,
-                date = f.getOrNull(11)?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+                date = date,
             )
         }
 

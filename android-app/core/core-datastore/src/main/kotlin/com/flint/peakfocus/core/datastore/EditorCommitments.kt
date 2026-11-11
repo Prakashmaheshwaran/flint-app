@@ -173,6 +173,9 @@ internal fun limitShape(pkg: String, tier: BreakLevel, budget: Int, dailyZoneId:
  * wall-clock rewind must not make a start look authorable when the trusted timeline has already
  * passed it — authoring and activation read one clock.
  */
+/** A one-time window is a new finite commitment: strictly shorter than 24 elapsed hours. */
+internal const val ONE_TIME_MAX_MS = 24 * 60 * 60 * 1000L
+
 internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClockStamp,
                                 zone: String = TimeZone.getDefault().id,
                                 trustedWallEpochMs: Long = now.wallEpochMs): String? {
@@ -203,6 +206,11 @@ internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClo
                 old.schedule?.startMinuteOfDay != it.startMinuteOfDay
             if (moved && occurrence.startsAtEpochMs < trustedWallEpochMs - 60_000) {
                 return "Choose a start time in the future."
+            }
+            // A new or changed one-time window is a new finite commitment: under 24 elapsed
+            // hours, like iOS. Only a DST fold can stretch a sub-24 h wall window past it.
+            if (old?.schedule != it && occurrence.endsAtEpochMs - occurrence.startsAtEpochMs >= ONE_TIME_MAX_MS) {
+                return "A one-time session must end within 24 hours of its start."
             }
         }
     }
