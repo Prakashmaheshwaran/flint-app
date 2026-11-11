@@ -48,6 +48,7 @@ For example, from the repository root:
 | Schedule validation | Empty block-list cannot save; an allow list with no apps cannot save and asks for the apps to keep (R-26); zero-length and 10-minute errors; exact 15-minute boundary clears its error; cancel without saving |
 | Insights unavailable | Approved fixture explains simulator limitation; range changes; unapproved fixture explains access needed; unavailable never claims measured zero |
 | Insights empty / absent | Existing `FlintInsightsTests` renders the actual report content with no-data, zero-usage and activity inputs at Large/AX5; this is a unit render, not the OS report service |
+| Legal documents | You → Legal opens the bundled privacy policy and open-source notices offline: document title, offline note, scrolled heading, then back out; plain text only, so document links are never opened (fixture UI evidence only) |
 
 The host app has no DEBUG empty-report fixture, so XCUITest cannot truthfully
 claim an end-to-end zero-usage report. The maintained report tests distinguish

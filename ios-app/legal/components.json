@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "intro": [
+    "Flint for iOS includes no third-party libraries, frameworks or Swift packages. The app and its extensions are built from Flint's own source code and use Apple's system frameworks, which iOS provides.",
+    "The app and its Insights report extension bundle two third-party font families. Their licenses and Flint's own license follow."
+  ],
+  "components": [
+    {
+      "kind": "font",
+      "name": "Hanken Grotesk",
+      "files": [
+        {
+          "path": "ios-app/Flint/Resources/Fonts/HankenGrotesk-Regular.ttf",
+          "sha256": "47a247b989a8f41b686c83463d0000d633fe6cdea234d4a7211172d6d537150a"
+        },
+        {
+          "path": "ios-app/Flint/Resources/Fonts/HankenGrotesk-Medium.ttf",
+          "sha256": "1505a84b61bcda409f5b27796c548debc8b2629422c4e0511743d8b94bc0e91f"
+        },
+        {
+          "path": "ios-app/Flint/Resources/Fonts/HankenGrotesk-SemiBold.ttf",
+          "sha256": "7a9e5b761e0c9adf3378b630f8ecbfaca579fc5478e73b13c2f94075ebeaaa03"
+        },
+        {
+          "path": "ios-app/Flint/Resources/Fonts/HankenGrotesk-Bold.ttf",
+          "sha256": "2f68a4461c8375d91f5b45656d458b1be3e9cb3b408fdf9f9f244c31202a27c4"
+        }
+      ],
+      "licenseFile": "design/fonts/HankenGrotesk-OFL.txt",
+      "licenseFileSha256": "e02ccb89a86839b22feff7872ff5cc355cc0f58318d29eee20e2cf83a612f16d",
+      "license": "SIL Open Font License, Version 1.1",
+      "source": "https://github.com/google/fonts/tree/main/ofl/hankengrotesk",
+      "changes": "static 400, 500, 600 and 700 instances of the upstream variable font",
+      "bundles": [
+        "Flint.app",
+        "DeviceActivityReportExtension.appex"
+      ],
+      "shippedIn": "Flint app, Insights report extension"
+    },
+    {
+      "kind": "font",
+      "name": "Shippori Mincho",
+      "files": [
+        {
+          "path": "ios-app/Flint/Resources/Fonts/ShipporiMincho-Regular.ttf",
+          "sha256": "346eb15874f8f8bf077cd96c003422702c1a67b043662de581f74db9d139d291"
+        }
+      ],
+      "licenseFile": "design/fonts/ShipporiMincho-OFL.txt",
+      "licenseFileSha256": "41fba056279be5f45ff9a99e44b7b53897b42732f5806d8e666e0ab49ac6bd38",
+      "license": "SIL Open Font License, Version 1.1",
+      "source": "https://github.com/google/fonts/tree/main/ofl/shipporimincho",
+      "changes": "subset to Latin, Latin-1 and common punctuation; digits re-spaced to one shared width; vertical metrics tightened to the Latin glyph bounds",
+      "bundles": [
+        "Flint.app",
+        "DeviceActivityReportExtension.appex"
+      ],
+      "shippedIn": "Flint app, Insights report extension"
+    },
+    {
+      "kind": "application",
+      "name": "Flint",
+      "files": [],
+      "licenseFile": "LICENSE",
+      "licenseFileSha256": "b8d1fc792e219a99591e6c66619e18282165cec2eec9b1622454ccf96aa3ba9f",
+      "license": "MIT License",
+      "source": "https://github.com/Prakashmaheshwaran/flint-app",
+      "shippedIn": "Flint app and all of its extensions"
+    }
+  ]
+}
