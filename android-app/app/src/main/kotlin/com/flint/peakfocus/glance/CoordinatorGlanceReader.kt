@@ -93,7 +93,8 @@ internal fun coordinatorGlanceReading(status: CoordinatorStatus): ProtectionRead
                     com.flint.peakfocus.core.model.PomodoroPhaseKind.LONG_REST -> "Long rest"
                 }
             },
-            phaseEndsAtEpochMs = selected.pomodoroPhaseEndsAtEpochMs))
+            phaseEndsAtEpochMs = selected.pomodoroPhaseEndsAtEpochMs,
+            resting = selected.pomodoroPhase?.let { !it.isFocus } == true))
 }
 
 private val focusKinds = setOf(CoordinatorStatus.CauseKind.SESSION, CoordinatorStatus.CauseKind.TIMER)

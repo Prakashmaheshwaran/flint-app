@@ -58,6 +58,11 @@ data class ActiveGlanceCause(
     val phase: String? = null,
     /** Wall estimate of the phase end; a reader must not describe the phase past it. */
     val phaseEndsAtEpochMs: Long? = null,
+    /**
+     * F01: the commitment is in a planned rest, so its own restrictions are not enforcing. The
+     * parent is still the active commitment; only the headline must not claim protection.
+     */
+    val resting: Boolean = false,
 )
 
 data class NextGlanceSession(val name: String, val startsAtEpochMs: Long)
@@ -174,7 +179,9 @@ object GlanceDisplayMapper {
                 )
                 if (end == null && cause.tier != GlanceTier.EASY) return base
                 // F01: a phase is only described while the read is inside it; past the phase
-                // end the widget shows the parent and asks for a new check instead.
+                // end the widget shows the parent and asks for a new check instead. A planned
+                // rest is not protection of its own targets, so it never reads "Protection
+                // active": the parent is still committed and focus resumes at the phase end.
                 val phaseFresh = cause.phase != null && cause.phaseEndsAtEpochMs?.let { it > nowEpochMs } == true
                 val phaseStale = cause.phase != null && !phaseFresh
                 if (phaseStale) return available.copy(
@@ -182,9 +189,12 @@ object GlanceDisplayMapper {
                     detail = "${cause.name.take(64)} · Open Flint to check the next round",
                     refreshAtElapsedMs = checked!! + MAX_AGE_MS,
                 )
+                val resting = phaseFresh && cause.resting
                 available.copy(
-                    status = "Protection active at last check",
-                    detail = if (phaseFresh)
+                    status = if (resting) "Rest · focus resumes ${at(cause.phaseEndsAtEpochMs!!)}"
+                        else "Protection active at last check",
+                    detail = if (resting) "${cause.name.take(64)} · Planned rest · ${cause.tier.label}"
+                    else if (phaseFresh)
                         "${cause.name.take(64)} · ${cause.phase} · Until ${at(cause.phaseEndsAtEpochMs!!)}"
                     else "${cause.name.take(64)} · ${cause.tier.label}" +
                         (end?.let { " · Until ${atElapsed(it)}" } ?: " · Until ended in Flint"),

@@ -16,13 +16,22 @@ class GlanceDisplayMapperTest {
         GlanceDisplayMapper.map(reading, focus, now, 1_800_000_000_000, ZoneId.of("UTC"), Locale.US)
 
     @Test fun pomodoroPhaseIsShownOnlyWhileItIsCurrent() {
-        // A planned rest is an active commitment: the widget names the phase and its end.
-        val resting = active.copy(cause = cause.copy(phase = "Rest", phaseEndsAtEpochMs = 1_800_000_120_000,
-            logicalEndElapsedMs = null, tier = GlanceTier.EASY))
+        // A planned rest is an active commitment, but its own targets are not enforcing: the
+        // widget names the rest and when focus resumes instead of claiming protection.
+        val resting = active.copy(cause = cause.copy(phase = "Rest", resting = true,
+            phaseEndsAtEpochMs = 1_800_000_120_000, logicalEndElapsedMs = null, tier = GlanceTier.EASY))
         val fresh = display(resting)
-        assertEquals("Protection active at last check", fresh.status)
-        assertTrue(fresh.detail.startsWith("Focus · Rest"))
+        assertTrue(fresh.status.startsWith("Rest · focus resumes "))
+        assertFalse(fresh.status.contains("Protection active"))
+        assertTrue(fresh.detail.contains("Planned rest"))
         assertEquals("Rest", resting.cause!!.phase)
+
+        // A focus phase keeps the protection headline; only the phase is added to it.
+        val focusing = active.copy(cause = cause.copy(phase = "Focus round 2 of 4",
+            phaseEndsAtEpochMs = 1_800_000_120_000))
+        val focused = display(focusing)
+        assertEquals("Protection active at last check", focused.status)
+        assertTrue(focused.detail.contains("Focus round 2 of 4"))
 
         // Past the phase end without a newer publication: no stale focus/rest claim.
         val stale = display(resting.copy(cause = resting.cause!!.copy(phaseEndsAtEpochMs = 1_800_000_000_000)))
