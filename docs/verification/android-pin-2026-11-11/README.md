@@ -40,7 +40,18 @@ Only this class was run. The whole suite runs in the hosted `Android emulator E2
 | Recents live tile (limit) | Opening the app switcher directly from inside an unlocked Flint shows Android's **live tile**: the activity is still `RESUMED`, so the card shows the real surface the user was just looking at. No screenshot is stored. Once Flint is left, the card is blank and Flint resumes at the gate. iOS draws a privacy curtain on scene deactivation; Android has no lifecycle callback for the live tile. | [recents-live-tile-limit.png](recents-live-tile-limit.png) |
 | State kept across a lock | Unlocking returned to the same tab and scroll position, because content stays composed (hidden) behind the gate. | — |
 | Largest system text (`font_scale` ≈ 2) | The gate scrolls, Unlock and the recovery entry stay reachable, and the font change (a configuration change) did not drop the lock. Font scale was restored to 1.0 afterwards. | [gate-largest-text.png](gate-largest-text.png) |
-| Locked recovery panel | Shows no rule or session names, apps, sites or history. It offers Emergency Pass & recovery, Flint's App info, and the forgotten-PIN route. | [locked-recovery-panel.png](locked-recovery-panel.png) (taken before the orb change, which does not affect this panel) |
+| Locked recovery panel | Shows no rule or session names, apps, sites or history. It offers Emergency Pass & recovery, Flint's App info, and the forgotten-PIN route. | [locked-recovery-panel.png](locked-recovery-panel.png) (taken before the orb change and before the review fixes; the note under the first button now says recovery shows counts, never names) |
+
+## Changes after the independent review
+
+Review fixes landed after this run:
+
+- While locked, app content is not composed, so content dialogs, sheets and menus close.
+- Recovery opened from the gate is redacted.
+- A re-lock during hashing is refused.
+- A corrupt throttle restarts at the maximum lockout.
+
+The JVM/Robolectric tests cover these fixes. The extended `AppPinTest` adds resume re-lock and the redaction note, and the hosted E2E is the run of record for it. This local run predates those changes.
 
 ## Not verified
 

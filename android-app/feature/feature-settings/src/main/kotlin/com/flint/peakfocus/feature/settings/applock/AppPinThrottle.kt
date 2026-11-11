@@ -21,6 +21,12 @@ data class ThrottleState(
  *
  * A lockout is restarted in full when the boot identity changes (reboot, elapsed clock reset).
  * Restarting can only lengthen protection; it never grants earlier access.
+ *
+ * Scope: this resists process kills, reboots, wall-clock changes and accidental storage
+ * corruption (which reads as a maximal lockout). It is not an integrity boundary. Anyone who can
+ * write Flint's private storage (a rooted device) can reset these values, and could equally copy
+ * the salted hash and guess a 4–6 digit PIN offline. The PIN keeps casual hands out of private
+ * app content; it is not device encryption.
  */
 object AppPinThrottle {
 

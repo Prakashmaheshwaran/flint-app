@@ -32,7 +32,16 @@ data class RecoveryScreenState(
     val saving: Boolean = false,
     val activeOrdinaryBreaks: Int = 0,
     val activeOpenCredits: Int = 0,
+    /** Opened from Flint's PIN screen: no commitment names, and no per-commitment choices. */
+    val redacted: Boolean = false,
 )
+
+/**
+ * Shown when recovery was opened from the app-open PIN screen (ADR-012 §7, PC-50): the pass and
+ * resume actions stay available, but commitment names stay behind the PIN.
+ */
+const val REDACTED_RECOVERY_NOTE =
+    "Commitment names are hidden because recovery was opened from Flint's PIN screen."
 
 /** Independent in-Flint recovery. Navigation and preview never consume a pass. */
 @Composable
@@ -64,6 +73,7 @@ fun RecoveryScreen(
                 Text("Protection state unavailable", color = MaterialTheme.colorScheme.error)
                 com.flint.peakfocus.core.common.ui.EmberButton("Try again", onRetry, enabled = !state.saving)
             }
+            if (state.redacted) Text(REDACTED_RECOVERY_NOTE, color = FlintPalette.Mist)
             if (state.previousAccessEnded) Text("Access ended after restart; no extra credit was spent.")
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (state.activeOrdinaryBreaks > 0) {
@@ -79,7 +89,7 @@ fun RecoveryScreen(
                 state.resumeAt?.let { Text("Protection resumes: $it") }
                 Text("Only commitments still naturally active will resume. Counters and the next pass time stay unchanged.")
                 com.flint.peakfocus.core.common.ui.EmberButton("Resume protection now", onResume, enabled = !state.saving)
-                if (state.choices.isNotEmpty()) {
+                if (state.choices.isNotEmpty() && !state.redacted) {
                     Text("Choose commitments to change before resuming. Time and Open limits can only be deleted.")
                     state.choices.forEach { choice ->
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = choice.key in selected,
@@ -110,6 +120,7 @@ fun RecoveryScreen(
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("End these active sessions and suspend these rule commitments:")
                     preview.names.forEach { Text("• $it") }
+                    if (state.redacted) Text(REDACTED_RECOVERY_NOTE)
                     Text("Estimated protection resume: ${preview.resumeAt}")
                     Text("Estimated next pass: ${preview.nextPassAt}")
                     Text("New schedule occurrences are also suspended during recovery. Counters are kept; the pass is not refunded.")

@@ -147,6 +147,53 @@ class AppLockControllerTest {
         assertEquals(PinAttempt.LockedOut(60_000L), unlockAttempt(rebooted, pin))
     }
 
+    @Test fun `a re-lock while the pin is hashed keeps the gate up`() {
+        val storage = SpyStorage(recordRaw = rawFor(pin))
+        lateinit var controller: AppLockController
+        // The user leaves Flint while PBKDF2 runs: onBackground() does not wait for the mutex.
+        val dispatcher = RecordingDispatcher { index -> if (index == 1) controller.onBackground() }
+        controller = newController(storage, dispatcher = dispatcher)
+
+        assertEquals(PinAttempt.Unavailable, unlockAttempt(controller, pin))
+        assertTrue(controller.state.value.locked)
+        assertTrue(controller.state.value.gateVisible)
+        // The PIN itself was right, so the attempt is not held against the user.
+        assertEquals(ThrottleState(), storage.throttle)
+    }
+
+    @Test fun `a re-lock while a new pin is hashed saves nothing`() {
+        val storage = SpyStorage()
+        lateinit var controller: AppLockController
+        val dispatcher = RecordingDispatcher { index -> if (index == 1) controller.onBackground() }
+        controller = newController(storage, dispatcher = dispatcher)
+
+        assertFalse(runBlocking { controller.savePin("2468") })
+        assertNull(storage.recordRaw)
+        assertEquals(PinStatus.Off, controller.state.value.pinStatus)
+    }
+
+    @Test fun `a re-lock while the current pin is hashed removes nothing`() {
+        val storage = SpyStorage(recordRaw = rawFor(pin))
+        var armed = false
+        lateinit var controller: AppLockController
+        val dispatcher = RecordingDispatcher {
+            if (armed) {
+                armed = false
+                controller.onBackground()
+            }
+        }
+        controller = newController(storage, dispatcher = dispatcher)
+        assertEquals(PinAttempt.Success, unlockAttempt(controller, pin))
+        assertFalse(controller.state.value.locked)
+        val raw = storage.recordRaw
+
+        armed = true
+        assertEquals(PinAttempt.Unavailable, runBlocking { controller.removePin(pin) })
+        assertEquals(raw, storage.recordRaw)
+        assertEquals(PinStatus.On, controller.state.value.pinStatus)
+        assertTrue(controller.state.value.locked)
+    }
+
     @Test fun `a clock change that looks like a reboot only lengthens the lockout`() {
         val clock = FakeClock(elapsed = 10_000, boot = "boot-a")
         val storage = SpyStorage(recordRaw = rawFor(pin))

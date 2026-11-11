@@ -122,15 +122,18 @@ class SharedPreferencesAppLockStorage(context: Context) : AppLockStorage {
             .commit()
     }.getOrDefault(false)
 
-    /** Corrupt throttle values become a maximal lockout; a readable failure count is preserved. */
+    /**
+     * Corrupt throttle values become a maximal lockout; a readable failure count is preserved.
+     * The window is anchored to an unknown boot so it always restarts in full: keeping a stored
+     * start could make a corrupt read look like a lockout that already ended.
+     */
     private fun failClosedThrottle(values: Map<String, *>?): ThrottleState {
         val failures = (values?.get(KEY_FAILURES) as? Int)?.takeIf { it >= 0 } ?: FAIL_CLOSED_FAILURES
-        val start = (values?.get(KEY_LOCKOUT_START) as? Long)?.takeIf { it >= 0 } ?: 0L
         return ThrottleState(
             failures = failures,
-            lockoutStartElapsedMs = start,
+            lockoutStartElapsedMs = 0L,
             lockoutMillis = AppPinThrottle.MAX_LOCKOUT_MILLIS,
-            lockoutBootId = values?.get(KEY_LOCKOUT_BOOT) as? String,
+            lockoutBootId = null,
         )
     }
 

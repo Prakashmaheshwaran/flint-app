@@ -5,9 +5,14 @@ import android.content.Context
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -17,6 +22,7 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -28,6 +34,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
@@ -40,9 +47,8 @@ import org.robolectric.annotation.Config
  * The app-open PIN gate: content privacy, refusal, lockout, and the recovery routes that must
  * work without the PIN (ADR-012 §7, PC-50).
  *
- * TalkBack reads the merged semantics tree, so "hidden behind the gate" is asserted there.
- * Compose's *unmerged* tree deliberately keeps raw descendants below a `clearAndSetSemantics`
- * node; it is a test/debug view and not what an accessibility service receives.
+ * While locked the content is not composed at all, so it is absent from both semantics trees
+ * and none of its windows (dialogs, sheets, menus) exist.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [34])
@@ -194,6 +200,53 @@ class AppLockGateTest {
         compose.onNode(hasSetTextAction()).performScrollTo().performTextInput("1379")
         compose.onNodeWithText("Unlock").performScrollTo().assertIsEnabled().performClick()
         awaitText("Secret rule")
+    }
+
+    @Test fun `a content dialog is gone while locked and returns after unlock`() {
+        val controller = controller(record("1379"))
+        assertEquals(PinAttempt.Success, runBlocking { controller.unlock("1379") })
+        compose.setContent {
+            FlintTheme {
+                Gate(controller) {
+                    // A saveable dialog flag, like the app's confirm dialogs.
+                    var open by rememberSaveable { mutableStateOf(true) }
+                    Text("Secret rule")
+                    if (open) {
+                        AlertDialog(
+                            onDismissRequest = { open = false },
+                            confirmButton = { Text("Keep") },
+                            text = { Text("Secret dialog") },
+                        )
+                    }
+                }
+            }
+        }
+        awaitText("Secret dialog")
+
+        // Leaving Flint re-locks: the dialog window must not stay above the gate.
+        compose.runOnUiThread { controller.onBackground() }
+        awaitText("Enter PIN")
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
+        compose.onAllNodesWithText("Secret dialog", useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodesWithText("Secret rule", useUnmergedTree = true).assertCountEquals(0)
+
+        compose.onNode(hasSetTextAction()).performTextInput("1379")
+        compose.onNodeWithText("Unlock").performClick()
+        // Saveable content state comes back with the content, as after a configuration change.
+        awaitText("Secret dialog")
+        awaitText("Secret rule")
+    }
+
+    @Test fun `a re-lock while the gate shows starts again at the pin`() {
+        val controller = controller(record("1379"))
+        compose.setContent { FlintTheme { Gate(controller) { Text("Secret rule") } } }
+        compose.onNodeWithText("Emergency Pass & recovery").performClick()
+        awaitText("While Flint is locked")
+
+        compose.runOnUiThread { controller.onBackground() }
+        awaitGone("While Flint is locked")
+        awaitText("Enter PIN")
+        compose.onAllNodesWithText("Secret rule", useUnmergedTree = true).assertCountEquals(0)
     }
 
     @Test fun `back closes the open recovery panel`() {

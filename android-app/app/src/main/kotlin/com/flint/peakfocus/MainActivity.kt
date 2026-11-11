@@ -195,9 +195,10 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     // Only this activity's content is gated: block screens, the accessibility
                     // overlay, notifications, the widget and protection recovery stay open.
+                    // Recovery opened from the gate is redacted: no commitment names (PC-50).
                     AppLockGate(
                         controller = appLock,
-                        onOpenRecovery = { BlockActivity.launchRecovery(this@MainActivity) },
+                        onOpenRecovery = { BlockActivity.launchRecovery(this@MainActivity, redacted = true) },
                     ) {
                         FlintApp()
                     }
@@ -215,6 +216,13 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         appLock.refresh()
+        // FlintApp's own resume pass is not composed while the gate shows. Its enforcement half
+        // (rule freshness, Path B reconciliation) must not wait for the PIN; FlintApp repeats the
+        // whole pass, including the UI-only parts, when it composes after unlock.
+        if (appLock.state.value.gateVisible) {
+            ActiveRulesBridge.republish(this)
+            PathBServiceGate.sync(this)
+        }
     }
 
     override fun onStop() {

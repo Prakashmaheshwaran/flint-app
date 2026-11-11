@@ -153,7 +153,10 @@ class AppLockController(
             if (previous == null || authorized != previous) return@withLock false
         }
 
+        val epoch = current.epoch
         val record = withContext(hashDispatcher) { AppPinHasher.newRecord(newPin, random) }
+        // A re-lock while hashing ended this visit (and any change authorization): save nothing.
+        if (_state.value.epoch != epoch) return@withLock false
         if (!writeRecord(AppPinRecordCodec.encode(record))) return@withLock false
 
         val readBack = readRecord()
@@ -232,6 +235,8 @@ class AppLockController(
         // An unreadable (or absent) record can never verify: refuse without hashing or counting.
         if (current.pinStatus != PinStatus.On) return@withLock PinAttempt.Unavailable
         if (!precheck(current)) return@withLock PinAttempt.Unavailable
+        // onBackground() does not wait for this mutex: a re-lock during hashing bumps the epoch.
+        val epoch = current.epoch
         _state.update { it.copy(busy = true) }
         try {
             val now = clock.elapsedRealtimeMs()
@@ -267,6 +272,9 @@ class AppLockController(
             // An externally replaced record must not be unlocked by a hash of the old one.
             if (!isKnown(record)) return@withLock PinAttempt.Unavailable
             writeThrottle(ThrottleState())
+            // The PIN was right, but a re-lock landed while it was hashed: the result belongs to
+            // a visit that already ended, so it must not unlock, authorize or remove anything.
+            if (_state.value.epoch != epoch) return@withLock PinAttempt.Unavailable
             if (upgradeIterations && !upgradeRecord(pin, record)) {
                 return@withLock PinAttempt.Unavailable
             }

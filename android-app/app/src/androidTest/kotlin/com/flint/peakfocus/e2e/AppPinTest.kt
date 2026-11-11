@@ -58,6 +58,8 @@ class AppPinTest : FlintE2EFixture() {
         screenshot("gate-recovery")
         click("Open Emergency Pass & recovery")
         visible(By.text("Protection recovery"))
+        // Recovery behind the PIN is redacted: it names no commitment (PC-50).
+        visible(By.text("Commitment names are hidden because recovery was opened from Flint's PIN screen."))
         screenshot("recovery")
         device.pressBack()
         visible(By.text("Enter PIN"))
@@ -67,6 +69,16 @@ class AppPinTest : FlintE2EFixture() {
         click("Unlock")
         visible(By.text("Today"))
         screenshot("unlocked")
+
+        // Leaving Flint without killing it re-locks it on return (the common resume path).
+        device.pressHome()
+        launchFlint()
+        visible(By.text("Enter PIN"))
+        assertFalse("Tab bar must be unreachable on resume", device.hasObject(By.text("Today")))
+        screenshot("gate-resume")
+        fillPinFields(listOf(pin))
+        click("Unlock")
+        visible(By.text("Today"))
 
         // Removing the PIN needs the current PIN and turns the gate off.
         clickTab("You")

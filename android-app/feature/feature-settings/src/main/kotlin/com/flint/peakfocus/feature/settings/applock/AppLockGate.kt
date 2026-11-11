@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalComposeUiApi::class)
-
 package com.flint.peakfocus.feature.settings.applock
 
 import android.app.Activity
@@ -11,7 +9,6 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,22 +34,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -80,16 +73,17 @@ import kotlinx.coroutines.launch
 /**
  * The app-open PIN gate (F03, Android): the iOS `PINGateView` + `LockedRecoveryView` pair.
  *
- * [content] is always composed, so a lock that happens later keeps every `rememberSaveable`
- * value (selected tab, drafts) alive. While the gate is visible the content is invisible to
- * TalkBack ([clearAndSetSemantics]) and undrawn (`alpha = 0f`) in the same composition pass —
- * never a second window that could appear a frame late — and this gate draws on top of it with
- * opaque paint and a pointer-input consumer so nothing behind it can be tapped.
+ * While the gate is visible, [content] is **not composed**. Hiding it in place is not enough:
+ * dialogs, bottom sheets and menus inside it are separate windows that would stay above an
+ * in-window gate, and its focusable nodes and BackHandlers would stay live. Leaving composition
+ * removes all of them at once. A [rememberSaveableStateHolder] keeps the content's saveable
+ * state (selected tab, saveable drafts and dialog flags) for the unlock, exactly as a
+ * configuration change would; plain `remember` state restarts, as it does on rotation.
  *
- * The PIN protects private app content only (ADR-012 §7, PC-50). [onOpenRecovery] is the
- * Emergency Pass / protection-recovery surface the block screens already open without a PIN;
- * this gate never adds a direct Accessibility-settings hand-off (ADR-007). Its only OS route is
- * Flint's own App info page, which the OS always allows.
+ * The PIN protects private app content only (ADR-012 §7, PC-50). [onOpenRecovery] opens the
+ * Emergency Pass / protection-recovery surface (redacted by the caller, so it names no
+ * commitment); this gate never adds a direct Accessibility-settings hand-off (ADR-007). Its only
+ * OS route is Flint's own App info page, which the OS always allows.
  */
 @Composable
 fun AppLockGate(
@@ -100,62 +94,44 @@ fun AppLockGate(
 ) {
     val state by controller.state.collectAsState()
     val gateVisible = state.gateVisible
+    val contentState = rememberSaveableStateHolder()
     var recoveryOpen by remember { mutableStateOf(false) }
     var recoveryAtForgot by remember { mutableStateOf(false) }
     val activity = LocalContext.current.findActivity()
-    val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    // Keyboard/D-pad focus that would enter the hidden content is sent to the gate instead.
-    val gateEntry = remember { FocusRequester() }
 
-    // Every newly shown gate starts at the PIN, never on a stale recovery panel, and a field that
-    // was focused behind it must not keep the keyboard up over the gate.
-    LaunchedEffect(gateVisible) {
+    // Every newly shown gate, and every re-lock of a gate already showing (epoch), starts at the
+    // PIN — never on a stale recovery panel — with the keyboard down.
+    LaunchedEffect(gateVisible, state.epoch) {
         recoveryOpen = false
         recoveryAtForgot = false
-        if (gateVisible) {
-            focusManager.clearFocus(force = true)
-            keyboard?.hide()
-        }
+        if (gateVisible) keyboard?.hide()
     }
 
     Box(modifier.fillMaxSize()) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = if (gateVisible) 0f else 1f }
-                .then(
-                    if (gateVisible) {
-                        Modifier
-                            .clearAndSetSemantics {}
-                            .focusGroup()
-                            .focusProperties { enter = { gateEntry } }
-                    } else {
-                        Modifier
-                    },
-                ),
-        ) {
-            content()
-        }
         if (gateVisible) {
-            PinGateScreen(
-                controller = controller,
-                state = state,
-                recoveryOpen = recoveryOpen,
-                recoveryAtForgot = recoveryAtForgot,
-                onOpenRecoveryPanel = { forgot ->
-                    recoveryOpen = true
-                    recoveryAtForgot = forgot
-                },
-                onCloseRecoveryPanel = { recoveryOpen = false },
-                onOpenRecovery = onOpenRecovery,
-                entryFocus = gateEntry,
-            )
+            // Keyed by epoch so a re-lock also discards typed digits and stale error text.
+            key(state.epoch) {
+                PinGateScreen(
+                    controller = controller,
+                    state = state,
+                    recoveryOpen = recoveryOpen,
+                    recoveryAtForgot = recoveryAtForgot,
+                    onOpenRecoveryPanel = { forgot ->
+                        recoveryOpen = true
+                        recoveryAtForgot = forgot
+                    },
+                    onCloseRecoveryPanel = { recoveryOpen = false },
+                    onOpenRecovery = onOpenRecovery,
+                )
+            }
+        } else {
+            contentState.SaveableStateProvider(CONTENT_STATE_KEY) { content() }
         }
     }
 
-    // Composed after the content so the gate's Back wins over every feature BackHandler beneath
-    // it: an open recovery panel closes first, otherwise the task leaves the app.
+    // The only BackHandler while locked (content is not composed): an open recovery panel
+    // closes first, otherwise the task leaves the app.
     BackHandler(enabled = gateVisible) {
         if (recoveryOpen) {
             recoveryOpen = false
@@ -165,13 +141,11 @@ fun AppLockGate(
     }
 }
 
+private const val CONTENT_STATE_KEY = "flint.app-content"
+
 /**
- * The gate's own surface. It is a sibling above [AppLockGate]'s content, so touches land here
- * first; the container also consumes every pointer change so a stray event cannot fall through.
- *
- * Hardware-keyboard/D-pad focus is confined to the gate: this container is a focus group whose
- * exit is cancelled, and [AppLockGate] redirects any focus that would enter the hidden content
- * to [entryFocus] (the PIN field, or the recovery entry when the record is unreadable).
+ * The gate's own surface: opaque and the only thing composed in Flint's window while locked.
+ * It also consumes every pointer change so a stray event cannot fall through.
  */
 @Composable
 private fun PinGateScreen(
@@ -182,7 +156,6 @@ private fun PinGateScreen(
     onOpenRecoveryPanel: (forgot: Boolean) -> Unit,
     onCloseRecoveryPanel: () -> Unit,
     onOpenRecovery: () -> Unit,
-    entryFocus: FocusRequester,
 ) {
     val scope = rememberCoroutineScope()
     var pin by remember { mutableStateOf("") }
@@ -243,9 +216,7 @@ private fun PinGateScreen(
                         awaitPointerEvent().changes.forEach { it.consume() }
                     }
                 }
-            }
-            .focusGroup()
-            .focusProperties { exit = { FocusRequester.Cancel } },
+            },
     ) {
         // No ember orb: the PIN, Unlock and recovery controls cross its band at every font scale,
         // and light text over the orb fails contrast (the Today/session scenes do the same).
@@ -292,7 +263,7 @@ private fun PinGateScreen(
                     onValueChange = { typed ->
                         if (typed.length <= AppPinPolicy.MAX_ENTRY_LENGTH) pin = typed
                     },
-                    modifier = Modifier.fillMaxWidth().focusRequester(entryFocus),
+                    modifier = Modifier.fillMaxWidth(),
                     label = { Text("PIN") },
                     singleLine = true,
                     enabled = !state.busy,
@@ -349,8 +320,6 @@ private fun PinGateScreen(
                 text = "Emergency Pass & recovery",
                 onClickLabel = "Open recovery without your PIN",
                 onClick = { onOpenRecoveryPanel(false) },
-                // With no PIN field (unreadable record) this is the gate's focus entry point.
-                modifier = if (state.pinStatus == PinStatus.Unreadable) Modifier.focusRequester(entryFocus) else Modifier,
             )
             Spacer(Modifier.height(FlintSpacing.xs))
             QuietButton(
@@ -426,8 +395,8 @@ private fun LockedRecoveryPanel(
             )
             EmberButton(text = "Open Emergency Pass & recovery", onClick = onOpenRecovery)
             Text(
-                "Recovery opens outside the PIN. It lists your active commitments so you can " +
-                    "choose what to pause.",
+                "Recovery opens outside the PIN. It shows how many commitments are active, " +
+                    "never their names.",
                 style = MaterialTheme.typography.bodySmall,
                 color = FlintPalette.Mist,
             )

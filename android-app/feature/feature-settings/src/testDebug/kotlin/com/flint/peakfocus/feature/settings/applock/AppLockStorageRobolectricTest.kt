@@ -90,11 +90,16 @@ class AppLockStorageRobolectricTest {
         val closed = storage.readThrottle()
         assertEquals(6, closed.failures)
         assertEquals(AppPinThrottle.MAX_LOCKOUT_MILLIS, closed.lockoutMillis)
-        assertEquals(42_000L, closed.lockoutStartElapsedMs)
-        assertEquals("boot-a", closed.lockoutBootId)
+        // Anchored to an unknown boot: even long after the stored start, the full window applies.
+        assertEquals(0L, closed.lockoutStartElapsedMs)
+        assertEquals(null, closed.lockoutBootId)
         assertEquals(
             AppPinThrottle.MAX_LOCKOUT_MILLIS,
-            AppPinThrottle.remainingMillis(closed, nowElapsedMs = 42_000, bootId = "boot-a"),
+            AppPinThrottle.remainingMillis(
+                closed,
+                nowElapsedMs = 42_000 + AppPinThrottle.MAX_LOCKOUT_MILLIS + 1,
+                bootId = "boot-a",
+            ),
         )
 
         // The record is neither deleted nor rewritten by a corrupt throttle read.
