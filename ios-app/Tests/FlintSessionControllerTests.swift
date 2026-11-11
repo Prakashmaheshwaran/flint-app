@@ -721,6 +721,42 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertEqual(controller().acceptedStartResult("targetless-replacement")?.outcome, .unconfirmed)
     }
 
+    /// R-04 residual: an open-ended targetless legacy predecessor has no natural deadline. When
+    /// the projection is the exact unapplied, expired replacement, the generation's recorded
+    /// predecessor must become reachable for ordinary stop and Emergency Pass scope instead
+    /// of remaining unavailable forever. Nothing is released before that explicit stop.
+    func testOpenEndedTargetlessPredecessorIsRestoredFromTheUnappliedReplacementR04() throws {
+        enum Crash: Error { case afterAcceptance }
+        try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()
+        let previous = FlintActiveSession(id: "legacy", name: "Legacy", startedAt: clock.now,
+            endsAt: nil, breakLevel: .easy, monitorName: "flint.session.legacy")
+        store.active = previous
+        XCTAssertThrowsError(try controller(afterStartCommit: { throw Crash.afterAcceptance })
+            .startBlockNow(selection: selectionA, duration: 60, breakLevel: .easy,
+                origin: .appUI, requestID: "open-ended-replacement", confirmed: true))
+        let failed = try XCTUnwrap(ledger().peek().get().sessionAuthority?.latest?.session)
+        XCTAssertEqual(try ledger().peek().get().sessionAuthority?.latest?.previousSession?.id, previous.id)
+        store.active = failed // projection saved, process stops before native application
+        clock.advance(75)     // the replacement has expired; the predecessor never does
+
+        let report = controller().reconcile()
+        XCTAssertEqual(report.outcome, .running)
+        XCTAssertEqual(store.active?.id, previous.id, "R-04: the recorded predecessor is the current owner")
+        XCTAssertEqual(shield.clearCount, 0, "restoration retains, never releases")
+        XCTAssertEqual(shield.applyCount, 0, "unknown legacy targets are never reapplied")
+        XCTAssertNotNil(health.lastArmFailure, "unknown target repair remains visible")
+        let authority = try XCTUnwrap(ledger().peek().get().sessionAuthority)
+        XCTAssertEqual(authority.latest?.phase, .applied)
+        let projected = FlintSessionAuthority.observedProjection(store.active, authority: authority, clock: clock.flintClock)
+        XCTAssertEqual(projected?.id, previous.id, "the pass scope reads this same active projection")
+        XCTAssertEqual(projected?.isLogicallyExpired(clock: clock.flintClock), false)
+        XCTAssertEqual(controller().acceptedStartResult("open-ended-replacement")?.outcome, .unconfirmed)
+
+        XCTAssertEqual(controller().requestStop(route: .manualStop, confirmed: true), .stopped)
+        XCTAssertEqual(shield.clearCount, 1)
+        XCTAssertNil(store.active)
+    }
+
     func testUnreadableTargetlessPredecessorKeepsNativeStateUntilItsOwnDeadline() throws {
         enum Crash: Error { case afterAcceptance }
         try ledger().transaction { $0.importLegacyPass(.absent, at: .init(clock: clock.flintClock)) }.get()

@@ -162,9 +162,16 @@ final class FlintSessionPersistence {
                     // never clear/reapply unknown targets or stop its dependable end.
                     var adopted = FlintSessionAuthority(initializedAt: previous.startedAt)
                     adopted.adopt(previous)
-                    guard store.isProtectionStateReadable(), let raw = store.loadActiveSession(),
-                          let known = adopted.observedSession(matching: raw, clock: env.clock),
-                          !known.isLogicallyExpired(clock: env.clock) else { return false }
+                    guard store.isProtectionStateReadable(), let raw = store.loadActiveSession() else { return false }
+                    // R-04: the projection may instead be this exact unapplied replacement,
+                    // saved before its native application. The generation's own predecessor is
+                    // then the positively known owner; restore it so ordinary stop and Emergency
+                    // Pass scope can reach it. A missing or foreign projection still refuses.
+                    let known: FlintActiveSession
+                    if let current = adopted.observedSession(matching: raw, clock: env.clock) { known = current }
+                    else if generation.matches(raw), FlintSessionAuthority.sameCommitment(raw, generation.session) { known = observed }
+                    else { return false }
+                    guard !known.isLogicallyExpired(clock: env.clock) else { return false }
                     let restored = known.checkpointed(clock: env.clock)
                     store.saveActiveSession(restored)
                     guard store.loadActiveSession() == restored,
