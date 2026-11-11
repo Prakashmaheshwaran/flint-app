@@ -51,6 +51,8 @@ Review fixes landed after this run:
 - A re-lock during hashing is refused.
 - A corrupt throttle restarts at the maximum lockout.
 
+Trade-off of not composing content while locked: saveable UI state (tab, saveable flags) comes back after unlock, as it does after rotation. The rule/limit editors keep half-built drafts in plain composition state by design ("process death drops back to the overview"). With a PIN on, leaving Flint or letting the screen sleep mid-edit therefore drops the draft and returns to the Rules overview. With the PIN off, nothing changes. A separate gate window (iOS keeps content alive under a window) would keep drafts. It would need a gate window above any later content window, accessibility isolation across windows, and frame-zero coverage, so it is left as a follow-up.
+
 The JVM/Robolectric tests cover these fixes. The extended `AppPinTest` adds resume re-lock and the redaction note, and the hosted E2E is the run of record for it. This local run predates those changes.
 
 ## Not verified
