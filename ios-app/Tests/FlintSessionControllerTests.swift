@@ -199,6 +199,47 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(ledger().peek().get().sessionAuthority).provesIdle)
     }
 
+    /// R-20 residual: before the first session generation, a lost `flint.activeSession` with
+    /// the legacy session's shield still applied is not idle proof. Covers a shipped v2 ledger
+    /// and a pre-ledger install whose ledger is created by this launch.
+    func testFirstMigrationOfV2LedgerDoesNotInventIdleWhileLegacySessionShieldIsAppliedR20() throws {
+        try exerciseContradictedLegacyAbsence(legacyLedger: true)
+    }
+    func testPreLedgerInstallDoesNotInventIdleWhileLegacySessionShieldIsAppliedR20() throws {
+        try exerciseContradictedLegacyAbsence(legacyLedger: false)
+    }
+
+    private func exerciseContradictedLegacyAbsence(legacyLedger: Bool) throws {
+        do {
+            if legacyLedger {
+                try ledger().transaction { $0.version = 2; $0.sessionAuthority = nil; $0.sessionAuthorityVersion = nil }.get()
+            }
+            // A finite Hardcore legacy session: native shield/registration retained, record lost.
+            shield.retainsSettings = true
+            registrar.registered = [FlintSessionController.monitorName]
+            store.active = nil
+            let c = controller()
+            let report = c.reconcile()
+            XCTAssertEqual(report.outcome, .running, "legacyLedger=\(legacyLedger)")
+            XCTAssertTrue(report.recordUnreadable, "legacyLedger=\(legacyLedger)")
+            c.handleMonitorEvent(.intervalDidEnd, activity: FlintSessionController.monitorName)
+            XCTAssertEqual(c.requestStop(route: .manualStop, confirmed: true), .unavailable)
+            XCTAssertEqual(shield.clearCount, 0, "R-20: absence must not release a retained session shield")
+            XCTAssertTrue(registrar.stopped.isEmpty)
+            let authority = try ledger().peek().get().sessionAuthority
+            // A v2 ledger stays unmigrated; a newly created ledger keeps only its initial
+            // tombstone, which resolution refuses while the native shield contradicts it.
+            if legacyLedger { XCTAssertNil(authority, "no idle tombstone may be adopted from contradicted absence") }
+            XCTAssertNil(authority?.latest)
+            XCTAssertNotNil(health.lastArmFailure)
+
+            // A legacy end clears the session store; the same absence is then positive idle.
+            shield.retainsSettings = false
+            XCTAssertEqual(controller().reconcile().outcome, .noSession)
+            XCTAssertTrue(try XCTUnwrap(ledger().peek().get().sessionAuthority).provesIdle)
+        }
+    }
+
     func testFirstRebootObservationReanchorsBeforeAnotherForwardWallJumpR05PC54PC58() throws {
         let c = controller()
         _ = try start(c, minutes: 60, level: .hardcore)
@@ -2016,9 +2057,14 @@ private final class FakeShield: FlintSessionShielding {
     func clear() {
         onClear?()
         clearCount += 1
+        retainsSettings = false
         // Production clears only session-owned targets; derived migration owns removal.
         log.entries.append("clear")
     }
+
+    /// Native "flint" store contents seeded by a test (e.g. a legacy session's shield).
+    var retainsSettings = false
+    func retainsAppliedSettings() -> Bool { retainsSettings }
 }
 
 private final class FakeRegistrar: FlintSessionActivityRegistering {

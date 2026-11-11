@@ -52,9 +52,16 @@ final class FlintSessionPersistence {
         guard let ledger = env.ledger() else { return nil }
         let raw = store.loadActiveSession()
         if raw == nil && store.hasActiveSessionRecord() { return nil }
+        // R-20: before any session generation exists (a legacy ledger, or the initial
+        // tombstone of a ledger created for a pre-ledger install), an absent projection is
+        // idle only without native contradiction. Session-owned restrictions still applied
+        // mean a running legacy session lost its record; retain them as unavailable rather
+        // than manufacture idle and clear them. A normal legacy end clears this store.
+        let retainedNative = raw == nil && env.shield.retainsAppliedSettings()
         let result = ledger.transaction { state -> FlintSessionAuthority? in
             var authority = state.sessionAuthority
             if authority == nil && (state.version >= 3 || state.sessionAuthorityVersion != nil) { return nil }
+            if retainedNative && authority?.latest == nil { return nil }
             // Shipped legacy ledgers had no generation field. Upgrade a positively readable
             // legacy absence once; after this migration only the latest tombstone proves idle.
             if authority == nil, store.isProtectionStateReadable() {
