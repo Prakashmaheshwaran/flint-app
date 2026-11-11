@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.ManagedActivityResultLauncher
@@ -42,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.sp
+import com.flint.peakfocus.blocking.overlay.BlockActivity
 import com.flint.peakfocus.blocking.overlay.TargetFloorIdentities
 import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
 import com.flint.peakfocus.core.common.theme.FlintPalette
@@ -150,6 +152,9 @@ import com.flint.peakfocus.feature.onboarding.SetupGuidance
 import com.flint.peakfocus.feature.onboarding.SetupPlan
 import com.flint.peakfocus.feature.onboarding.SetupStep
 import com.flint.peakfocus.feature.settings.SettingsScreen
+import com.flint.peakfocus.feature.settings.applock.AppLock
+import com.flint.peakfocus.feature.settings.applock.AppLockController
+import com.flint.peakfocus.feature.settings.applock.AppLockGate
 import com.flint.peakfocus.feature.stats.StatsScreen
 import com.flint.peakfocus.permissions.AccessibilityPermission
 import com.flint.peakfocus.permissions.BatteryOptimization
@@ -167,19 +172,66 @@ data class AppEntry(val packageName: String, val label: String, val icon: ImageB
 private enum class Detail { QuickBlock, Account }
 
 class MainActivity : ComponentActivity() {
+
+    /** Shared with the You tab's App lock rows; the same process-wide instance gates the UI. */
+    private lateinit var appLock: AppLockController
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appLock = AppLock.controller(applicationContext)
+        // Apply the capture policy synchronously, before the first frame can reach Recents.
+        applyWindowPolicy(AppLockWindowPolicy.decide(Build.VERSION.SDK_INT, appLock.state.value.pinStatus))
         // Ember & Mist is dark-only: light system-bar icons over the night sky.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         setContent {
+            val lockState by appLock.state.collectAsState()
+            LaunchedEffect(lockState.pinStatus) {
+                applyWindowPolicy(AppLockWindowPolicy.decide(Build.VERSION.SDK_INT, lockState.pinStatus))
+            }
             FlintTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    FlintApp()
+                    // Only this activity's content is gated: block screens, the accessibility
+                    // overlay, notifications, the widget and protection recovery stay open.
+                    AppLockGate(
+                        controller = appLock,
+                        onOpenRecovery = { BlockActivity.launchRecovery(this@MainActivity) },
+                    ) {
+                        FlintApp()
+                    }
                 }
             }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // The record can change outside this process (storage cleared); never trust a stale read.
+        appLock.refresh()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        appLock.refresh()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Rotation is not a background visit: it must not re-lock. Process death is covered by
+        // the cold start, which reads the record and starts locked.
+        if (!isChangingConfigurations) appLock.onBackground()
+    }
+
+    private fun applyWindowPolicy(decision: AppLockWindowDecision) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            setRecentsScreenshotEnabled(decision.recentsScreenshotEnabled)
+        }
+        if (decision.secureFlag) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
     }
 }
