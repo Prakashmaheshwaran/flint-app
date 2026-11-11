@@ -24,6 +24,7 @@ object HistoryCodec {
         }) }
         event.kind?.let { put("kind", it) }
         event.grant?.let { put("grant", it) }
+        event.rounds?.let { put("rounds", it.toLong()) }
         event.sessions?.let { put("sessions", it) }
         event.recoveryEnd?.let { put("recoveryEnd", it) }
     })
@@ -63,6 +64,7 @@ object HistoryCodec {
             originRoute = optionalString("originRoute"), observedAt = optionalLong("observedAt"),
             timeConfidence = timeConfidence,
             kind = optionalString("kind"), grant = optionalString("grant"), recoveryEnd = optionalLong("recoveryEnd"),
+            rounds = optionalLong("rounds")?.takeIf { it in 1..Int.MAX_VALUE }?.toInt(),
             sessions = fields["sessions"]?.let { list ->
                 (list as? List<*>)?.map { it as? String ?: error("Invalid session reference") } ?: error("sessions")
             },

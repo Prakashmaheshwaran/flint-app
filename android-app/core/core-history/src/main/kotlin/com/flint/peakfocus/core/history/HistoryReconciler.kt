@@ -2,6 +2,7 @@ package com.flint.peakfocus.core.history
 
 import java.time.Clock
 import java.time.ZoneId
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,10 @@ data class HistoryRule(
     val id: String, val name: String, val tier: String, val plannedEnd: Long?,
     /** Public owner activity is independent of the stable logical history endpoint. */
     val ownerActive: Boolean? = null,
+    /** F01: planned round count of a Pomodoro parent, else null. */
+    val rounds: Int? = null,
+    /** F01: planned rests whose start the trusted elapsed clock has already passed. */
+    val plannedRests: List<PlannedRest> = emptyList(),
 ) {
     internal fun isActiveAt(now: Long): Boolean = ownerActive ?: (plannedEnd == null || plannedEnd > now)
 }
@@ -99,6 +104,7 @@ class HistoryReconciler(
                     val start = timestamp?.takeIf { it > 1_500_000_000_000L && (rule.plannedEnd == null || it < rule.plannedEnd) } ?: now
                     events += event(HistoryEventType.STARTED, rule.id, start).copy(
                         plannedEnd = rule.plannedEnd, tier = rule.tier, name = rule.name.take(64),
+                        rounds = rule.rounds,
                         source = when {
                             !native -> "legacy"
                             rule.name == "Focus timer" -> "manual"
@@ -108,6 +114,10 @@ class HistoryReconciler(
                     )
                 }
             }
+            // F01 §7: each planned rest is a `planned` break pair. Events are written only when
+            // this reconciler observes that the trusted elapsed clock passed the boundary; the
+            // logical boundary time is kept, a late observation is marked inferred.
+            sessions.values.forEach { rule -> plannedRestEvents(rule, known[rule.id].orEmpty(), now, events) }
             sessions.values.forEach { rule ->
                 val group = known[rule.id].orEmpty()
                 if (group.any { it.knownType?.terminal == true }) return@forEach
@@ -159,7 +169,49 @@ class HistoryReconciler(
     private fun event(type: HistoryEventType, id: String, at: Long) =
         HistoryEvent(type = type.wireName, session = id, at = at, tz = zone().id)
 
+    /**
+     * Planned rests (§7): `break_started` at the logical rest start and `break_ended` at its
+     * logical end, both kind `planned` with grant `<ruleId>.rest<k>`. Stable IDs make repeated
+     * reconciles and restarted processes deduplicate; an already-recorded grant is never
+     * rewritten. A rest's own end is only credited once the observation is actually past it.
+     */
+    private fun plannedRestEvents(rule: HistoryRule, known: List<HistoryEvent>, now: Long,
+                                  into: MutableList<HistoryEvent>) {
+        if (rule.plannedRests.isEmpty()) return
+        val started = known.filter { it.knownType == HistoryEventType.BREAK_STARTED }
+            .mapNotNullTo(mutableSetOf()) { it.grant }
+        val ended = known.filter { it.knownType == HistoryEventType.BREAK_ENDED }
+            .mapNotNullTo(mutableSetOf()) { it.grant }
+        for (rest in rule.plannedRests) {
+            if (rest.startsAt !in SUPPORTED_TIMES || rest.endsAt <= rest.startsAt) continue
+            if (rest.grant !in started) {
+                into += event(HistoryEventType.BREAK_STARTED, rule.id, rest.startsAt).copy(
+                    id = plannedRestId(rule.id, rest.round, "started"), breakEnd = rest.endsAt,
+                    kind = PLANNED_BREAK_KIND, grant = rest.grant, originRoute = "pomodoro_plan",
+                    observedAt = now, inferred = rest.startsAt < now - LATE_OBSERVATION_MS,
+                )
+            }
+            if (rest.grant !in ended && now >= rest.endsAt) {
+                into += event(HistoryEventType.BREAK_ENDED, rule.id, rest.endsAt).copy(
+                    id = plannedRestId(rule.id, rest.round, "ended"),
+                    kind = PLANNED_BREAK_KIND, grant = rest.grant, originRoute = "pomodoro_plan",
+                    observedAt = now, inferred = rest.endsAt < now - LATE_OBSERVATION_MS,
+                )
+            }
+        }
+    }
+
+    private fun plannedRestId(id: String, round: Int, boundary: String): String =
+        UUID.nameUUIDFromBytes("$id|$PLANNED_BREAK_KIND|$round|$boundary".toByteArray(Charsets.UTF_8)).toString()
+
     private companion object {
+        /**
+         * A boundary observed later than this is recorded as inferred: the logical time is
+         * still the boundary, and `observedAt` keeps the actual observation.
+         */
+        const val LATE_OBSERVATION_MS = 5_000L
+        val SUPPORTED_TIMES get() = FocusHistoryAggregator.SUPPORTED_TIMES
+
         // Existing Timer titles are the only persisted preset discriminator. Unknown titles
         // stay unknown rather than claiming a source that was not recorded by the creator.
         val PRESET_NAMES = setOf("Deep study", "Commute", "Workout", "Reading", "Weekend zen", "Touch Grass",

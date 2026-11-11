@@ -49,6 +49,11 @@ data class HistoryEvent(
     val opaque: Boolean = false,
     /** Absent in legacy records; inferred alone does not imply uncertain time. */
     val timeConfidence: HistoryEventTimeConfidence? = null,
+    /**
+     * F01: the planned round count of a Pomodoro parent's `started` event. Additive — records
+     * without it stay valid and a reader that does not know it keeps `originalLine`.
+     */
+    val rounds: Int? = null,
 ) {
     val knownType: HistoryEventType? get() = if (v == 1 && !opaque) HistoryEventType.fromWire(type) else null
 
