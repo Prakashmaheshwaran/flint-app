@@ -45,7 +45,7 @@ final class FlintFixtureUITests: XCTestCase {
 
     private func onboarding(accessibility: Bool) throws {
         launch(accessibility: accessibility, approved: false, onboarded: false)
-        try tap(app.buttons["Begin"])
+        try tap(app.buttons["Get started"])
         let allow = app.buttons["onboarding.authorization.action"]
         try reveal(allow)
         try tap(allow)

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint v3 — system</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit}
+</style>
+</helmet>
+<div style="width: 720px; height: 1180px; box-sizing: border-box; padding: 52px; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif; display: flex; flex-direction: column; gap: 32px">
+
+  <div style="display: flex; justify-content: space-between; align-items: flex-end">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 2px; color: #B7AE9F">FLINT · V3 · ONE SYSTEM FOR IPHONE AND ANDROID</span>
+      <h1 style="margin: 0; font-size: 40px; font-weight: 700; letter-spacing: -1px">Modern Ember</h1>
+    </div>
+    <svg width="44" height="44" viewBox="0 0 56 56" aria-hidden="true"><polygon points="14,44 28,8 36,26 44,18 30,48" fill="#EDE6DA"></polygon><polygon points="36,26 44,18 42,30" fill="#EF9F27"></polygon><polygon points="30,48 42,30 44,40" fill="#FAC775"></polygon></svg>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 12px">
+    <span style="font-size: 11px; font-weight: 600; letter-spacing: 2px; color: #B7AE9F">COLOUR</span>
+    <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px">
+      <sc-for list="{{colors}}" as="c" hint-placeholder-count="10">
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <div style="{{c.chip}}"></div>
+          <span style="display: flex; flex-direction: column; gap: 1px">
+            <span style="font-size: 13px; font-weight: 600">{{c.name}}</span>
+            <span style="font-size: 12px; color: #B7AE9F; font-variant-numeric: tabular-nums">{{c.hex}}</span>
+            <span style="font-size: 12px; color: #9C9486">{{c.role}}</span>
+          </span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; border-top: 1px solid rgba(237, 230, 218, 0.1); padding-top: 24px">
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 2px; color: #B7AE9F">TYPE</span>
+      <span style="font-size: 32px; font-weight: 700; letter-spacing: -0.6px">Screen title 32 / 700</span>
+      <span style="font-size: 16px; font-weight: 600">Section 16 / 600 <span style="color: #B7AE9F; font-weight: 500">· meta 16 / 500 Mist</span></span>
+      <span style="font-size: 15px; font-weight: 600">Row 15 / 600</span>
+      <span style="font-size: 13px; color: #B7AE9F">Secondary 13 / 400 · Mist</span>
+      <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; margin-top: 6px">32:18 · 2h 40m</span>
+      <span style="font-size: 12px; color: #9C9486; line-height: 1.5">Hanken Grotesk for everything; Shippori Mincho only for numbers that matter: timers, stats, the big minute dial. Both fonts bundled, so iPhone and Android match.</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px">
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 2px; color: #B7AE9F">APP TILES</span>
+      <div style="display: flex; gap: 10px; align-items: center">
+        <span style="width: 40px; height: 40px; border-radius: 12px; background: #5C3344; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; color: #D8CFC0">I</span>
+        <span style="position: relative; width: 40px; height: 40px; border-radius: 12px; background: #5C3344; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 1.5px rgba(239,159,39,0.5)"><span style="font-size: 15px; font-weight: 700; color: rgba(237,230,218,0.26)">I</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#EDE6DA" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="position: absolute"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg></span>
+        <span style="display: flex"><span style="width: 24px; height: 24px; border-radius: 7px; background: #5C3344; border: 1.5px solid #0E0D0F; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #D8CFC0">I</span><span style="width: 24px; height: 24px; margin-left: -7px; border-radius: 7px; background: #2E2E33; border: 1.5px solid #0E0D0F; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #D8CFC0">T</span><span style="width: 24px; height: 24px; margin-left: -7px; border-radius: 7px; background: #5A2A2A; border: 1.5px solid #0E0D0F; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #D8CFC0">Y</span></span>
+        <span style="width: 64px; height: 64px; padding: 7px; box-sizing: border-box; border-radius: 18px; background: rgba(237,230,218,0.05); border: 1px solid rgba(237,230,218,0.07); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px"><span style="border-radius: 6px; background: #5C3344"></span><span style="border-radius: 6px; background: #2E2E33"></span><span style="border-radius: 6px; background: #5A2A2A"></span><span style="border-radius: 6px; background: rgba(237,230,218,0.08)"></span></span>
+      </div>
+      <span style="font-size: 12px; color: #9C9486; line-height: 1.5">Normal · resting (dimmed, lock, ember ring) · stack · group folder. Real app icons replace the initials in the apps.</span>
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 2px; color: #B7AE9F; margin-top: 4px">PILLS AND BUTTONS</span>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+        <span style="height: 28px; padding: 0 10px; border-radius: 14px; background: rgba(239,159,39,0.14); color: #F4C27E; font-size: 12px; font-weight: 600; display: flex; align-items: center">1h 02m left</span>
+        <span style="height: 28px; padding: 0 10px; border-radius: 14px; background: rgba(237,230,218,0.08); color: #B7AE9F; font-size: 12px; font-weight: 600; display: flex; align-items: center">Next · 17:30</span>
+        <span style="height: 34px; padding: 0 12px 0 10px; display: flex; align-items: center; gap: 7px; border-radius: 17px; background: rgba(237,230,218,0.08); border: 1px solid rgba(237,230,218,0.1); font-size: 12px; font-weight: 600"><span style="width: 7px; height: 7px; border-radius: 4px; background: #EF9F27; box-shadow: 0 0 8px rgba(239,159,39,0.8)"></span>Protected</span>
+        <span style="height: 44px; padding: 0 20px; border-radius: 22px; background: linear-gradient(180deg, #F6B860 0%, #EF9F27 100%); color: #3A2003; font-size: 14px; font-weight: 700; display: flex; align-items: center">Start focus</span>
+        <span style="height: 44px; padding: 0 20px; border-radius: 22px; background: #EDE6DA; color: #141316; font-size: 14px; font-weight: 700; display: flex; align-items: center">Done</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 12px; border-top: 1px solid rgba(237, 230, 218, 0.1); padding-top: 24px">
+    <span style="font-size: 11px; font-weight: 600; letter-spacing: 2px; color: #B7AE9F">CARDS AND NAVIGATION</span>
+    <div style="display: grid; grid-template-columns: 196px 1fr; gap: 16px; align-items: start">
+      <span style="display: flex; flex-direction: column; gap: 12px; padding: 14px; box-sizing: border-box; border-radius: 22px; background: linear-gradient(180deg, rgba(239,159,39,0.16) 0%, rgba(239,159,39,0.04) 60%, #17161A 100%), #17161A; border: 1px solid rgba(239,159,39,0.35)">
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 32px; height: 32px; border-radius: 16px; background: rgba(237,230,218,0.08); display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EDE6DA" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14" rx="3"></rect><path d="M4 10h16M8.5 3.5v3M15.5 3.5v3"></path></svg></span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9C9486" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg><span style="width: 32px; height: 32px; border-radius: 16px; background: rgba(239,159,39,0.18); display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF9F27" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg></span></span>
+        <span style="align-self: flex-start; height: 26px; padding: 0 10px; border-radius: 13px; background: rgba(239,159,39,0.18); color: #F4C27E; font-size: 12px; font-weight: 600; display: flex; align-items: center">1h 02m left</span>
+        <span style="font-size: 16px; font-weight: 600">Laser Focus</span>
+        <span style="font-size: 12px; color: #B7AE9F">Rule card · trigger → lock, status pill, name, targets</span>
+      </span>
+      <span style="display: flex; flex-direction: column; gap: 14px">
+        <span style="width: 350px; height: 68px; padding: 6px; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; border-radius: 34px; background: rgba(22,21,24,0.9); border: 1px solid rgba(237,230,218,0.1)">
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 28px; background: rgba(237,230,218,0.1); font-size: 11px; font-weight: 600"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-4.2-7"></path><circle cx="18.6" cy="6.4" r="1.6" fill="#EF9F27" stroke="none"></circle></svg>Today</span>
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #9C9486; font-size: 11px; font-weight: 500"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>Rules</span>
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #9C9486; font-size: 11px; font-weight: 500"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 19v-6M12 19V6M18 19v-9"></path></svg>Insights</span>
+          <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #9C9486; font-size: 11px; font-weight: 500"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="9" r="3.5"></circle><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"></path></svg>You</span>
+        </span>
+        <span style="font-size: 12px; color: #9C9486; line-height: 1.5">Floating pill bar, same four tabs on both platforms. Active tab gets a capsule. Primary action floats above it as an ember pill.</span>
+        <span style="font-size: 12px; color: #9C9486; line-height: 1.5">Cards: #17161A on #0E0D0F, 1 px Bone at 8%, radius 20–24. The active rule's card carries an ember wash. Hairline rows for lists.</span>
+      </span>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; border-top: 1px solid rgba(237, 230, 218, 0.1); padding-top: 24px">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 2px; color: #B7AE9F">BORROWED FROM FOCUS APPS, MADE OURS</span>
+      <span style="font-size: 13px; line-height: 1.6; color: #D8CFC0">Hero scene with a stats row · app icons shown in a resting state · rule cards with time-left pills · folder-style groups · action cards with a pill button · floating tab bar · sticky primary action</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 11px; font-weight: 600; letter-spacing: 2px; color: #B7AE9F">DELIBERATELY LEFT OUT</span>
+      <span style="font-size: 13px; line-height: 1.6; color: #D8CFC0">Streaks and scores · Pro upsells · "higher than you declared" guilt copy · a mascot object · per-app unblock buttons during Hardcore · anything that needs an account</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":720,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const chip = (hex, b) => 'height: 52px; border-radius: 16px; background: ' + hex + ';' + (b ? ' border: 1px solid rgba(237,230,218,0.14); box-sizing: border-box;' : '');
+    const colors = [
+      ['Night', '#0C0E13', 'hero sky, full-screen', true], ['Ground', '#0E0D0F', 'app background', true], ['Card', '#17161A', 'cards, sheets', true], ['Ridge', '#2C2522', 'mountains', false], ['Dusk', '#4B3322', 'horizon glow', false],
+      ['Bone', '#EDE6DA', 'text, light button', false], ['Mist', '#B7AE9F', 'secondary text', false], ['Stone', '#9C9486', 'tertiary, inactive tabs', false], ['Ember', '#EF9F27', 'the one accent', false], ['Ember text', '#F4C27E', 'accent on dark', false]
+    ].map(([name, hex, role, b]) => ({ name, hex, role, chip: chip(hex, b) }));
+    return { colors };
+  }
+}
+</script>
+</body>
+</html>

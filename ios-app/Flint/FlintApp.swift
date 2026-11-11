@@ -26,6 +26,7 @@ struct RootView: View {
     @StateObject private var session = SessionViewModel()
     @State private var tab: FlintTab = .today
     @State private var showStart = false
+    @State private var tabBarHeight: CGFloat?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -85,22 +86,27 @@ struct RootView: View {
     }
 
     private var tabs: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
             Group {
                 switch tab {
-                case .today: TodayView(auth: auth, vm: session, showStart: $showStart)
+                case .today: TodayView(auth: auth, vm: session, showStart: $showStart,
+                                       onOpenRules: { tab = .rules })
                 case .rules: RulesView()
                 case .insights: StatsView(auth: auth)
                 case .you: SettingsView()
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
+            .environment(\.flintTabBarHeight, tabBarHeight)
 
-            // Give navigation-backed content real bounds above the measured bar.
+            // The floating pill bar sits over the content, as in M03/M12/M13/M16.
             FlintTabBar(selection: $tab)
-                .fixedSize(horizontal: false, vertical: true)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: FlintTabBarHeightPreference.self, value: proxy.size.height)
+                })
         }
+        .onPreferenceChange(FlintTabBarHeightPreference.self) { tabBarHeight = $0 }
         .background {
             // Hosted outside the clipped tab content so Insights' decoration can paint the top
             // safe-area band without sizing any viewport.
@@ -148,7 +154,7 @@ struct PINGateView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 14) {
                         FlintMark(size: 40)
-                        Text("Flint").font(FlintFont.display(48)).tracking(-0.8).foregroundStyle(FlintBrand.bone)
+                        Text("Flint").font(FlintFont.text(48, weight: .bold, relativeTo: .largeTitle)).tracking(-1).foregroundStyle(FlintBrand.bone)
                             .accessibilityAddTraits(.isHeader)
                         Text("Enter PIN").flintSecondary(15)
                         SecureField("PIN", text: $pin)

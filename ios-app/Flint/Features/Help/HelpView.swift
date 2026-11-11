@@ -64,6 +64,7 @@ struct HelpView: View {
             .padding(.bottom, 24)
         }
         .background(FlintGroundBackground())
+        .flintTabBarInset()
         .navigationBarTitleDisplayMode(.inline)
         .task { pass = await HelpPassStatus.current() }
     }

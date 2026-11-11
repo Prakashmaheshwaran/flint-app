@@ -58,14 +58,16 @@ struct AppsListView: View {
                         ForEach(targets) { target in
                             NavigationLink { AppDetailView(target: target) } label: {
                                 HStack(spacing: 14) {
+                                    FlintAppTile(target: target, size: 40)
                                     target.label
-                                        .font(FlintFont.text(15, weight: .medium))
+                                        .labelStyle(.titleOnly)
+                                        .font(FlintFont.text(15, weight: .semibold))
                                         .foregroundStyle(FlintBrand.bone)
                                     Spacer(minLength: 8)
                                     FlintChevron()
                                 }
                                 .frame(minHeight: 58)
-                                .overlay(alignment: .bottom) { FlintHairline() }
+                                .overlay(alignment: .bottom) { FlintHairline(opacity: 0.07) }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -85,6 +87,7 @@ struct AppsListView: View {
             .padding(.bottom, 24)
         }
         .background(FlintGroundBackground())
+        .flintTabBarInset()
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
     }

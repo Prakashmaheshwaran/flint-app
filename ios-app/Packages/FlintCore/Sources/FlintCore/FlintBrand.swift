@@ -3,18 +3,23 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Flint's "Ember & Mist" palette. Mirror of design/tokens.json — keep in sync.
+/// Flint's "Modern Ember" (v3) palette. Mirror of design/tokens.json — keep in sync.
 /// Provides both SwiftUI `Color` (host app) and `UIColor` (shield extension) accessors.
 public enum FlintBrand {
     public static let nightHex: UInt32 = 0x0C0E13
     public static let groundHex: UInt32 = 0x0E0D0F
     public static let sheetHex: UInt32 = 0x151417
+    /// Cards on ground: 1 px bone@0.08 border, radius 20–24.
+    public static let cardHex: UInt32 = 0x17161A
+    /// The floating tab bar's own surface (tokens.json `alpha.tabBar`).
+    public static let barHex: UInt32 = 0x161518
     public static let ridgeHex: UInt32 = 0x2C2522
     public static let duskHex: UInt32 = 0x4B3322
     public static let boneHex: UInt32 = 0xEDE6DA
     public static let mistHex: UInt32 = 0xB7AE9F
     public static let stoneHex: UInt32 = 0x9C9486
     public static let emberHex: UInt32 = 0xEF9F27
+    public static let emberTextHex: UInt32 = 0xF4C27E
     public static let glowHex: UInt32 = 0xFFE7C2
     public static let flameHex: UInt32 = 0xF7BE6A
     public static let sparkHighlightHex: UInt32 = 0xFAC775
@@ -30,12 +35,15 @@ public enum FlintBrand {
     public static var night: Color { color(nightHex) }
     public static var ground: Color { color(groundHex) }
     public static var sheet: Color { color(sheetHex) }
+    public static var card: Color { color(cardHex) }
+    public static var bar: Color { color(barHex) }
     public static var ridge: Color { color(ridgeHex) }
     public static var dusk: Color { color(duskHex) }
     public static var bone: Color { color(boneHex) }
     public static var mist: Color { color(mistHex) }
     public static var stone: Color { color(stoneHex) }
     public static var ember: Color { color(emberHex) }
+    public static var emberText: Color { color(emberTextHex) }
     public static var glow: Color { color(glowHex) }
     public static var flame: Color { color(flameHex) }
     public static var sparkHighlight: Color { color(sparkHighlightHex) }
