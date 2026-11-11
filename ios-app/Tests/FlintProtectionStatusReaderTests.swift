@@ -31,7 +31,7 @@ final class FlintProtectionStatusReaderTests: XCTestCase {
         XCTAssertEqual(json["observedAt"] as? Double, now.timeIntervalSince1970)
         XCTAssertEqual(json["writer"] as? String, "host")
         XCTAssertEqual(FlintProtectionStatus.storageKey, "flint.status.v1")
-        XCTAssertEqual(FlintProtectionStatus.changedNotification, "com.flint.peakfocus.status.changed")
+        XCTAssertEqual(FlintProtectionStatus.changedNotification, "app.flint.focus.status.changed")
         XCTAssertEqual(FlintProtectionStatus.widgetKind, "FlintProtectionWidget")
     }
 

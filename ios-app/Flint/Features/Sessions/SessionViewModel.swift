@@ -167,14 +167,25 @@ final class SessionViewModel: ObservableObject {
         savedGroups = groups
     }
 
-    var selectionCount: Int {
+    var selectionCount: Int { Self.count(of: selection) }
+
+    /// "7 apps · 2 sites" — what the selection blocks, in the design's words.
+    var selectionSummary: String { Self.summary(of: selection) }
+
+    /// The running session's own frozen targets — never the picker's draft, which a Shortcut-
+    /// or schedule-started session doesn't use. Nil when there is no session or it can't be read.
+    var activeSelection: FamilyActivitySelection? {
+        guard let active else { return nil }
+        return FlintGroupStore()?.loadSessionSelection(sessionID: active.id)
+    }
+
+    static func count(of selection: FamilyActivitySelection) -> Int {
         selection.applicationTokens.count
             + selection.categoryTokens.count
             + selection.webDomainTokens.count
     }
 
-    /// "7 apps · 2 sites" — what the selection blocks, in the design's words.
-    var selectionSummary: String {
+    static func summary(of selection: FamilyActivitySelection) -> String {
         var parts: [String] = []
         let apps = selection.applicationTokens.count
         let categories = selection.categoryTokens.count

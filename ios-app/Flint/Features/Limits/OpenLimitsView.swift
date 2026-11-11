@@ -70,6 +70,8 @@ struct OpenLimitsView: View {
                 }
             }
         }
+        // The text-only states would otherwise take the form background only behind themselves.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .flintForm()
         .navigationTitle("Open Limits")
         .toolbar {

@@ -6,7 +6,7 @@ source "$here/common.sh"
 ios_dir=${IOS_DIR:-ios-app}
 derived_data=${IOS_DERIVED_DATA:-$ios_dir/DerivedData}
 simulator=${IOS_SIM:-iPhone 17}
-bundle_id=com.flint.peakfocus
+bundle_id=app.flint.focus
 device_info=$(xcrun simctl list devices available --json | python3 "$here/ios-device.py" "$simulator" --state)
 IFS=$'\t' read -r device state <<< "$device_info"
 case "$state" in
