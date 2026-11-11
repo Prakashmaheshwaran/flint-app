@@ -16,4 +16,7 @@ enum FlintRuleStoreKey: String, CaseIterable {
     var original: String { rawValue + ".original.adr012" }
     /// Write-once evidence that a pre-marker domain existed, without migrating its policy.
     var ownership: String { rawValue + ".owned.adr012" }
+    /// Write-once proof that legacy initialization found this domain absent with no evidence
+    /// and wrote its empty array itself (R2p2-N03). Only the Open-credit import reads it.
+    var neverUsed: String { rawValue + ".neverUsed.adr012" }
 }
