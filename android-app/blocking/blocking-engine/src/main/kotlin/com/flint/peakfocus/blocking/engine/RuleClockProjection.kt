@@ -39,13 +39,17 @@ object RuleClockProjection {
                 // the next boundary is the phase end so the detector re-evaluates at rest start
                 // and rest end without an app switch.
                 val plan = rule.pomodoro
-                if (plan != null) {
-                    val elapsed = (plan.totalMs - remaining).coerceAtLeast(0L)
-                    val phase = plan.phaseAt(elapsed)
-                    return RuleEvaluation(
-                        active = phase?.isFocus == true,
+                // A plan is the phase table of its own finite parent: never of a scheduled rule.
+                // A plan that does not line up with the committed duration is not authority to
+                // stand down either, so it keeps enforcing as a plain Timer to the real end
+                // instead of claiming a rest or a finished chain.
+                if (plan != null && rule.schedule == null) {
+                    val elapsed = plan.totalMs - remaining
+                    val phase = if (elapsed < 0) null else plan.phaseAt(elapsed)
+                    if (phase != null) return RuleEvaluation(
+                        active = phase.isFocus,
                         endsAtEpochMs = end,
-                        nextBoundaryEpochMs = phase?.let { addBounded(now.wallEpochMs, it.endMs - elapsed) } ?: end,
+                        nextBoundaryEpochMs = addBounded(now.wallEpochMs, phase.endMs - elapsed),
                         phase = phase,
                     )
                 }

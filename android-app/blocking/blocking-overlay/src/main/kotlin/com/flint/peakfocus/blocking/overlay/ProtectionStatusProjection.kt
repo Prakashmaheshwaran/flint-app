@@ -91,8 +91,10 @@ internal object ProtectionStatusProjection {
                 val remaining = interval?.remainingMs(now)
                 if (remaining == 0L) return
                 // F01: the phase follows trusted elapsed time; its end is when this read stops
-                // being able to claim the phase, so it also bounds snapshot validity.
-                val elapsed = if (plan != null && remaining != null) (plan.totalMs - remaining).coerceAtLeast(0L) else null
+                // being able to claim the phase, so it also bounds snapshot validity. A plan that
+                // does not line up with the committed remaining time makes no phase claim.
+                val elapsed = if (plan != null && remaining != null && remaining <= plan.totalMs)
+                    plan.totalMs - remaining else null
                 val phase = if (plan != null && elapsed != null) plan.phaseAt(elapsed) else null
                 val phaseRemaining = if (phase != null && elapsed != null) phase.endMs - elapsed else null
                 val phaseEndMs = phaseRemaining?.let { addBounded(now.wallEpochMs, it) }

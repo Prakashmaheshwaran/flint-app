@@ -58,9 +58,10 @@ internal object PrefsCodec {
 
     // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end[|expiresAt[|pomodoro]]
     // (expiresAt appended for one-shot sessions; pomodoro appended for F01 Pomodoro parents.
-    // Decode accepts 10-field legacy lines and 11-field lines without a plan. An older build
-    // ignores the trailing plan field and decodes the rule as a plain Timer, which ends at the
-    // chain end — stricter than the chain, never weaker.)
+    // Decode accepts 10-field legacy lines and 11-field lines without a plan. A 12-field line
+    // with a plan is a future shape for an older build: `decodeRule` there returns null for any
+    // other size and the old strict codec reports the whole rules value as unavailable, so that
+    // build fails closed rather than treating the chain as a plain Timer (ADR-012 §12).)
 
     fun encodeRules(rules: List<BlockRule>): String =
         rules.joinToString(RECORD) { encodeRule(it) }

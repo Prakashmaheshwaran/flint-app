@@ -114,6 +114,15 @@ class PomodoroCommitmentTest {
         assertTrue(owner.commitTimer(parent(plan = PomodoroPlan(120, 60, 8)), at(), safe) is TimerStartResult.Applying)
     }
 
+    @Test fun `a plan needs the parent's own finite end, never a repeating window`() {
+        assertEquals("A Pomodoro chain needs a finite Timer, not a schedule.",
+            validateEditorRule(parent().copy(schedule = Schedule(startMinuteOfDay = 540, endMinuteOfDay = 1020)),
+                null, at()))
+        assertEquals("A Pomodoro chain needs a finite Timer, not a schedule.",
+            validateEditorRule(parent().copy(expiresAtEpochMs = null), null, at()))
+        assertNull("the plain parent form is accepted", validateEditorRule(parent(), null, at()))
+    }
+
     @Test fun `a planned rest is an active commitment but never an end`() = runBlocking {
         val disk = Disk(); val owner = store(disk); val rule = parent()
         owner.commitTimer(rule, at(), safe)

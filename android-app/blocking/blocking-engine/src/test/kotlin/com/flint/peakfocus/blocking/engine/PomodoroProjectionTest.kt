@@ -179,6 +179,31 @@ class PomodoroProjectionTest {
         assertNull(evaluation.phase)
     }
 
+    @Test fun `a plan that does not match the commitment enforces plainly instead of resting`() {
+        // A crafted/corrupt line can pair a 115-minute plan with a longer committed duration.
+        // The phase table is then no authority to stand down: enforce as a plain Timer.
+        val longer = 200 * minute
+        val mismatched = parent().copy(expiresAtEpochMs = start + longer,
+            runtime = parent().runtime!!.copy(remainingAtAnchorMs = longer, wallEndEpochMs = start + longer))
+        val now = after(30.0)
+        val projected = RuleClockProjection.project(mismatched, now)
+        val evaluation = projected.runtime!!.evaluation!!
+        assertNull("no phase is claimed from a mismatched plan", evaluation.phase)
+        assertTrue("the parent keeps enforcing to its real end", evaluation.active)
+        assertEquals(now.wallEpochMs + 170 * minute, evaluation.endsAtEpochMs)
+        assertEquals(evaluation.endsAtEpochMs, evaluation.nextBoundaryEpochMs)
+        assertTrue(decide(listOf(projected), now) is Verdict.Block)
+    }
+
+    @Test fun `a plan on a scheduled rule is never a phase table`() {
+        // Validation refuses this shape; if a crafted store still contains it, it is a plain
+        // enforcing rule rather than a chain that can claim a rest.
+        val scheduled = parent().copy(schedule = Schedule(startMinuteOfDay = 540, endMinuteOfDay = 1020))
+        val evaluation = RuleClockProjection.project(scheduled, after(26.0)).runtime!!.evaluation!!
+        assertNull(evaluation.phase)
+        assertTrue(evaluation.active)
+    }
+
     private fun assertNotNullPhase(evaluation: RuleEvaluation) {
         assertEquals(PomodoroPhaseKind.REST, evaluation.phase!!.kind)
         assertFalse(evaluation.active)

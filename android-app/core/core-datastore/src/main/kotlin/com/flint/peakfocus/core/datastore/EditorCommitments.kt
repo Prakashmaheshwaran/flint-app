@@ -178,6 +178,11 @@ internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClo
     // an unrestricted Timer, and its whole chain must stay inside the session cap.
     rule.pomodoro?.let { plan ->
         PomodoroPlan.validationError(plan)?.let { return it }
+        // The phase table needs the parent's own finite end. A repeating window would replay
+        // the same plan as a second occurrence, so it never carries one.
+        if (rule.schedule != null || rule.expiresAtEpochMs == null) {
+            return "A Pomodoro chain needs a finite Timer, not a schedule."
+        }
         if (old?.pomodoro != plan && !isValidNewSessionDuration(plan.totalMs)) {
             return "Choose a duration of at most 24 hours."
         }
