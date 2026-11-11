@@ -119,8 +119,11 @@ final class FlintOpenCreditRedTeamN03Tests: XCTestCase {
                        forKey: FlintRuleInitialization.receiptKey)
         XCTAssertTrue(FlintOpenLimitRule.saveAll([], to: h.defaults))
         var state = try productionLedger(h).read().get()
-        XCTAssertEqual(state.openCredits.availability, .ready,
-                       "an interrupted fresh bootstrap is still new-install provenance")
+        // While the bootstrap is unfinished its rules are unreadable, so the import waits and
+        // the quota stays closed instead of recording a day-long unavailable verdict.
+        XCTAssertEqual(state.openCredits.availability, .pendingImport,
+                       "an interrupted fresh bootstrap must not record the credit import yet")
+        XCTAssertFalse(state.migrations.contains(FlintLedgerState.legacyOpenCreditMigration))
         XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
         XCTAssertEqual(FlintRuleInitialization.receipt(in: h.defaults), .complete)
         state = try productionLedger(h).read().get()
