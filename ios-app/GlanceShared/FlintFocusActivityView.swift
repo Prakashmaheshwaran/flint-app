@@ -17,6 +17,9 @@ struct FlintFocusActivityView: View {
             if needsCheck {
                 Text("Open Flint to check")
             } else {
+                if let phase = state.phaseSummary {
+                    Text(phase).font(.subheadline.weight(.semibold))
+                }
                 HStack {
                     VStack(alignment: .leading) {
                         Text(state.countdownLabel).font(.caption)

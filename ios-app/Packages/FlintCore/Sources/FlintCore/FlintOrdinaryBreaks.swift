@@ -263,8 +263,11 @@ public enum FlintOrdinaryBreaks {
             guard let selection = group.loadSessionSelection(sessionID: session.id), let frozen = try? scope(selection) else { return nil }
             let remaining = session.logicalRemaining(clock: clock)
             let end = remaining.map { FlintLedgerInstant(wall: now.wall.addingTimeInterval($0), monotonic: now.monotonic + $0, bootID: now.bootID) }
+            // A planned Pomodoro rest is not an enforcing contributor (design §6): the parent
+            // still owns the whole chain, but during a rest it neither grants nor blocks an
+            // ordinary break for the other rules (FlintBreakScope).
             owners.append(.init(.init(cause: .init(causeID: session.id, kind: .session, tier: session.breakLevel,
-                isActive: true, end: session.stableLogicalEnd(clock: clock)), selection: .blockList(frozen),
+                isActive: !session.isInPomodoroRest(clock: clock), end: session.stableLogicalEnd(clock: clock)), selection: .blockList(frozen),
                 logicalEnd: end, timeKnown: remaining != nil || session.endsAt == nil,
                 harder: state.harder[session.id] ?? .init()), storeName: "flint"))
         }

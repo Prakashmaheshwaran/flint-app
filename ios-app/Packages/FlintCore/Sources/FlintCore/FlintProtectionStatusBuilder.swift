@@ -14,16 +14,27 @@ public enum FlintProtectionStatusBuilder {
         /// The session's end by logical time (ADR-012 §9), which differs from its recorded wall
         /// end after a same-boot clock change. nil = the recorded end.
         public var logicalEnd: Date?
+        /// A Pomodoro chain's current phase and round (F01), plus the wall estimate of the
+        /// phase's logical end.
+        public var phase: Snapshot.Session.Phase?
+        public var round: Int?
+        public var rounds: Int?
+        public var phaseEndsAt: Date?
 
         public init(_ session: FlintActiveSession, armed: Bool, enforcing: Bool = true,
                     kind: Snapshot.Session.Kind = .session, origin: Snapshot.Session.Origin = .appUI,
-                    logicalEnd: Date? = nil) {
+                    logicalEnd: Date? = nil, phase: Snapshot.Session.Phase? = nil, round: Int? = nil,
+                    rounds: Int? = nil, phaseEndsAt: Date? = nil) {
             self.session = session
             self.armed = armed
             self.enforcing = enforcing
             self.kind = kind
             self.origin = origin
             self.logicalEnd = logicalEnd ?? session.endsAt
+            self.phase = phase
+            self.round = round
+            self.rounds = rounds
+            self.phaseEndsAt = phaseEndsAt
         }
     }
 
@@ -165,9 +176,17 @@ public enum FlintProtectionStatusBuilder {
                 if let end = input.logicalEnd { boundaries.append(end) }
                 if !input.armed { reasons.insert("registration_failed") }
                 if input.armed && !inputs.recordUnreadable && !unavailable && recovery == nil && !inputs.recoveryApplying {
+                    // A phase claim is truthful only until its own boundary; past it, no phase
+                    // is published rather than a stale one (design §8).
+                    let phaseEndsAt = input.phaseEndsAt.flatMap { $0 > now ? $0 : nil }
                     session = Snapshot.Session(id: active.id, kind: input.kind, name: active.name,
                         tier: active.breakLevel, startedAt: active.startedAt, logicalEnd: input.logicalEnd,
-                        origin: input.origin, armed: true)
+                        origin: input.origin, armed: true,
+                        phase: phaseEndsAt == nil ? nil : input.phase,
+                        round: phaseEndsAt == nil ? nil : input.round,
+                        rounds: phaseEndsAt == nil ? nil : input.rounds,
+                        phaseEndsAt: phaseEndsAt)
+                    if let phaseEndsAt { boundaries.append(phaseEndsAt) }
                 }
                 causes.append(Snapshot.Cause(id: active.id,
                     kind: input.kind == .pomodoro ? .pomodoro : .session, displayName: active.name,

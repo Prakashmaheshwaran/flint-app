@@ -98,7 +98,7 @@ final class FlintSessionPersistence {
                 // A crash after the terminal commit can leave the old projection/resources.
                 if raw.naturalEndObservedAt == nil { env.shield.clear() }
                 store.clearActiveSession(); store.clearSessionSelection()
-                env.registrar.stopMonitoring([raw.monitorName])
+                env.registrar.stopMonitoring([raw.monitorName] + FlintSessionController.pomodoroCarrierNames(for: raw))
             }
             return Resolution(available: true,
                 releaseAlreadyObserved: raw != nil || authority.latest?.session.naturalEndObservedAt != nil)
@@ -122,7 +122,7 @@ final class FlintSessionPersistence {
                 return unavailable()
             }
             store.clearActiveSession(); store.clearSessionSelection()
-            env.registrar.stopMonitoring([session.monitorName])
+            env.registrar.stopMonitoring([session.monitorName] + FlintSessionController.pomodoroCarrierNames(for: session))
             return Resolution(available: true, timeVerdict: verdict, releaseAlreadyObserved: true)
         }
         return Resolution(available: true, session: session, timeVerdict: verdict)
@@ -182,7 +182,10 @@ final class FlintSessionPersistence {
                                 retainingAppliedResources: true, at: env.clock.now())
                             state.sessionAuthority = authority
                           }) else { return false }
-                    if session.monitorName != restored.monitorName { env.registrar.stopMonitoring([session.monitorName]) }
+                    if session.monitorName != restored.monitorName {
+                        env.registrar.stopMonitoring([session.monitorName]
+                            + FlintSessionController.pomodoroCarrierNames(for: session))
+                    }
                     _ = unavailable() // known record, unknown target repair; keep health visible
                     return true
                 }
@@ -215,8 +218,13 @@ final class FlintSessionPersistence {
         store.saveActiveSession(session)
         guard store.loadActiveSession() == session else { return false }
         if !session.isLogicallyExpired(clock: env.clock) {
-            do { if let selection { try env.shield.applyBlockList(selection) } } catch { return false }
-            env.webRestrictions.reconcile(session, clock: env.clock)
+            // A Pomodoro parent replays its phase, never a stale focus claim (design §4).
+            if session.isInPomodoroRest(clock: env.clock) {
+                env.shield.clear()
+            } else {
+                do { if let selection { try env.shield.applyBlockList(selection) } } catch { return false }
+                env.webRestrictions.reconcile(session, clock: env.clock)
+            }
         }
         guard markApplied(session) else { return false }
         if let previous = generation.previousMonitorName, previous != session.monitorName {
@@ -232,7 +240,7 @@ final class FlintSessionPersistence {
                                    in store: FlintSessionStateStoring) {
         if session.naturalEndObservedAt == nil { env.shield.clear() }
         store.clearActiveSession(); store.clearSessionSelection()
-        var monitors = [session.monitorName]
+        var monitors = [session.monitorName] + FlintSessionController.pomodoroCarrierNames(for: session)
         if let previousMonitor, previousMonitor != session.monitorName { monitors.append(previousMonitor) }
         env.registrar.stopMonitoring(monitors)
         env.reconcileRemovalGuard()

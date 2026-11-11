@@ -12,6 +12,8 @@ struct FlintGlanceInput: Equatable {
     }
     struct Session: Equatable {
         enum Cause: String, CaseIterable { case manual, timer, pomodoro, other }
+        /// A Pomodoro chain's phase, published only while its own boundary is still ahead.
+        enum Phase: String, CaseIterable { case focus, rest }
         let id: String
         let cause: Cause
         let tier: String
@@ -20,6 +22,11 @@ struct FlintGlanceInput: Equatable {
         let startedAt: Date
         let endsAt: Date
         var name: String? = nil
+        var phase: Phase? = nil
+        var round: Int? = nil
+        var rounds: Int? = nil
+        /// Wall estimate of the logical phase end. Past it, the phase is never claimed.
+        var phaseEndsAt: Date? = nil
     }
     struct Occurrence: Equatable {
         let startsAt: Date
@@ -74,6 +81,9 @@ struct FlintGlancePresentation: Equatable {
     let countdownEnd: Date?
     let plannedEnd: Date?
     let causeSummary: String?
+    /// "Focus · round 2 of 4" or "Rest · focus resumes 10:25". nil when the phase is unknown or
+    /// past its own published boundary — a stale phase is never shown as current (design §8).
+    let phaseSummary: String?
     let nextStart: Date?
     let nextName: String?
     let historyValue: String
@@ -90,6 +100,22 @@ struct FlintGlancePresentation: Equatable {
         let sessionExpired = input.session.map { $0.endsAt <= date } == true
         let nextStarted = input.next.map { $0.startsAt <= date } == true
         let displayEnd = input.headline.map { $0.endsAt } ?? input.protectionEndsAt
+        // A Pomodoro phase is truthful only inside its own published boundary and the snapshot's
+        // validity. Past it, no phase is claimed at all (design §8). A planned rest is not
+        // enforcing, so it is shown with its own title rather than a false protection claim.
+        let phaseText: String? = {
+            guard valid, !expired, !headlineExpired, !sessionExpired, !nextStarted,
+                  ![.unavailable, .suspended, .pass].contains(input.protection),
+                  let session = input.session, let phase = session.phase,
+                  let end = session.phaseEndsAt, end > date else { return nil }
+            switch phase {
+            case .focus:
+                let total = session.rounds ?? session.round ?? 0
+                return total > 0 ? "Focus · round \(session.round ?? 1) of \(total)" : "Focus"
+            case .rest:
+                return "Rest · focus resumes \(end.formatted(date: .omitted, time: .shortened))"
+            }
+        }()
         if input.protection == .unavailable || input.checkedAt == nil || input.validUntil == nil {
             status = .unavailable
         } else if expired {
@@ -109,7 +135,11 @@ struct FlintGlancePresentation: Equatable {
             }
         }
         switch status {
-        case .idle: title = "No protection at last check"; detail = "Open Flint"
+        case .idle:
+            // A planned rest pauses the parent's own shield on purpose; the chain is still the
+            // active commitment, so the phase names the rest instead of "no protection".
+            title = phaseText == nil ? "No protection at last check" : "Pomodoro · planned rest"
+            detail = phaseText == nil ? "Open Flint" : "Focus resumes at its scheduled time"
         case .saved: title = "Not armed"; detail = "Open Flint to review"
         case .armed: title = "Armed at last check"; detail = "Registration accepted"
         case .enforcing: title = "Enforcing at last check"; detail = "Reported by Flint"
@@ -120,6 +150,7 @@ struct FlintGlancePresentation: Equatable {
         case .stale: title = "Status needs checking"; detail = "Open Flint to refresh"
         case .expired: title = "Planned end reached"; detail = "Open Flint to check"
         }
+        phaseSummary = phaseText
         if valid, [.armed, .enforcing, .degraded].contains(status), let cause = input.headline {
             causeSummary = "\(Self.sanitizedName(cause.name)) · \(cause.tier)"
         } else { causeSummary = nil }
@@ -176,7 +207,8 @@ struct FlintGlancePresentation: Equatable {
     static func boundaries(_ input: FlintGlanceInput, after date: Date, calendar: Calendar = .current) -> [Date] {
         let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: date))
         return Set([input.validUntil, input.protectionEndsAt, input.session?.endsAt,
-                    input.headline?.endsAt, input.next?.startsAt, midnight].compactMap { $0 }.filter { $0 > date }).sorted()
+                    input.session?.phaseEndsAt, input.headline?.endsAt, input.next?.startsAt, midnight]
+                    .compactMap { $0 }.filter { $0 > date }).sorted()
     }
 }
 
@@ -188,6 +220,9 @@ struct FlintGlanceActivityPlan: Equatable {
     let startedAt: Date
     let endsAt: Date
     let staleAt: Date
+    /// A Pomodoro chain's phase at the time the plan was made; nil for other sessions.
+    var phaseSummary: String? = nil
+    var phaseEndsAt: Date? = nil
 
     static func countdownLabel(endsAt: Date, staleAt: Date) -> String {
         staleAt < endsAt ? "Check in" : "Planned time left"
@@ -197,7 +232,12 @@ struct FlintGlanceActivityPlan: Equatable {
 
     static func make(_ input: FlintGlanceInput, optedIn: Bool, systemEnabled: Bool,
                      at date: Date) -> Self? {
-        guard optedIn, systemEnabled, [.armed, .enforcing].contains(input.protection),
+        // A planned rest is not enforcing, but the chain is still the active commitment: keep
+        // showing it while its own phase boundary is ahead (design §8).
+        let resting = input.session?.phase == .rest
+            && (input.session?.phaseEndsAt.map { $0 > date } ?? false)
+        guard optedIn, systemEnabled,
+              [.armed, .enforcing].contains(input.protection) || resting,
               let checked = input.checkedAt, checked <= date,
               let valid = input.validUntil, valid > date, valid > checked,
               let session = input.session, session.cause != .other,
@@ -208,7 +248,9 @@ struct FlintGlanceActivityPlan: Equatable {
         return .init(sessionID: session.id,
                      cause: FlintGlancePresentation.sanitizedName(session.name ?? session.cause.rawValue.capitalized),
                      tier: session.tier, startedAt: session.startedAt,
-                     endsAt: session.endsAt, staleAt: min(valid, session.endsAt))
+                     endsAt: session.endsAt, staleAt: min(valid, session.endsAt),
+                     phaseSummary: FlintGlancePresentation(input, at: date).phaseSummary,
+                     phaseEndsAt: session.phaseEndsAt)
     }
 }
 
