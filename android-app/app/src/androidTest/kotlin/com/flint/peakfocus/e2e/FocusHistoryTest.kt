@@ -111,13 +111,14 @@ class FocusHistoryTest : FlintE2EFixture() {
         visible(By.text("1 app resting"))
         showDurationControls()
         // v3 Start focus has no minute chips (M04): step the fresh 30m default down once.
-        scrollTo("Begin 30m")
+        // Begin sits in the sheet's fixed footer, so it is awaited, never scrolled for.
+        visible(By.text("Begin 30m"))
         visible(By.desc("Less time").enabled(true)).click()
-        scrollTo("Begin 25m")
+        visible(By.text("Begin 25m"))
         for (minutes in listOf(20, 15, 10, 5)) {
             showDurationControls()
             visible(By.desc("Less time").enabled(true)).click()
-            scrollTo("Begin ${minutes}m") // fresh postcondition before another input
+            visible(By.text("Begin ${minutes}m")) // fresh postcondition before another input
         }
         val begin = visible(By.text("Begin 5m").enabled(true))
         val began = SystemClock.elapsedRealtime()
@@ -126,16 +127,9 @@ class FocusHistoryTest : FlintE2EFixture() {
         return began
     }
 
+    /** The stepper is at the top of the sheet; the shared helper searches both directions. */
     private fun showDurationControls() {
-        repeat(8) {
-            refreshAccessibilityCache()
-            if (device.findObject(By.desc("Less time")) != null) return
-            val bounds = visible(By.scrollable(true)).visibleBounds
-            device.swipe(bounds.centerX(), bounds.top + bounds.height() / 4,
-                bounds.centerX(), bounds.bottom - bounds.height() / 4, 35)
-            SystemClock.sleep(250)
-        }
-        visible(By.desc("Less time"))
+        scrollTo(By.desc("Less time"))
     }
 
     private fun restartFlint() {
