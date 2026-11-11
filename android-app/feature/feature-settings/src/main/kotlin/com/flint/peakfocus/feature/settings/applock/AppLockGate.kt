@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -105,6 +106,8 @@ fun AppLockGate(
     val activity = LocalContext.current.findActivity()
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    // Keyboard/D-pad focus that would enter the hidden content is sent to the gate instead.
+    val gateEntry = remember { FocusRequester() }
 
     // Every newly shown gate starts at the PIN, never on a stale recovery panel, and a field that
     // was focused behind it must not keep the keyboard up over the gate.
@@ -122,7 +125,16 @@ fun AppLockGate(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer { alpha = if (gateVisible) 0f else 1f }
-                .then(if (gateVisible) Modifier.clearAndSetSemantics {} else Modifier),
+                .then(
+                    if (gateVisible) {
+                        Modifier
+                            .clearAndSetSemantics {}
+                            .focusGroup()
+                            .focusProperties { enter = { gateEntry } }
+                    } else {
+                        Modifier
+                    },
+                ),
         ) {
             content()
         }
@@ -138,6 +150,7 @@ fun AppLockGate(
                 },
                 onCloseRecoveryPanel = { recoveryOpen = false },
                 onOpenRecovery = onOpenRecovery,
+                entryFocus = gateEntry,
             )
         }
     }
@@ -157,8 +170,9 @@ fun AppLockGate(
  * The gate's own surface. It is a sibling above [AppLockGate]'s content, so touches land here
  * first; the container also consumes every pointer change so a stray event cannot fall through.
  *
- * Hardware-keyboard/D-pad focus is confined to the gate: the container is a focus group whose
- * enter/exit exits are cancelled, so traversal cannot reach the invisible content behind it.
+ * Hardware-keyboard/D-pad focus is confined to the gate: this container is a focus group whose
+ * exit is cancelled, and [AppLockGate] redirects any focus that would enter the hidden content
+ * to [entryFocus] (the PIN field, or the recovery entry when the record is unreadable).
  */
 @Composable
 private fun PinGateScreen(
@@ -169,6 +183,7 @@ private fun PinGateScreen(
     onOpenRecoveryPanel: (forgot: Boolean) -> Unit,
     onCloseRecoveryPanel: () -> Unit,
     onOpenRecovery: () -> Unit,
+    entryFocus: FocusRequester,
 ) {
     val scope = rememberCoroutineScope()
     var pin by remember { mutableStateOf("") }
@@ -231,10 +246,7 @@ private fun PinGateScreen(
                 }
             }
             .focusGroup()
-            .focusProperties {
-                enter = { FocusRequester.Cancel }
-                exit = { FocusRequester.Cancel }
-            },
+            .focusProperties { exit = { FocusRequester.Cancel } },
     ) {
         EmberLandscape(horizonOffset = 20f, orbCenter = Offset(195f, 470f), orbRadius = 64f)
         Column(
@@ -279,7 +291,7 @@ private fun PinGateScreen(
                     onValueChange = { typed ->
                         if (typed.length <= AppPinPolicy.MAX_ENTRY_LENGTH) pin = typed
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(entryFocus),
                     label = { Text("PIN") },
                     singleLine = true,
                     enabled = !state.busy,
@@ -336,6 +348,8 @@ private fun PinGateScreen(
                 text = "Emergency Pass & recovery",
                 onClickLabel = "Open recovery without your PIN",
                 onClick = { onOpenRecoveryPanel(false) },
+                // With no PIN field (unreadable record) this is the gate's focus entry point.
+                modifier = if (state.pinStatus == PinStatus.Unreadable) Modifier.focusRequester(entryFocus) else Modifier,
             )
             Spacer(Modifier.height(FlintSpacing.xs))
             QuietButton(
@@ -453,9 +467,10 @@ private fun RecoveryEntry(
     text: String,
     onClickLabel: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        Modifier
+        modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(24.dp))
