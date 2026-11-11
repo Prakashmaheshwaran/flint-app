@@ -171,6 +171,10 @@ internal class TimerViewModel(
             return
         }
         refreshClock()
+        // Wake the detectors on arrival so the safety-floor prerequisite is
+        // current. A floor that went stale since the last evaluation would
+        // otherwise disable Begin the moment the sheet opens.
+        requestEvaluation()
         refreshHealth()
         if (ticker?.isActive == true) return
         ticker = viewModelScope.launch {

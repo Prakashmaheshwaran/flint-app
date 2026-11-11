@@ -33,6 +33,12 @@ internal object ProtectionStatusProjection {
         usageAccessMissing: Boolean = false,
         timeMeasurementUnavailable: Boolean = false,
         timeMeasurementStorageUnavailable: Boolean = false,
+        /**
+         * Latest new shield mount outcome (R-30); a failure is health, never access. Required:
+         * every caller must pass the observed outcome, so an omitted argument can never read as
+         * a healthy mount.
+         */
+        blockSurface: BlockSurfaceMountPublisher.Outcome,
     ): ProtectionStatus {
         val inputs = listOf(focus, rulesReadiness, times, opens, editor)
         val readiness = when {
@@ -42,6 +48,7 @@ internal object ProtectionStatusProjection {
         }
         val reasons = linkedSetOf<String>()
         if (!pathAConnected) reasons += "path-a-disconnected"
+        blockSurface.reason?.let { reasons += it }
         if (timeMeasurementUnavailable || timeMeasurementStorageUnavailable) reasons += "time-limit-measurement-unavailable"
         // Derived context only: the service owns the raw permission observation. Copying
         // its missing-access reason here would feed stale policy state back after recovery.
