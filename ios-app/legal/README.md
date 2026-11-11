@@ -53,8 +53,9 @@ offline; it needs no Xcode, simulator, or network.
 
 - `make ios-legal-check` (also part of `make verify-ios`) fails if either bundled
   document drifts from its sources, and runs `test_generate_legal.py`.
-- `make verify-ios` additionally verifies the built Debug app:
-  `--verify-bundle "$IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/Flint.app"`.
+- `make verify-ios` additionally verifies the built Debug app before running unit tests
+  (`make ios-legal-bundle`, i.e. `--verify-bundle
+  "$IOS_DERIVED_DATA/Build/Products/Debug-iphonesimulator/Flint.app"`).
 - iOS CI (`.github/workflows/ios.yml`) runs `--check` plus the generator tests on
   checkout, then `--verify-bundle` on the Debug build and again on the Release build.
   Those jobs also trigger on changes to `docs/privacy-policy.md`, `design/fonts/**`
@@ -68,6 +69,15 @@ exactly the bundles its inventory entry declares, and that no bundle embeds thir
 code (`*.framework`, `*.xcframework`, `*.dylib`, or a non-empty `Frameworks/`
 directory). Xcode's own Debug artifacts at a bundle root — `<CFBundleExecutable>.debug.dylib`
 and `__preview.dylib` — are the only allowed dynamic libraries.
+
+A hosted unit-test run reuses the same DerivedData app, and later plain builds keep
+what it added: the injected `PlugIns/FlintTests.xctest` (skipped and reported; test
+bundles never ship) and a dynamic re-link of the local package product,
+`Frameworks/FlintCore_-<hash>_PackageProduct.framework`. Only a
+`Frameworks/<product>_-<hash>_PackageProduct.framework` whose `<product>` is a
+`.library` of a local package declared in `project.yml` is accepted, and it is
+reported; it is Flint's own code. Any other nested `.app`, `.appex` or `.xctest`
+bundle fails as unreviewed.
 
 ## Adding a reviewed component
 

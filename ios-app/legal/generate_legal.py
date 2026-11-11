@@ -32,7 +32,10 @@ SKIPPED_DIRECTORIES = frozenset({"DerivedData", "build", ".build"})
 # Xcode's Debug bundles carry SwiftUI/Previews artifacts at the bundle root; they are
 # first-party toolchain output, not third-party code.
 ALLOWED_DEBUG_DYLIBS = frozenset({"__preview.dylib"})
-NESTED_BUNDLE_SUFFIXES = (".appex", ".app")
+NESTED_BUNDLE_SUFFIXES = (".appex", ".app", ".xctest")
+# Xcode's dynamic re-link of a local Swift package product, e.g.
+# FlintCore_-2E84F2DDD2CBE471_PackageProduct.framework.
+PACKAGE_PRODUCT_FRAMEWORK = re.compile(r"([A-Za-z0-9_]+)_-[0-9A-F]+_PackageProduct\.framework")
 REMOTE_PACKAGE_KEYS = frozenset({
     "url", "github", "from", "branch", "revision", "exactVersion", "version", "minorVersion",
     "majorVersion", "checksum", "registry",
@@ -330,6 +333,17 @@ def _project_packages(text, source):
     return sorted((name, keys["path"]) for name, keys in declared.items())
 
 
+def local_package_products(repo):
+    """Library products of the local first-party packages project.yml declares."""
+    spec = read_utf8(repo / PROJECT_SPEC, PROJECT_SPEC.as_posix())
+    products = set()
+    for _, path in _project_packages(spec, PROJECT_SPEC.as_posix()):
+        manifest = repo / "ios-app" / path / "Package.swift"
+        text = read_utf8(manifest, f"ios-app/{path}/Package.swift")
+        products.update(re.findall(r'\.library\(\s*name:\s*"([A-Za-z0-9_]+)"', text))
+    return products
+
+
 def validate_components(repo, registry):
     declared_fonts = set()
     for component in registry["components"]:
@@ -464,10 +478,13 @@ def verify_bundle(repo, registry, app):
         raise LegalError(f"{app.name}/{POLICY_NAME}: differs from {POLICY_SOURCE.as_posix()}")
 
     bundles = [app]
+    test_bundles = []
     plugins = app / "PlugIns"
     if plugins.is_dir():
         bundles.extend(sorted((p for p in plugins.iterdir() if p.is_dir() and p.suffix == ".appex"),
                               key=lambda p: p.name))
+        # A hosted unit-test run injects its .xctest into the DerivedData app; it never ships.
+        test_bundles = sorted(p.name for p in plugins.iterdir() if p.is_dir() and p.suffix == ".xctest")
     labels = [bundle.name for bundle in bundles]
     for component in registry["components"]:
         for bundle in component.get("bundles") or []:
@@ -479,9 +496,10 @@ def verify_bundle(repo, registry, app):
         for entry in component["files"]:
             declared.setdefault(Path(entry["path"]).name, set()).add(entry["sha256"])
 
+    products = local_package_products(repo)
     report = []
     for bundle in bundles:
-        debug_dylibs = _reject_embedded_code(bundle)
+        debug_dylibs, package_frameworks = _reject_embedded_code(bundle, products)
         fonts = [path for path in _owned_files(bundle) if path.suffix.lower() in FONT_SUFFIXES]
         for path in fonts:
             hashes = declared.get(path.name)
@@ -490,7 +508,7 @@ def verify_bundle(repo, registry, app):
                 raise LegalError(
                     f"{bundle.name}/{path.relative_to(bundle).as_posix()}: undeclared third-party font; "
                     f"review its license and update {INVENTORY.as_posix()}")
-        report.append((bundle, fonts, debug_dylibs))
+        report.append((bundle, fonts, debug_dylibs, package_frameworks))
 
     for component in registry["components"]:
         if not component["files"]:
@@ -511,52 +529,74 @@ def verify_bundle(repo, registry, app):
 
     print(f"Verified {app.name}: {POLICY_NAME}, {NOTICES_NAME}, {len(bundles)} bundle(s), "
           "no embedded third-party code")
-    for bundle, fonts, debug_dylibs in report:
+    for bundle, fonts, debug_dylibs, package_frameworks in report:
         names = ", ".join(sorted(path.name for path in fonts)) or "no fonts"
         detail = ""
         if debug_dylibs:
             detail = f"; Xcode Debug dylib(s): {', '.join(debug_dylibs)}"
+        if package_frameworks:
+            detail += f"; first-party package framework(s): {', '.join(package_frameworks)}"
         print(f"  {bundle.name}: {len(fonts)} font file(s): {names}{detail}")
+    if test_bundles:
+        print(f"  Skipped Xcode test bundle(s), never shipped: {', '.join(test_bundles)}")
     return 0
 
 
-def _owned_paths(bundle):
-    """Every path this bundle owns, excluding nested bundles verified on their own."""
+def _owned_paths(bundle, root=None):
+    """Every path this bundle owns. PlugIns/*.appex are verified on their own and
+    PlugIns/*.xctest are never shipped; any other nested bundle is unreviewed."""
+    root = bundle if root is None else root
     for entry in sorted(bundle.iterdir()):
         if entry.is_dir() and entry.name.endswith(NESTED_BUNDLE_SUFFIXES):
-            continue
+            # Only the host app's PlugIns are enumerated and verified separately.
+            if (root.suffix == ".app" and entry.parent == root / "PlugIns"
+                    and entry.suffix in (".appex", ".xctest")):
+                continue
+            raise LegalError(f"{root.name}/{entry.relative_to(root).as_posix()}: unreviewed nested bundle")
         yield entry
         if entry.is_dir():
-            yield from _owned_paths(entry)
+            yield from _owned_paths(entry, root)
 
 
 def _owned_files(bundle):
     return [path for path in _owned_paths(bundle) if path.is_file()]
 
 
-def _reject_embedded_code(bundle):
-    """Fail on third-party code; return the Xcode Debug dylibs that are allowed."""
+def _reject_embedded_code(bundle, package_products=frozenset()):
+    """Fail on third-party code; return the allowed Xcode Debug dylibs and first-party
+    package frameworks."""
     label = bundle.name
     executable = _executable_name(bundle)
     allowed = ALLOWED_DEBUG_DYLIBS | {f"{executable}.debug.dylib"}
-    non_empty_frameworks = []
     allowed_present = set()
+    package_frameworks = set()
     for path in _owned_paths(bundle):
         inside = path.relative_to(bundle).as_posix()
         if path.suffix in (".framework", ".xcframework"):
-            raise LegalError(f"{label}/{inside}: embedded {path.suffix.lstrip('.')}; third-party code is not reviewed")
+            # When a test target also links a local package, Xcode re-links its product
+            # dynamically into the same DerivedData app, and later plain builds keep it.
+            # That is Flint's own code; any other framework is refused. Its contents are
+            # still scanned (fonts, dylibs) like the rest of the bundle.
+            match = PACKAGE_PRODUCT_FRAMEWORK.fullmatch(path.name)
+            if (match and match.group(1) in package_products and path.is_dir()
+                    and path.parent == bundle / "Frameworks"):
+                package_frameworks.add(path.name)
+                continue
+            raise LegalError(f"{label}/{inside}: embedded {path.suffix.lstrip('.')}; "
+                             "third-party code is not reviewed")
         if path.suffix == ".dylib":
             if path.parent == bundle and path.name in allowed:
                 allowed_present.add(path.name)
             else:
                 raise LegalError(f"{label}/{inside}: embedded dynamic library; third-party code is not reviewed")
-        if path.is_dir() and path.name == "Frameworks" and any(path.iterdir()):
-            non_empty_frameworks.append(inside)
-    if non_empty_frameworks:
-        raise LegalError(
-            f"{label}/{non_empty_frameworks[0]}: non-empty Frameworks/ directory; "
-            "third-party code is not reviewed")
-    return sorted(allowed_present)
+    for frameworks in (p for p in _owned_paths(bundle) if p.is_dir() and p.name == "Frameworks"):
+        unexpected = sorted(child.name for child in frameworks.iterdir()
+                            if not (frameworks.parent == bundle and child.name in package_frameworks))
+        if unexpected:
+            raise LegalError(
+                f"{label}/{frameworks.relative_to(bundle).as_posix()}: non-empty Frameworks/ directory "
+                f"({', '.join(unexpected)}); third-party code is not reviewed")
+    return sorted(allowed_present), sorted(package_frameworks)
 
 
 def _executable_name(bundle):

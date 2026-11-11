@@ -29,6 +29,9 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+LIBRARY_PACKAGE = ('let package = Package(name: "FlintCore", products: ['
+                   '.library(name: "FlintCore", targets: ["FlintCore"])])\n')
+
 class FixtureRepo:
     """A temporary checkout shaped like the real one, with matching hashes."""
 
@@ -453,6 +456,55 @@ class LegalTestCase(unittest.TestCase):
                 try:
                     self.repo.write_bytes(f"Flint.app/{relative.removeprefix('Flint.app/')}", b"binary")
                     self.assert_bundle_error(app, fragment)
+                finally:
+                    shutil.rmtree(app)
+
+    def test_verify_bundle_allows_first_party_package_product_frameworks(self):
+        self.repo.package_swift(LIBRARY_PACKAGE)
+        app = self.ready_bundle()
+        self.repo.write_bytes("Flint.app/Frameworks/FlintCore_-2E84F2DDD2CBE471_PackageProduct.framework/"
+                              "FlintCore_-2E84F2DDD2CBE471_PackageProduct", b"binary")
+        code, stdout, stderr = self.verify(app)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("first-party package framework(s): FlintCore_-2E84F2DDD2CBE471_PackageProduct.framework",
+                      stdout)
+
+    def test_verify_bundle_rejects_other_package_product_frameworks(self):
+        cases = [("Flint.app/Frameworks/Vendor_-2E84F2DDD2CBE471_PackageProduct.framework/Vendor", "embedded framework"),
+                 ("Flint.app/FlintCore_-2E84F2DDD2CBE471_PackageProduct.framework/Info.plist", "embedded framework"),
+                 ("Flint.app/Frameworks/FlintCore_-2E84F2DDD2CBE471_PackageProduct.framework/libvendor.dylib",
+                  "embedded dynamic library"),
+                 ("Flint.app/Frameworks/Stray", "non-empty Frameworks/ directory (Stray)")]
+        self.repo.package_swift(LIBRARY_PACKAGE)
+        for relative, fragment in cases:
+            with self.subTest(relative=relative):
+                app = self.ready_bundle()
+                try:
+                    if relative.endswith("libvendor.dylib"):
+                        self.repo.write_bytes("Flint.app/Frameworks/FlintCore_-2E84F2DDD2CBE471_PackageProduct."
+                                              "framework/FlintCore_-2E84F2DDD2CBE471_PackageProduct", b"binary")
+                    self.repo.write_bytes(relative, b"binary")
+                    self.assert_bundle_error(app, fragment)
+                finally:
+                    shutil.rmtree(app)
+
+    def test_verify_bundle_skips_injected_test_bundles(self):
+        app = self.ready_bundle()
+        self.repo.write_bytes("Flint.app/PlugIns/FlintTests.xctest/Frameworks/Vendor.framework/Vendor", b"binary")
+        code, stdout, stderr = self.verify(app)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Skipped Xcode test bundle(s), never shipped: FlintTests.xctest", stdout)
+
+    def test_verify_bundle_rejects_nested_bundles_outside_plugins(self):
+        for relative in ("Flint.app/Watch/Companion.app/Info.plist",
+                         "Flint.app/Extensions/Other.appex/Info.plist",
+                         "Flint.app/Tests/FlintTests.xctest/Info.plist",
+                         "Flint.app/PlugIns/ExampleReport.appex/PlugIns/Inner.appex/Info.plist"):
+            with self.subTest(relative=relative):
+                app = self.ready_bundle()
+                try:
+                    self.repo.write_bytes(relative, b"plist")
+                    self.assert_bundle_error(app, "unreviewed nested bundle")
                 finally:
                     shutil.rmtree(app)
 
