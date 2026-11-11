@@ -88,6 +88,19 @@ data class GlanceOngoingSession(val occurrenceId: String, val logicalEndElapsedM
 object GlanceDisplayMapper {
     const val MAX_AGE_MS = 60_000L
 
+    /**
+     * The one freshness rule for every glance surface (widget, notification, Quick Settings
+     * tile): a same-boot authority check younger than [MAX_AGE_MS] that is still valid.
+     */
+    fun isFresh(reading: ProtectionReading, nowElapsedMs: Long): Boolean {
+        val checked = reading.checkedElapsedMs
+        val validUntil = reading.validUntilElapsedMs
+        return reading.sameBootVerified && !reading.timeUncertain &&
+            checked != null && checked >= 0 && checked <= nowElapsedMs &&
+            nowElapsedMs - checked < MAX_AGE_MS && validUntil != null &&
+            validUntil > nowElapsedMs && validUntil >= checked
+    }
+
     fun map(
         reading: ProtectionReading,
         focus: FocusTodayReading,
@@ -101,10 +114,7 @@ object GlanceDisplayMapper {
         fun atElapsed(elapsedMs: Long) = at(nowEpochMs + (elapsedMs - nowElapsedMs))
         val checked = reading.checkedElapsedMs
         val validUntil = reading.validUntilElapsedMs
-        val fresh = reading.sameBootVerified && !reading.timeUncertain &&
-            checked != null && checked >= 0 && checked <= nowElapsedMs &&
-            nowElapsedMs - checked < MAX_AGE_MS && validUntil != null &&
-            validUntil > nowElapsedMs && validUntil >= checked
+        val fresh = isFresh(reading, nowElapsedMs)
         val stamp = if (reading.sameBootVerified && !reading.timeUncertain && checked != null && checked in 0..nowElapsedMs)
             "Checked ${reading.checkedEpochMs?.let(::at) ?: atElapsed(checked)} · Open Flint for current state"
             else "Open Flint to check protection"
