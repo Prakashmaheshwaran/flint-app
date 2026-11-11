@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.ManagedActivityResultLauncher
@@ -155,6 +156,7 @@ import com.flint.peakfocus.permissions.AccessibilityPermission
 import com.flint.peakfocus.permissions.BatteryOptimization
 import com.flint.peakfocus.permissions.OverlayPermission
 import com.flint.peakfocus.permissions.UsageAccess
+import com.flint.peakfocus.quickstart.QuickStartInbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -244,6 +246,22 @@ private fun FlintApp() {
 
     var tab by rememberSaveable { mutableStateOf(FlintTabGlyph.Today) }
     val stateHolder = rememberSaveableStateHolder()
+
+    // 3.2 tile/shortcut request: consumed only once Flint's own content is showing (after
+    // Welcome/consent and any app-open gate), then handed to Today's Start focus sheet.
+    val quickStartPending by QuickStartInbox.pending.collectAsState()
+    val quickStart = quickStartPending?.takeIf {
+        welcomed && !showConsent && QuickStartInbox.isFresh(it, SystemClock.elapsedRealtime())
+    }?.request
+    LaunchedEffect(quickStartPending, quickStart) {
+        val pending = quickStartPending ?: return@LaunchedEffect
+        if (quickStart == null) {
+            if (!QuickStartInbox.isFresh(pending, SystemClock.elapsedRealtime())) QuickStartInbox.consume(pending.request.id)
+            return@LaunchedEffect
+        }
+        detail = null
+        tab = FlintTabGlyph.Today
+    }
     // Back pops a pushed screen, then walks to Today before leaving the app. Feature-level
     // handlers (rule editors, pickers) compose later, so they win whenever they are enabled.
     BackHandler(enabled = !showConsent && welcomed && (detail != null || tab != FlintTabGlyph.Today)) {
@@ -331,6 +349,8 @@ private fun FlintApp() {
                                     setupLabel = plan.nextStep?.ctaLabel,
                                     onSetup = { plan.nextStep?.let(onSetupStep) },
                                     onOpenRules = { tab = FlintTabGlyph.Rules },
+                                    quickStart = quickStart,
+                                    onQuickStartHandled = { QuickStartInbox.consume(it.id) },
                                 )
                                 FlintTabGlyph.Rules -> BlocklistScreen(
                                     quickBlockSummary = if (blockedCount == 0) "Apps blocked whenever Flint is on"

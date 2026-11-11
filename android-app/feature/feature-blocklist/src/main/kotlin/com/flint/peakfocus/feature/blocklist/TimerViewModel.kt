@@ -20,6 +20,8 @@ import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.core.model.StorageState
 import com.flint.peakfocus.blocking.engine.HarderWaitPolicy
 import com.flint.peakfocus.blocking.engine.trustedElapsedMs
+import com.flint.peakfocus.core.datastore.readyValues
+import com.flint.peakfocus.core.model.AppGroup
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
@@ -59,6 +61,8 @@ internal class TimerViewModel(
     private val livePathA: () -> Boolean = { false },
     private val requestEvaluation: () -> Unit = {},
     private val diagnostic: (String) -> Unit = {},
+    /** Reads one of the user's own saved App Groups for a quick-start pre-fill; never enforcement. */
+    private val loadGroup: suspend (String) -> AppGroup? = { null },
 ) : ViewModel() {
     private val state = MutableStateFlow(TimerUiState(nowEpochMs = now()))
     val uiState: StateFlow<TimerUiState> = state.asStateFlow()
@@ -78,6 +82,7 @@ internal class TimerViewModel(
     private var checkingHealth = true
     private var lastDiagnostic: String? = null
     private var recoveryRefusedAt: AccessClockStamp? = null
+    private var quickStartJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -249,16 +254,69 @@ internal class TimerViewModel(
         if (!state.value.canEdit) return
         val visible = (state.value.appsState as? InstalledAppsUiState.Ready)
             ?.apps?.map { it.packageName }?.toSet() ?: return
+        quickStartJob?.cancel() // The user's own pick always wins over a pending pre-fill.
         state.update { current ->
             val preserved = current.draft.apps.filter { it.packageName !in visible }
             val chosen = picked.filter { it.packageName in visible }
                 .map { AppRef(it.packageName, it.label) }
-            current.copy(draft = current.draft.copy(apps = (preserved + chosen).toSet()), error = null, startErrorIsPrerequisite = false)
+            current.copy(draft = current.draft.copy(apps = (preserved + chosen).toSet()), error = null,
+                startErrorIsPrerequisite = false, draftNote = null)
         }
     }
 
     fun clearApps() {
-        if (state.value.canEdit) state.update { it.copy(draft = it.draft.copy(apps = emptySet())) }
+        if (!state.value.canEdit) return
+        quickStartJob?.cancel()
+        state.update { it.copy(draft = it.draft.copy(apps = emptySet()), draftNote = null) }
+    }
+
+    /**
+     * Quick Settings tile / launcher shortcut entry (3.2). Pre-fills the draft's apps from one
+     * of the user's own saved App Groups and nothing else: no save, no start, no duration or
+     * break-level change, and nothing at all while a Timer is running. Begin stays the user's
+     * explicit confirmation and runs the same preflight and editor transaction as a manual
+     * start, so every refusal shows the existing copy.
+     */
+    fun prepareQuickStart(request: FocusQuickStart) {
+        val groupId = request.groupId ?: return
+        quickStartJob?.cancel()
+        quickStartJob = viewModelScope.launch {
+            val group = try { loadGroup(groupId) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            // Same source as the picker: only apps installed and launchable now can rest.
+            val ready = state.first {
+                (it.rulesLoaded || it.rulesError != null) && it.appsState !is InstalledAppsUiState.Loading
+            }
+            if (!ready.canEdit) return@launch
+            if (group == null) {
+                state.update { it.copy(draftNote = "That group is no longer saved. Choose what rests.") }
+                return@launch
+            }
+            val name = quickStartGroupName(group.name)
+            val installed = (ready.appsState as? InstalledAppsUiState.Ready)?.apps?.associateBy { it.packageName }
+            if (installed == null) {
+                state.update { it.copy(draftNote = "Couldn't load the apps in “$name”. Choose what rests.") }
+                return@launch
+            }
+            val chosen = group.apps.mapNotNull { installed[it.packageName] }
+                .distinctBy { it.packageName }.map { AppRef(it.packageName, it.label) }.toSet()
+            val missing = group.apps.map { it.packageName }.toSet().size - chosen.size
+            state.update { current ->
+                if (!current.canEdit) return@update current
+                if (chosen.isEmpty()) {
+                    current.copy(draftNote = "None of the apps in “$name” are installed. Choose what rests.")
+                } else {
+                    current.copy(
+                        draft = current.draft.copy(apps = chosen),
+                        error = null,
+                        startErrorIsPrerequisite = false,
+                        draftNote = "From your “$name” group" +
+                            (if (missing > 0) " · $missing not installed" else "") + ". Review, then Begin.",
+                    )
+                }
+            }
+        }
     }
 
     fun selectDuration(minutes: Int) {
@@ -516,6 +574,10 @@ internal class TimerViewModel(
                     diagnostic = { message ->
                         if (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
                             Log.d("FlintTimer", message)
+                    },
+                    loadGroup = { id ->
+                        FlintPreferences.groups(appContext).groupsState.readyValues(throwOnUnavailable = true)
+                            .first().firstOrNull { it.id == id }
                     },
                 ) as T
             }
