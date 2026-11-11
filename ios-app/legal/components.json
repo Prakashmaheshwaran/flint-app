@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "intro": [
-    "Flint for iOS includes no third-party libraries or Swift packages. The app and its extensions are built from Flint's own source code and Apple's system frameworks, which iOS provides.",
+    "Flint for iOS includes no third-party libraries, frameworks or Swift packages. The app and its extensions are built from Flint's own source code and use Apple's system frameworks, which iOS provides.",
     "The app and its Insights report extension bundle two third-party font families. Their licenses and Flint's own license follow."
   ],
   "components": [
