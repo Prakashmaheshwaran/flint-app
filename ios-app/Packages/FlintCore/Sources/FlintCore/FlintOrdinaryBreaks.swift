@@ -62,6 +62,10 @@ public enum FlintOrdinaryBreaks {
     static func requestForCurrentSession() -> FlintBreakOutcome {
         FlintSessionController().withTransition {
             guard let group = FlintGroupStore(), let session = group.loadActiveSession(),
+                  // An Allow List session freezes the apps it keeps *available*; it has no finite
+                  // set of frozen blocked targets a break could name, so ordinary breaks stay
+                  // unavailable rather than guess a broader scope.
+                  !session.isAllowList,
                   let selection = group.loadSessionSelection(sessionID: session.id),
                   let scope = try? scope(selection), let service = service() else { return .refused(.unavailable) }
             return service.request(scope: scope)
@@ -98,6 +102,8 @@ public enum FlintOrdinaryBreaks {
     public static func previewForCurrentSession() -> FlintOrdinaryBreakPreview {
         guard case let .success(state)? = FlintProtectionLedger.appGroup()?.peek(),
               let group = FlintGroupStore(), let session = group.loadActiveSession(),
+              // Same floor as `requestForCurrentSession`: no nameable break scope for an Allow List.
+              !session.isAllowList,
               let selection = group.loadSessionSelection(sessionID: session.id), let scope = try? scope(selection),
               let context = context(state, at: .init(clock: .system)),
               context.canRelease(scope) else { return .unavailable }
@@ -191,6 +197,17 @@ public enum FlintOrdinaryBreaks {
         return result
     }
 
+    /// The running session as a break contributor. An Allow List session contributes the apps it
+    /// keeps *available* — exactly what a schedule allow list contributes — so only what that
+    /// allow list actually blocks can be released, and its category/website coverage stays
+    /// unresolved (never released).
+    static func sessionSelection(_ session: FlintActiveSession, frozen: FlintBreakScope)
+        -> FlintBreakContributor.Selection {
+        session.isAllowList
+            ? .allowList(allowedApplications: frozen.targets.filter { $0.kind == .application })
+            : .blockList(frozen)
+    }
+
     private static func service() -> FlintOrdinaryBreakService? {
         guard let ledger = FlintProtectionLedger.appGroup() else { return nil }
         let env = FlintRuleReloadEnvironment.live
@@ -264,7 +281,7 @@ public enum FlintOrdinaryBreaks {
             let remaining = session.logicalRemaining(clock: clock)
             let end = remaining.map { FlintLedgerInstant(wall: now.wall.addingTimeInterval($0), monotonic: now.monotonic + $0, bootID: now.bootID) }
             owners.append(.init(.init(cause: .init(causeID: session.id, kind: .session, tier: session.breakLevel,
-                isActive: true, end: session.stableLogicalEnd(clock: clock)), selection: .blockList(frozen),
+                isActive: true, end: session.stableLogicalEnd(clock: clock)), selection: sessionSelection(session, frozen: frozen),
                 logicalEnd: end, timeKnown: remaining != nil || session.endsAt == nil,
                 harder: state.harder[session.id] ?? .init()), storeName: "flint"))
         }

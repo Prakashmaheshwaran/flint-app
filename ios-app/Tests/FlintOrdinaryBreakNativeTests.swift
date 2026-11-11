@@ -99,6 +99,48 @@ final class FlintOrdinaryBreakNativeTests: XCTestCase {
             context: filtered, at: now, registered: { _ in true }).webDomainTokens, [site])
     }
 
+    /// An Allow List session's break contributor mirrors a schedule allow list exactly: it names
+    /// the apps kept available, so only what that allow list blocks can be released.
+    func testAnAllowListSessionContributesItsKeptAppsLikeAScheduleAllowList() throws {
+        let a: ApplicationToken = try fictionalRuleToken("A")
+        let b: ApplicationToken = try fictionalRuleToken("B")
+        let category: ActivityCategoryToken = try fictionalRuleToken("C")
+        var frozen = FamilyActivitySelection()
+        frozen.applicationTokens = [a]
+        frozen.categoryTokens = [category]
+        let frozenScope = try FlintOrdinaryBreaks.scope(frozen)
+        let session = FlintActiveSession(name: "Focus", startedAt: now.wall,
+            endsAt: now.wall.addingTimeInterval(600), breakLevel: .easy,
+            monitorName: "flint.session.allow", allowListMode: true)
+
+        let contribution = FlintOrdinaryBreaks.sessionSelection(session, frozen: frozenScope)
+        guard case let .allowList(allowed) = contribution else {
+            return XCTFail("expected an allow-list contributor")
+        }
+        XCTAssertEqual(allowed.count, 1)
+        XCTAssertTrue(allowed.allSatisfy { $0.kind == .application }, "a category is never an exception")
+        XCTAssertTrue(allowed.isSubset(of: frozenScope.targets))
+
+        let cause = FlintCauseState(causeID: "session", kind: .session, tier: .easy, isActive: true)
+        let contributor = FlintBreakContributor(cause: cause, selection: contribution,
+            logicalEnd: .init(wall: now.wall.addingTimeInterval(600), monotonic: now.monotonic + 600, bootID: now.bootID),
+            timeKnown: true, harder: .init())
+        var kept = FamilyActivitySelection(); kept.applicationTokens = [a]
+        var blocked = FamilyActivitySelection(); blocked.applicationTokens = [b]
+        let keptRequest = try FlintOrdinaryBreaks.scope(kept)
+        let blockedRequest = try FlintOrdinaryBreaks.scope(blocked)
+        XCTAssertTrue(FlintBreakScopeResolution.resolve(request: keptRequest, contributors: [contributor])
+            .releasable.targets.isEmpty, "the app the allow list keeps is not released")
+        XCTAssertEqual(FlintBreakScopeResolution.resolve(request: blockedRequest, contributors: [contributor])
+            .releasable.targets, blockedRequest.targets, "an app the allow list blocks is releasable")
+
+        // A block-list session still contributes exactly its frozen block list.
+        let blockList = FlintActiveSession(name: "Focus", startedAt: now.wall,
+            endsAt: now.wall.addingTimeInterval(600), breakLevel: .easy, monitorName: "flint.session.block")
+        XCTAssertEqual(FlintOrdinaryBreaks.sessionSelection(blockList, frozen: frozenScope),
+                       .blockList(frozenScope))
+    }
+
     @MainActor
     func testSameSessionRefreshReloadsBreakStateAndShowsRestartNotice() throws {
         let a: ApplicationToken = try fictionalRuleToken("A")

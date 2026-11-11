@@ -245,7 +245,8 @@ struct TodayView: View {
                 if active.endsAt != nil {
                     progressBar(vm.progress)
                 }
-                restingRow
+                restingRow(targets: active.isAllowList ? availableTargets : (restingTargets ?? []),
+                           resting: !active.isAllowList)
             }
             .accessibilityElement(children: .contain)
         } else if let current = FlintTodaySchedule.current(in: rules, at: now) {
@@ -294,14 +295,15 @@ struct TodayView: View {
         }
     }
 
-    private var restingRow: some View {
-        restingRow(targets: restingTargets ?? [])
+    /// The apps an Allow List session keeps available (shown without the resting treatment).
+    private var availableTargets: [PickedTarget] {
+        vm.activeSelection?.flintPickedTargets ?? []
     }
 
-    private func restingRow(targets: [PickedTarget]) -> some View {
+    private func restingRow(targets: [PickedTarget], resting: Bool = true) -> some View {
         HStack(spacing: 8) {
             if !targets.isEmpty {
-                FlintAppIconStack(targets: targets, size: 36, limit: 5, resting: true)
+                FlintAppIconStack(targets: targets, size: 36, limit: 5, resting: resting)
                 if targets.count > 5 {
                     Text("+\(targets.count - 5)")
                         .font(FlintFont.text(12, weight: .semibold))
@@ -477,7 +479,9 @@ struct TodayView: View {
     }
 
     private var restingTargets: [PickedTarget]? {
-        if vm.active != nil {
+        if let active = vm.active {
+            // An Allow List session names the apps it keeps available, so it has no resting set.
+            guard !active.isAllowList else { return nil }
             // The session's own frozen targets, not the picker's draft selection.
             let targets = vm.activeSelection?.flintPickedTargets ?? []
             return targets.isEmpty ? nil : targets
@@ -492,7 +496,9 @@ struct TodayView: View {
     private var statsSpoken: String {
         var parts: [String] = []
         if let focused = focusedToday { parts.append("\(FocusHistoryText.duration(focused)) focused today") }
-        if let resting = restingTargets, !resting.isEmpty {
+        if vm.active?.isAllowList == true {
+            parts.append("Allow list session, everything else blocked")
+        } else if let resting = restingTargets, !resting.isEmpty {
             parts.append("\(resting.count) \(resting.count == 1 ? "app" : "apps") resting")
         }
         return parts.isEmpty ? "No focus stats yet" : parts.joined(separator: ", ")
@@ -500,10 +506,12 @@ struct TodayView: View {
 
     private func sessionLine(_ active: FlintActiveSession) -> String {
         var parts = [levelName(active.breakLevel)]
+        if active.isAllowList { parts.append("Allow List") }
         if let endsAt = active.endsAt {
             parts.append("until \(endsAt.formatted(date: .omitted, time: .shortened))")
         }
-        if vm.selectionCount > 0 {
+        // An Allow List session's picker/default count is not what it blocks.
+        if !active.isAllowList, vm.selectionCount > 0 {
             parts.append("\(vm.selectionCount) \(vm.selectionCount == 1 ? "app" : "apps") resting")
         }
         return parts.joined(separator: " · ")

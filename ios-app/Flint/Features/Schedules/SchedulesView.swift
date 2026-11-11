@@ -76,7 +76,7 @@ struct RulesView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     header
 
-                    if !restingTargets.isEmpty { restingSection.padding(.top, 24) }
+                    if !restingTargets.isEmpty || activeSession != nil { restingSection.padding(.top, 24) }
                     if !vm.armFailures.isEmpty { armFailures.padding(.top, 22) }
                     schedulesSection.padding(.top, 28)
                     limitsSection.padding(.top, 28)
@@ -118,9 +118,9 @@ struct RulesView: View {
         openLimitCount = FlintOpenLimitsController().rules().count
         groups = FlintGroupStore()?.loadAppGroups() ?? []
         activeSession = FlintSessionController().activeSession
-        restingSelection = activeSession.flatMap {
-            FlintGroupStore()?.loadSessionSelection(sessionID: $0.id)
-        }
+        // An Allow List session freezes the apps it keeps available, not blocked targets.
+        restingSelection = activeSession?.isAllowList == true
+            ? nil : activeSession.flatMap { FlintGroupStore()?.loadSessionSelection(sessionID: $0.id) }
     }
 
     private var header: some View {
@@ -151,7 +151,7 @@ struct RulesView: View {
     private var restingLine: String? {
         if let session = activeSession {
             let left = session.endsAt.map { " · \(leftText(until: $0)) left" } ?? ""
-            return "\(session.name)\(left)"
+            return session.isAllowList ? "\(session.name) · allow list\(left)" : "\(session.name)\(left)"
         }
         if let current = FlintTodaySchedule.current(in: vm.rules, at: now) {
             let left = current.endsAtToday(now: now).map { " · \(leftText(until: $0)) left" } ?? ""
@@ -165,7 +165,7 @@ struct RulesView: View {
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: 5) {
                     Text("Resting now").flintSection()
-                    Text("· \(restingTargets.count) \(restingTargets.count == 1 ? "item" : "items")")
+                    Text("· \(restingCountText)")
                         .font(FlintFont.text(16, weight: .medium))
                         .foregroundStyle(FlintBrand.mist)
                 }
@@ -190,8 +190,17 @@ struct RulesView: View {
                 .padding(.vertical, 2)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(restingTargets.count) items resting")
+            .accessibilityLabel(activeSession?.isAllowList == true
+                                ? "Allow list session, everything else blocked" : "\(restingTargets.count) items resting")
         }
+    }
+
+    /// An Allow List session names the apps it keeps available, so it has no finite resting set
+    /// to count — say what it does instead of showing its exceptions as blocked.
+    private var restingCountText: String {
+        activeSession?.isAllowList == true
+            ? "everything else blocked"
+            : "\(restingTargets.count) \(restingTargets.count == 1 ? "item" : "items")"
     }
 
     private func leftText(until date: Date) -> String {

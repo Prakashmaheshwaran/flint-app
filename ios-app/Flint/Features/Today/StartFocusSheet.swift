@@ -38,8 +38,19 @@ struct StartFocusSheet: View {
                     VStack(alignment: .leading, spacing: 0) {
                         durationPicker.padding(.top, 24)
                         presets.padding(.top, 18)
-                        blockRow.padding(.top, 22)
-                        if !vm.savedGroups.isEmpty || vm.selectionCount > 0 { groupChips.padding(.top, 12) }
+                        modeControl.padding(.top, 22)
+                        blockRow.padding(.top, 10)
+                        if !vm.allowListMode, !vm.savedGroups.isEmpty || vm.selectionCount > 0 {
+                            groupChips.padding(.top, 12)
+                        }
+                        if vm.allowListMode {
+                            Text("Only individually picked apps stay open. Everything else Screen Time can block is blocked; website and category picks are ignored.")
+                                .flintSecondary(12)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .lineSpacing(3)
+                                .padding(.horizontal, 4)
+                                .padding(.top, 10)
+                        }
                         Text("Break level").flintSection().padding(.top, 26).padding(.horizontal, 4)
                         breakLevels.padding(.top, 10)
                         Text(note(for: vm.breakLevel))
@@ -58,8 +69,9 @@ struct StartFocusSheet: View {
             .padding(.bottom, 16)
         }
         .presentationDragIndicator(.hidden)
-        .familyActivityPicker(isPresented: $showPicker, selection: $vm.selection)
+        .familyActivityPicker(isPresented: $showPicker, selection: pickerSelection)
         .onChange(of: vm.selection) { _ in vm.persistSelection() }
+        .onChange(of: vm.allowListMode) { _ in vm.errorText = nil }
         .confirmationDialog(vm.breakLevel == .hardcore ? "Start a Hardcore block?" : "Replace the running session?",
                             isPresented: $vm.confirmingHardcore,
                             titleVisibility: .visible) {
@@ -96,7 +108,7 @@ struct StartFocusSheet: View {
                     .padding(.vertical, 12)
             }
             .buttonStyle(EmberButtonStyle())
-            .disabled(vm.selectionCount == 0)
+            .disabled(vm.startSelectionCount == 0)
             if let error = vm.errorText {
                 Text(error)
                     .font(FlintFont.text(13))
@@ -107,8 +119,10 @@ struct StartFocusSheet: View {
                 if vm.needsProtectionResume {
                     Button("Resume protection now", action: vm.resumeProtectionNow).buttonStyle(QuietButtonStyle())
                 }
-            } else if vm.selectionCount == 0 {
-                Text("Choose what rests first.")
+            } else if vm.startSelectionCount == 0 {
+                Text(vm.allowListMode
+                     ? (vm.startSelectionIssue?.message(for: .allowList) ?? FlintSelectionIssue.emptyAllowList.message)
+                     : "Choose what rests first.")
                     .flintSecondary()
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
@@ -207,7 +221,23 @@ struct StartFocusSheet: View {
         minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes)m"
     }
 
-    // MARK: Apps (M04/M05)
+    // MARK: Mode and apps (M04/M05)
+
+    /// Block list (what rests) or Allow List (what stays open). Both are immediate sessions with
+    /// the same tier rights; only the shield's shape differs.
+    private var modeControl: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Mode").flintSection()
+            FlintSegmented(options: [(false, "Block list"), (true, "Allow list")], selection: $vm.allowListMode)
+                .accessibilityLabel("Session mode")
+        }
+        .padding(.horizontal, 4)
+    }
+
+    /// The picker edits Today's block-list selection, or the allow list's kept apps.
+    private var pickerSelection: Binding<FamilyActivitySelection> {
+        vm.allowListMode ? $vm.allowListSelection : $vm.selection
+    }
 
     private var blockRow: some View {
         Button { showPicker = true } label: {
@@ -224,15 +254,17 @@ struct StartFocusSheet: View {
                                     .foregroundStyle(FlintBrand.mist)
                             }
                         }
-                        Text("Tap to change apps or pick a group")
+                        Text(vm.allowListMode ? "Tap to choose the apps that stay open"
+                                              : "Tap to change apps or pick a group")
                             .flintSecondary(12)
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
                     FlintChevron()
                 }
-                if !vm.selection.flintPickedTargets.isEmpty {
-                    FlintAppIconStack(targets: vm.selection.flintPickedTargets, size: 36, limit: 6)
+                if !vm.startSelection.flintPickedTargets.isEmpty {
+                    FlintAppIconStack(targets: vm.startSelection.flintPickedTargets, size: 36, limit: 6,
+                                      resting: !vm.allowListMode)
                 }
             }
             .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
@@ -248,21 +280,23 @@ struct StartFocusSheet: View {
     }
 
     private var groupTitle: String {
-        vm.savedGroups.first { $0.selection == vm.selection }?.name ?? "What rests"
+        if vm.allowListMode { return "Apps to keep available" }
+        return vm.savedGroups.first { $0.selection == vm.selection }?.name ?? "What rests"
     }
 
     private var countSummary: String? {
-        let counts = SelectionCounts(apps: vm.selection.applicationTokens.count,
-                                     categories: vm.selection.categoryTokens.count,
-                                     sites: vm.selection.webDomainTokens.count)
+        let counts = SelectionCounts(apps: vm.startSelection.applicationTokens.count,
+                                     categories: vm.startSelection.categoryTokens.count,
+                                     sites: vm.startSelection.webDomainTokens.count)
         return counts.total == 0 ? nil : counts.summary
     }
 
     private var accessibilityAppsLabel: String {
-        let counts = SelectionCounts(apps: vm.selection.applicationTokens.count,
-                                     categories: vm.selection.categoryTokens.count,
-                                     sites: vm.selection.webDomainTokens.count)
-        return counts.total == 0 ? "What rests, choose apps" : "\(groupTitle), \(counts.spokenSummary)"
+        let counts = SelectionCounts(apps: vm.startSelection.applicationTokens.count,
+                                     categories: vm.startSelection.categoryTokens.count,
+                                     sites: vm.startSelection.webDomainTokens.count)
+        let kind = vm.allowListMode ? "Apps to keep available" : groupTitle
+        return counts.total == 0 ? "\(kind), choose apps" : "\(kind), \(counts.spokenSummary)"
     }
 
     private var groupChips: some View {

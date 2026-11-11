@@ -66,20 +66,37 @@ public final class FlintShieldStore {
             store.shield.applications = effective.applicationTokens.isEmpty ? nil : effective.applicationTokens
             store.shield.applicationCategories = effective.categoryTokens.isEmpty ? nil : .specific(effective.categoryTokens)
             store.shield.webDomains = effective.webDomainTokens.isEmpty ? nil : effective.webDomainTokens
+            // A block list never blocks all web domains; release an earlier allow list's blanket
+            // category so a mode change can't keep every website shielded.
+            store.shield.webDomainCategories = nil
         }) else { throw FlintShieldError.transitionBusy }
     }
 
     /// Allow-list ("brick phone"): shield ALL apps except the allowed applications.
     /// For `applicationCategories`, `.all(except:)` excludes specific `ApplicationToken`s
     /// (the apps to leave usable) — not category tokens.
-    public func applyAllowList(allowedApplications: Set<ApplicationToken> = []) {
-        _ = FlintSessionController().withTransition {
-            guard FlintPassRecoveryGate.read().permitsApplication else { return }
+    ///
+    /// Mirrors `applyBlockList`: a call that can't run throws instead of leaving the previous
+    /// shield in place, so a caller never believes it applied something it didn't.
+    public func applyAllowList(allowedApplications: Set<ApplicationToken>) throws {
+        guard FlintShieldLimits.withinCap(allowedApplications.count) else {
+            throw FlintShieldError.tooManyTokens(count: allowedApplications.count, cap: FlintShieldLimits.tokenCap)
+        }
+        guard let _ = try FlintSessionController().withTransition({
+            switch FlintPassRecoveryGate.read() {
+            case .enforcing: break
+            case .suspended: throw FlintShieldError.recoverySuspended
+            case .unavailable: throw FlintShieldError.protectionStateUnavailable
+            }
             var selection = FamilyActivitySelection(); selection.applicationTokens = allowedApplications
             let effective = FlintOrdinaryBreaks.filteredSelection(selection, storeName: name, allowList: true)
+            // A replaced block list's specific targets would otherwise keep shielding an app this
+            // allow list keeps available, so they are released before the blanket category lands.
+            store.shield.applications = nil
+            store.shield.webDomains = nil
             store.shield.applicationCategories = .all(except: effective.applicationTokens)
             store.shield.webDomainCategories = .all()
-        }
+        }) else { throw FlintShieldError.transitionBusy }
     }
 
     /// Positive native evidence that this store still restricts something: any shield or
