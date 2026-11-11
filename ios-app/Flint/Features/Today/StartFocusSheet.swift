@@ -38,6 +38,8 @@ struct StartFocusSheet: View {
                     VStack(alignment: .leading, spacing: 0) {
                         durationPicker.padding(.top, 24)
                         presets.padding(.top, 18)
+                        modeToggle.padding(.top, 18)
+                        if vm.isPomodoro { pomodoroSection.padding(.top, 14) }
                         blockRow.padding(.top, 22)
                         if !vm.savedGroups.isEmpty || vm.selectionCount > 0 { groupChips.padding(.top, 12) }
                         Text("Break level").flintSection().padding(.top, 26).padding(.horizontal, 4)
@@ -70,7 +72,13 @@ struct StartFocusSheet: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             if vm.breakLevel == .hardcore {
-                Text("You can't end it early. It ends after \(vm.durationMinutes) minutes, or with your Emergency Pass.")
+                if let plan = vm.pomodoroPlan {
+                    Text("This is one commitment: \(plan.rounds) rounds of \(plan.focusMinutes) minutes with planned \(plan.restMinutes)-minute rests — \(plan.totalMinutes) minutes. You can't end it early or skip a rest. It ends on its own, or with your Emergency Pass.")
+                } else {
+                    Text("You can't end it early. It ends after \(vm.committedMinutes) minutes, or with your Emergency Pass.")
+                }
+            } else if let plan = vm.pomodoroPlan {
+                Text("The session that's running now ends and this \(plan.totalMinutes)-minute Pomodoro chain takes its place. Its planned rests are part of the commitment.")
             } else {
                 Text("The session that's running now ends and this one takes its place.")
             }
@@ -89,7 +97,7 @@ struct StartFocusSheet: View {
                 vm.start()
                 if vm.active != nil { onClose() }
             } label: {
-                Text("Begin \(vm.durationMinutes) minutes")
+                Text(vm.isPomodoro ? "Begin Pomodoro · \(vm.committedMinutes) min" : "Begin \(vm.committedMinutes) minutes")
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 16)
@@ -202,6 +210,107 @@ struct StartFocusSheet: View {
 
     private let presetChoices: [(name: String, minutes: Int)] = [("Deep study", 90), ("Commute", 30),
                                                            ("Workout", 60), ("Reading", 30)]
+
+    // MARK: Pomodoro (F01)
+
+    private var modeToggle: some View {
+        HStack(spacing: 8) {
+            Button("Focus") { vm.isPomodoro = false }
+                .buttonStyle(ChipButtonStyle(selected: !vm.isPomodoro, height: 40, stretch: true))
+                .accessibilityLabel("Single focus session")
+                .accessibilityAddTraits(!vm.isPomodoro ? .isSelected : [])
+            Button("Pomodoro") { vm.isPomodoro = true }
+                .buttonStyle(ChipButtonStyle(selected: vm.isPomodoro, height: 40, stretch: true))
+                .accessibilityLabel("Pomodoro focus and rest chain")
+                .accessibilityAddTraits(vm.isPomodoro ? .isSelected : [])
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var pomodoroSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            pomodoroRow("Focus", value: vm.pomodoroFocusMinutes, unit: "min", range: 5...120, step: 5) {
+                vm.pomodoroFocusMinutes = $0
+            }
+            pomodoroRow("Rest", value: vm.pomodoroRestMinutes, unit: "min", range: 1...60, step: 1) {
+                vm.pomodoroRestMinutes = $0
+                if let long = vm.pomodoroLongRestMinutes, long < $0 { vm.pomodoroLongRestMinutes = $0 }
+            }
+            pomodoroRow("Rounds", value: vm.pomodoroRounds, unit: "", range: 2...8, step: 1) {
+                vm.pomodoroRounds = $0
+                if let every = vm.pomodoroLongRestEvery, every > $0 - 1 {
+                    vm.pomodoroLongRestEvery = max(2, $0 - 1)
+                }
+            }
+            longRestControls
+            Text(pomodoroSummary)
+                .flintSecondary(12)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Rests are planned and part of this commitment: they can't be skipped, shortened or extended. Your break level applies to the whole chain, and stopping ends the remaining rounds.")
+                .flintSecondary(12)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("pomodoro.disclosure")
+        }
+        .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(FlintBrand.card))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
+    }
+
+    private func pomodoroRow(_ title: String, value: Int, unit: String, range: ClosedRange<Int>,
+                             step: Int, set: @escaping (Int) -> Void) -> some View {
+        HStack(spacing: 12) {
+            Text(title).font(FlintFont.text(15, weight: .semibold)).foregroundStyle(FlintBrand.bone)
+            Spacer(minLength: 8)
+            Button { set(max(range.lowerBound, value - step)) } label: {
+                Image(systemName: "minus").font(.system(size: 13, weight: .semibold))
+            }
+            .buttonStyle(CircleIconButtonStyle(size: 36))
+            .accessibilityLabel("Less \(title.lowercased())")
+            Text(unit.isEmpty ? "\(value)" : "\(value) \(unit)")
+                .font(FlintFont.text(16, weight: .semibold))
+                .monospacedDigit()
+                .frame(minWidth: 64)
+                .foregroundStyle(FlintBrand.bone)
+            Button { set(min(range.upperBound, value + step)) } label: {
+                Image(systemName: "plus").font(.system(size: 13, weight: .semibold))
+            }
+            .buttonStyle(CircleIconButtonStyle(size: 36))
+            .accessibilityLabel("More \(title.lowercased())")
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var longRestControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: Binding(
+                get: { vm.pomodoroLongRestMinutes != nil },
+                set: { on in
+                    vm.pomodoroLongRestMinutes = on ? max(15, vm.pomodoroRestMinutes) : nil
+                    vm.pomodoroLongRestEvery = on ? 2 : nil
+                })) {
+                Text("Long rest").font(FlintFont.text(15, weight: .semibold)).foregroundStyle(FlintBrand.bone)
+            }
+            .tint(FlintBrand.ember)
+            if vm.pomodoroLongRestMinutes != nil {
+                pomodoroRow("Long rest", value: vm.pomodoroLongRestMinutes ?? 15, unit: "min",
+                            range: max(5, vm.pomodoroRestMinutes)...60, step: 5) {
+                    vm.pomodoroLongRestMinutes = $0
+                }
+                pomodoroRow("Every", value: vm.pomodoroLongRestEvery ?? 2, unit: "rounds",
+                            range: 2...max(2, vm.pomodoroRounds - 1), step: 1) {
+                    vm.pomodoroLongRestEvery = $0
+                }
+            }
+        }
+    }
+
+    private var pomodoroSummary: String {
+        guard let plan = vm.pomodoroPlan else {
+            return "These settings aren't valid yet: focus 5–120, rest 1–60, rounds 2–8."
+        }
+        return "\(plan.rounds) rounds of \(plan.focusMinutes) min with \(plan.restMinutes)-min rests — \(plan.totalMinutes) min in all."
+    }
 
     private func minutesLabel(_ minutes: Int) -> String {
         minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes)m"

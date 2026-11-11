@@ -103,7 +103,8 @@ final class FlintGlanceActivityController {
         // before an old plan can request a replacement display.
         guard !refreshQueue.hasPending, let plan else { return }
         let state = FlintFocusActivityAttributes.ContentState(cause: plan.cause, tier: plan.tier,
-            startedAt: plan.startedAt, endsAt: plan.endsAt, staleAt: plan.staleAt, needsCheck: false)
+            startedAt: plan.startedAt, endsAt: plan.endsAt, staleAt: plan.staleAt, needsCheck: false,
+            phaseSummary: plan.phaseSummary, phaseEndsAt: plan.phaseEndsAt)
         if let activity = kept {
             rememberRequest(plan.sessionID)
             guard lastStates[activity.id] != state else { return }

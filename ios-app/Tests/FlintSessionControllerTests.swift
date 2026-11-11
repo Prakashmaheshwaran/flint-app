@@ -804,17 +804,31 @@ final class FlintSessionControllerTests: XCTestCase {
         XCTAssertEqual(at, original.endsAt)
     }
 
-    func testLegacyPomodoroCadenceExecutesOnlyOneFocusRoundR24PC01PC27() throws {
-        let legacy = FlintPomodoroConfig(focusMinutes: 20, breakMinutes: 30, rounds: 8)
-        let request = FlintShortcutsRunner.pomodoroRoundRequest(legacy, appGroupID: "group", breakLevel: .easy)
+    func testSavedCadenceStartsTheWholeChainThroughTheShortcutsRunnerF01() throws {
+        let cadence = FlintPomodoroConfig(focusMinutes: 20, breakMinutes: 30, rounds: 8)
+        let request = FlintShortcutsRunner.pomodoroRoundRequest(cadence, appGroupID: "group", breakLevel: .easy)
         XCTAssertEqual(request.duration, 1200)
         XCTAssertEqual(request.appGroupID, "group")
+        let session = try FlintShortcutsRunner.startPomodoro(cadence, appGroupID: nil, breakLevel: .easy,
+            confirmed: true, controller: controller(), selectionResolver: { _ in self.selectionA })
+        // 8 focus rounds of 20 min and 7 rests of 30 min are one parent commitment.
+        XCTAssertEqual(session.plannedDuration, 22_200)
+        XCTAssertEqual(session.pomodoro?.rounds, 8)
+        XCTAssertEqual(registrar.started.count, 8, "the parent end plus seven rest carriers")
+        XCTAssertEqual(registrar.started.filter { FlintSessionController.isPomodoroCarrier($0.name) }.count, 7)
+        clock.advance(22_200); controller().finishIfExpired()
+        XCTAssertNil(store.active)
+    }
+
+    func testSingleRoundCadenceStaysAPlainFocusSessionF01() throws {
+        let legacy = FlintPomodoroConfig(focusMinutes: 20, breakMinutes: 30, rounds: 1)
         let session = try FlintShortcutsRunner.startPomodoro(legacy, appGroupID: nil, breakLevel: .easy,
             confirmed: true, controller: controller(), selectionResolver: { _ in self.selectionA })
+        XCTAssertEqual(session.plannedDuration, 1200)
+        XCTAssertNil(session.pomodoro)
+        XCTAssertEqual(registrar.started.count, 1)
         clock.advance(1200); controller().finishIfExpired()
         XCTAssertNil(store.active)
-        XCTAssertEqual(registrar.started.count, 1)
-        XCTAssertEqual(session.plannedDuration, 1200)
     }
 
     func testLogicalCompletionCallSitesUseObservedDeadlineAfterRollbackF2PC54PC55() throws {
@@ -2220,6 +2234,7 @@ private final class LifecycleCapture: FlintSessionEventSink {
             case .passUsed: return "passUsed"
             case .failedToArm: return "failedToArm"
             case .globalPassUsed: return "globalPassUsed"
+            case .plannedRest(_, _, let kind, _, _, _): return "plannedRest.\(kind.rawValue)"
             case .annotated: return "annotated"
             }
         }
