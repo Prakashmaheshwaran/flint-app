@@ -8,7 +8,7 @@ import org.junit.Test
 import java.lang.ref.WeakReference
 
 class TargetFloorIdentitiesTest {
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
 
     @After fun clear() = TargetFloorIdentities.register(null as WeakReference<SafetyFloorGate>?)
 

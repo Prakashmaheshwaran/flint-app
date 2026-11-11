@@ -417,7 +417,7 @@ class EditorCommitmentStoreTest {
 
     @Test fun `PC-52 safety apps may be explicitly allowed by Sleep allow-list protection`() = runBlocking {
         val disk = Disk(); val store = fresh(disk)
-        val allowed = rule().copy(targets = BlockTargets(allowListMode = true, apps = setOf(AppRef("com.flint.peakfocus"))))
+        val allowed = rule().copy(targets = BlockTargets(allowListMode = true, apps = setOf(AppRef("app.flint.focus"))))
         assertEquals(EditorCommitResult.Applied(), confirm(store, EditorChange("Sleep", upserts = listOf(allowed))))
         assertEquals(listOf(allowed), DataStoreBlockRulesStore(disk).rules.first())
     }

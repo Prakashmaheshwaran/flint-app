@@ -97,23 +97,23 @@ chmod +x "$WORK/stub-adb"
 # Blocklist overview rendered at the top of the list: "New app limit" is genuinely
 # absent (LazyColumn hasn't composed it) — the run-1 failure viewport.
 cat > "$WORK/dump-toplist.xml" <<'XML'
-<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node index="0" text="Blocking" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[53,127][338,222]" /><node index="1" text="RULES, SCHEDULES &amp; LIMITS" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[53,222][470,264]" /><node index="2" text="BLOCK RULES" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[53,327][250,369]" /><node index="3" text="New block rule" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[419,912][662,965]" /><node index="4" text="Home" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[86,2253][168,2295]" /><node index="5" text="Blocklist" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[341,2253][465,2295]" /></hierarchy>
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node index="0" text="Blocking" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[53,127][338,222]" /><node index="1" text="RULES, SCHEDULES &amp; LIMITS" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[53,222][470,264]" /><node index="2" text="BLOCK RULES" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[53,327][250,369]" /><node index="3" text="New block rule" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[419,912][662,965]" /><node index="4" text="Home" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[86,2253][168,2295]" /><node index="5" text="Blocklist" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[341,2253][465,2295]" /></hierarchy>
 XML
 
 # The same screen one swipe later: the APP LIMITS section is now composed.
 cat > "$WORK/dump-newlimit.xml" <<'XML'
-<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node index="0" text="APP LIMITS" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[53,1800][250,1842]" /><node index="1" text="New app limit" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[151,1900][929,2050]" /><node index="2" text="Blocklist" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[341,2253][465,2295]" /></hierarchy>
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node index="0" text="APP LIMITS" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[53,1800][250,1842]" /><node index="1" text="New app limit" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[151,1900][929,2050]" /><node index="2" text="Blocklist" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[341,2253][465,2295]" /></hierarchy>
 XML
 
 # The Open-limit shield exactly as run 2 dumped it: badge is text="OPEN LIMIT"
 # (FlintBadge uppercases at render); copy carries the curly apostrophe.
 cat > "$WORK/dump-shield.xml" <<'XML'
-<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node index="0" text="PEAK FOCUS" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[449,788][632,830]" /><node index="1" text="Clock can wait" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[302,872][778,967]" /><node index="2" text="You’ve used today’s opens for this app." resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[153,999][927,1062]" /><node index="3" text="OPEN LIMIT" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[456,1115][625,1157]" /><node index="4" text="Unblocks in 20h 57m" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[369,1252][712,1305]" /><node index="5" text="Go back" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[473,1842][607,1895]" /><node index="6" text="Take a break" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[437,2006][644,2059]" /><node index="7" text="Open Flint" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[457,2164][624,2217]" /></hierarchy>
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node index="0" text="PEAK FOCUS" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[449,788][632,830]" /><node index="1" text="Clock can wait" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[302,872][778,967]" /><node index="2" text="You’ve used today’s opens for this app." resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[153,999][927,1062]" /><node index="3" text="OPEN LIMIT" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[456,1115][625,1157]" /><node index="4" text="Unblocks in 20h 57m" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[369,1252][712,1305]" /><node index="5" text="Go back" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[473,1842][607,1895]" /><node index="6" text="Take a break" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[437,2006][644,2059]" /><node index="7" text="Open Flint" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[457,2164][624,2217]" /></hierarchy>
 XML
 
 # Two "Duplicated" nodes at different heights — maxy must pick the lower (200,2050).
 cat > "$WORK/dump-dup.xml" <<'XML'
-<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node index="0" text="Duplicated" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[100,300][300,400]" /><node index="1" text="Duplicated" resource-id="" class="android.widget.TextView" package="com.flint.peakfocus" content-desc="" bounds="[100,2000][300,2100]" /></hierarchy>
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><hierarchy rotation="0"><node index="0" text="Duplicated" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[100,300][300,400]" /><node index="1" text="Duplicated" resource-id="" class="android.widget.TextView" package="app.flint.focus" content-desc="" bounds="[100,2000][300,2100]" /></hierarchy>
 XML
 
 # Window tables in the real dumpsys line shape. The overlay-present table carries BOTH
@@ -121,12 +121,12 @@ XML
 # only the bare one, so the no-overlay table (activity window only) must NOT match.
 cat > "$WORK/windows-overlay.txt" <<'WIN'
 WINDOW MANAGER WINDOWS (dumpsys window windows)
-  Window #7 Window{1f2d0c8 u0 com.flint.peakfocus}:
-  Window #12 Window{dd4d7c1 u0 com.flint.peakfocus/com.flint.peakfocus.MainActivity}:
+  Window #7 Window{1f2d0c8 u0 app.flint.focus}:
+  Window #12 Window{dd4d7c1 u0 app.flint.focus/com.flint.peakfocus.MainActivity}:
 WIN
 cat > "$WORK/windows-noverlay.txt" <<'WIN'
 WINDOW MANAGER WINDOWS (dumpsys window windows)
-  Window #12 Window{dd4d7c1 u0 com.flint.peakfocus/com.flint.peakfocus.MainActivity}:
+  Window #12 Window{dd4d7c1 u0 app.flint.focus/com.flint.peakfocus.MainActivity}:
 WIN
 
 # ---------------------------------------------------------------------------

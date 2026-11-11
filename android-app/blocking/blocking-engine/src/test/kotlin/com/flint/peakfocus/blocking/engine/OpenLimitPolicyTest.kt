@@ -13,7 +13,7 @@ import org.junit.Test
 class OpenLimitPolicyTest {
 
     private val policy = OpenLimitPolicy()
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
     private val insta = "com.instagram.android"
     private val spotify = "com.spotify.music"
     private val shade = "com.android.systemui"

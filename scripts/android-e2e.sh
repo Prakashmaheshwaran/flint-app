@@ -28,9 +28,9 @@ mkdir -p artifacts/android-e2e
 boot_log="$ROOT/artifacts/android-e2e/boot-incarnation.jsonl"
 boot_id=$(python3 "$ROOT/scripts/android_boot_id.py" "$serial" --context initial --log "$boot_log")
 run_token=$(python3 -c 'import uuid; print(uuid.uuid4())')
-service=com.flint.peakfocus/com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService
+service=app.flint.focus/com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService
 prior_global=$(adb -s "$serial" shell settings get secure accessibility_enabled | tr -d '\r')
-marker=/sdcard/Android/data/com.flint.peakfocus.test/files/owned-service.txt
+marker=/sdcard/Android/data/app.flint.focus.test/files/owned-service.txt
 printf '%s\n' "serial=$serial" "boot_id=$boot_id" "run_token=$run_token" > artifacts/android-e2e/device.txt
 refuse_cleanup() {
   local boot_status=$1
@@ -49,7 +49,7 @@ collect() {
   if python3 "$ROOT/scripts/android_boot_id.py" "$serial" --expected "$boot_id" \
       --context collection --log "$boot_log" > /dev/null; then
     adb -s "$serial" logcat -d > artifacts/android-e2e/logcat.txt 2>&1 || true
-    adb -s "$serial" pull /sdcard/Android/data/com.flint.peakfocus.test/files/smoke artifacts/android-e2e/ || true
+    adb -s "$serial" pull /sdcard/Android/data/app.flint.focus.test/files/smoke artifacts/android-e2e/ || true
     python3 - "$run_token" <<'PY' || true
 import json, os, pathlib, sys
 root = pathlib.Path('artifacts/android-e2e')

@@ -39,12 +39,18 @@ jobs:
           ./gradlew -PflintE2E=true :app:assembleRelease :app:bundleRelease :e2e:assembleDebug 2>&1 | tee ../artifacts/android-e2e/build.log
           python3 ../scripts/verify_local_first_apk.py app/build/outputs/apk/release/app-release.apk
           python3 ../scripts/verify_local_first_apk.py app/build/outputs/bundle/release/app-release.aab
+          analyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          app_id="$("$analyzer" manifest application-id app/build/outputs/apk/release/app-release.apk)"
+          if [[ $app_id != app.flint.focus ]]; then
+            echo "Release APK applicationId is '$app_id', expected 'app.flint.focus' (applicationId differs from the Kotlin namespace com.flint.peakfocus)" >&2
+            exit 1
+          fi
           "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest print e2e/build/outputs/apk/debug/e2e-debug.apk > ../artifacts/android-e2e/test-manifest.xml
           python3 - <<'PY'
           import xml.etree.ElementTree as ET
           root = ET.parse('../artifacts/android-e2e/test-manifest.xml').getroot()
           target = root.find('instrumentation').get('{http://schemas.android.com/apk/res/android}targetPackage')
-          if target != root.get('package') or target != 'com.flint.peakfocus.test':
+          if target != root.get('package') or target != 'app.flint.focus.test':
               raise SystemExit('Instrumentation must target its isolated test package')
           PY
       - uses: ./.github/actions/android-emulator-cache

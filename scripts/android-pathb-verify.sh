@@ -8,7 +8,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/android-verify.sh
 source "$ROOT/scripts/lib/android-verify.sh"
 
-PKG="com.flint.peakfocus"
+PKG="app.flint.focus"
+NS="com.flint.peakfocus"
 CLOCK_PKG="com.google.android.deskclock"
 CLOCK_ACTIVITY="com.google.android.deskclock/com.android.deskclock.DeskClock"
 CONTACTS_PKG="com.google.android.contacts"
@@ -31,14 +32,14 @@ if [[ "${sdk:-0}" -ge 33 ]]; then
   "$ADB" shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS >/dev/null 2>&1 || true
 fi
 
-run "$ADB" shell am start -n "$PKG/.MainActivity"
+run "$ADB" shell am start -n "$PKG/$NS.MainActivity"
 sleep 4
 "$ADB" shell dumpsys activity services "$PKG" > "$OUT_DIR/01-pathb-service.txt"
 grep -q 'UsageStatsForegroundService' "$OUT_DIR/01-pathb-service.txt"
 grep -q 'isForeground=true' "$OUT_DIR/01-pathb-service.txt"
 pass "service starts as foreground when usage access is allowed and a11y is off"
 
-run "$ADB" shell am broadcast -n "$PKG/.SetBlocklistReceiver" --es package "$CLOCK_PKG"
+run "$ADB" shell am broadcast -n "$PKG/$NS.SetBlocklistReceiver" --es package "$CLOCK_PKG"
 sleep 1
 run "$ADB" shell am start -n "$CLOCK_ACTIVITY"
 sleep 3
@@ -65,8 +66,8 @@ assert_no_overlay "05-break-granted"
 screenshot "05-break-granted"
 pass "EASY break grants and suppresses the shield"
 
-run "$ADB" shell am broadcast -n "$PKG/.SetBlocklistReceiver" --ez clear true
-run "$ADB" shell am broadcast -n "$PKG/.SetBlocklistReceiver" --es limitPkg "$CONTACTS_PKG" --ei limitMin 0
+run "$ADB" shell am broadcast -n "$PKG/$NS.SetBlocklistReceiver" --ez clear true
+run "$ADB" shell am broadcast -n "$PKG/$NS.SetBlocklistReceiver" --es limitPkg "$CONTACTS_PKG" --ei limitMin 0
 sleep 1
 run "$ADB" shell am start -n "$CONTACTS_ACTIVITY"
 sleep 3

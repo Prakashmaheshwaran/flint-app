@@ -179,7 +179,9 @@ multi-module Gradle (Kotlin + Compose, single-Activity). Two detection paths
 (**AccessibilityService** primary + **UsageStatsManager** fallback) feed **one pure-Kotlin
 `BlockDecisionEngine`**; enforcement via a11y overlay (preferred) or `SYSTEM_ALERT_WINDOW`
 overlay / full-screen Activity + `GLOBAL_ACTION_HOME`, kept alive by a foreground service with
-a `blocking-resilience` module for OEM/battery survival. Application ID `com.flint.peakfocus`.
+a `blocking-resilience` module for OEM/battery survival. Application ID `app.flint.focus`
+(originally `com.flint.peakfocus`; the Gradle namespace and Kotlin packages keep
+`com.flint.peakfocus`, see ADR-008).
 
 **Play compliance is a ship gate, not a nicety.** Flint is **not** eligible for
 `isAccessibilityTool` (it is a "monitoring app") — it must **not** declare that flag, and must
@@ -198,6 +200,15 @@ ships this exact route, so it is proven.
 team, so the iOS bundle prefix and App Group were re-keyed to `app.flint.focus` /
 `group.app.flint.focus` (the App IDs registered for Flint's own team). The Android applicationId
 is unchanged for now.
+
+**Amendment (2026-11-11).** The Android applicationId was re-keyed to `app.flint.focus` (debug
+and release; instrumentation APK `app.flint.focus.test`) so both platforms share one identifier
+family. The Gradle `namespace` and Kotlin packages stay `com.flint.peakfocus` to avoid churn, so
+runtime component strings (adb `-n`, `ComponentName`, `setClassName`, Orca `--activity`) must use
+fully qualified class names (e.g. `app.flint.focus/com.flint.peakfocus.MainActivity`), never
+`pkg/.Class` shorthand or `packageName + ".Class"`. Manifest declarations such as
+`android:name=".MainActivity"` still resolve against the namespace and need no change. Installs
+from the old package cannot update in place and do not carry local data.
 
 **Fork note (documented in CONTRIBUTING).** Anyone shipping their own build must (a) change the
 bundle/application IDs to identifiers they control, and (b) for iOS, request their own

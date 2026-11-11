@@ -1,6 +1,7 @@
 # Release data inventory and Data safety draft
 
-Scope: Android local-only release, package `com.flint.peakfocus`, with lane C's
+Scope: Android local-only release, package `app.flint.focus` (re-keyed 2026-11-11
+from `com.flint.peakfocus`), with lane C's
 Settings/uninstall-guard and Settings-text-read removal in PR105 (`a34cbba`).
 Settings screen content is not read for guarding. Lane J reconciled this inventory on
 2026-10-30 against merged `integration/v1` `6f1170ba9442cfc04c766892bd8e83ae775d2616`,
