@@ -118,7 +118,11 @@ class PomodoroCommitmentTest {
         assertEquals("A Pomodoro chain needs a finite Timer, not a schedule.",
             validateEditorRule(parent().copy(schedule = Schedule(startMinuteOfDay = 540, endMinuteOfDay = 1020)),
                 null, at()))
+        // The tier check fires first for a plain open-ended Harder rule; the plan itself is also
+        // refused on its own terms.
         assertEquals("A Pomodoro chain needs a finite Timer, not a schedule.",
+            validateEditorRule(parent(tier = BreakLevel.EASY).copy(expiresAtEpochMs = null), null, at()))
+        assertNotNull("an open-ended Harder parent has no valid plan shape",
             validateEditorRule(parent().copy(expiresAtEpochMs = null), null, at()))
         assertNull("the plain parent form is accepted", validateEditorRule(parent(), null, at()))
     }
