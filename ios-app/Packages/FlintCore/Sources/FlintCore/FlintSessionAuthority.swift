@@ -430,11 +430,19 @@ public struct FlintSessionStartParameters: Codable, Equatable, Sendable {
     public var origin: String
     public var ownerID: String?
     public var replacing: Bool
+    /// `FlintSessionStartParameters.allowListMode` for an Allow List session, nil for a block
+    /// list. Optional so every block-list fingerprint encodes exactly as it did before allow
+    /// lists existed — persisted accepted starts still match after an upgrade.
+    public var mode: String?
+
+    public static let allowListMode = "allow_list"
 
     public init(duration: TimeInterval, tier: BreakLevel, selection: String, name: String,
-                source: FlintSessionSource, origin: String, ownerID: String?, replacing: Bool) {
+                source: FlintSessionSource, origin: String, ownerID: String?, replacing: Bool,
+                mode: String? = nil) {
         self.duration = duration; self.tier = tier; self.selection = selection; self.name = name
         self.source = source; self.origin = origin; self.ownerID = ownerID; self.replacing = replacing
+        self.mode = mode
     }
 
     public var fingerprint: String {

@@ -57,6 +57,10 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     public let naturalEndObservedAt: Date?
     /// Disclosed opt-in frozen at acceptance. Missing in older documents means not opted in.
     public let removalGuard: Bool?
+    /// True when this session keeps only its selection's applications available and blocks
+    /// everything else Screen Time can shield (an Allow List session). Missing/absent means a
+    /// block list, so every record saved before allow lists decodes unchanged.
+    public let allowListMode: Bool?
 
     public static let currentContractVersion = 1
 
@@ -82,7 +86,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         clockRearmCount: Int? = nil,
         remainingCheckpoint: FlintSessionRemainingCheckpoint? = nil,
         naturalEndObservedAt: Date? = nil,
-        removalGuard: Bool? = nil
+        removalGuard: Bool? = nil,
+        allowListMode: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -106,7 +111,11 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         self.remainingCheckpoint = remainingCheckpoint
         self.naturalEndObservedAt = naturalEndObservedAt
         self.removalGuard = removalGuard
+        self.allowListMode = allowListMode
     }
+
+    /// True only for a positively recorded Allow List session. A missing field is a block list.
+    public var isAllowList: Bool { allowListMode == true }
 
     /// Time left on the commitment, by the clock ADR-012 §9 trusts: within the boot that started
     /// the latest checkpoint, monotonic elapsed time governs. At the first observation after a
@@ -177,7 +186,7 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             plannedDuration: plannedDuration, startRequestID: startRequestID,
             clockRearmCount: clockRearmCount, remainingCheckpoint: checkpoint,
             naturalEndObservedAt: naturalEndObservedAt ?? self.naturalEndObservedAt,
-            removalGuard: removalGuard)
+            removalGuard: removalGuard, allowListMode: allowListMode)
     }
 
     /// Whether the commitment is over by `logicalRemaining` (allowing `slack` for the whole-second
@@ -252,7 +261,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             clockRearmCount: countsTowardClockLimit ? (clockRearmCount ?? 0) + 1 : clockRearmCount,
             remainingCheckpoint: remainingCheckpoint,
             naturalEndObservedAt: naturalEndObservedAt,
-            removalGuard: removalGuard
+            removalGuard: removalGuard,
+            allowListMode: allowListMode
         )
     }
 }

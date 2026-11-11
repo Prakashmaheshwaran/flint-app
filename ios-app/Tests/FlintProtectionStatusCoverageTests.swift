@@ -78,4 +78,22 @@ final class FlintProtectionStatusCoverageTests: XCTestCase {
         XCTAssertTrue(FlintProtectionStatus.coverageScopes(for: .init(protection: protection,
             sessionSelection: selection)).isEmpty)
     }
+
+    /// The active session's recorded mode decides its scope: an Allow List session covers
+    /// everything except its kept apps, so they are never reported as blocked by it.
+    func testTheActiveSessionModeDecidesItsCoverageScope() throws {
+        let app = try token("fictional-allow-list-app", as: ApplicationToken.self)
+        var selection = FamilyActivitySelection(); selection.applicationTokens = [app]
+        var protection = inputs(ids: [])
+        protection.activeSession = .init(.init(id: "session", name: "Study", startedAt: now,
+            endsAt: now.addingTimeInterval(600), breakLevel: .harder, monitorName: "monitor",
+            allowListMode: true), armed: true)
+        XCTAssertEqual(FlintProtectionStatus.coverageScopes(for: .init(
+            protection: protection, sessionSelection: selection, sessionAllowListMode: true)),
+            ["session": .allExcept([FlintOpenLimit.key(for: app)])])
+        XCTAssertEqual(FlintProtectionStatus.coverageScopes(for: .init(
+            protection: protection, sessionSelection: selection, sessionAllowListMode: false)),
+            ["session": .only([FlintOpenLimit.key(for: app)])],
+            "the same selection read as a block list covers the seeded app")
+    }
 }

@@ -215,7 +215,7 @@ final class FlintSessionPersistence {
         store.saveActiveSession(session)
         guard store.loadActiveSession() == session else { return false }
         if !session.isLogicallyExpired(clock: env.clock) {
-            do { if let selection { try env.shield.applyBlockList(selection) } } catch { return false }
+            do { if let selection { try FlintSessionController.applyShield(selection, for: session, shield: env.shield) } } catch { return false }
             env.webRestrictions.reconcile(session, clock: env.clock)
         }
         guard markApplied(session) else { return false }

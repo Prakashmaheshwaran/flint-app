@@ -258,18 +258,36 @@ abstract class FlintE2EFixture {
 
     protected fun click(text: String) = visible(By.text(text)).click()
 
-    protected fun scrollTo(text: String): UiObject2 {
-        repeat(8) {
+    protected fun scrollTo(text: String): UiObject2 = scrollTo(By.text(text))
+
+    /**
+     * Finds [selector], scrolling only when it is not already on screen. It first lets the UI
+     * settle, so a sheet that is still opening is never scrolled past a target it already
+     * holds; then it searches toward the end and back toward the start, so the result never
+     * depends on where the list happened to be scrolled.
+     */
+    protected fun scrollTo(selector: BySelector): UiObject2 {
+        device.waitForIdle()
+        device.wait(Until.findObject(selector), 1_500)?.let { return it }
+        for (towardEnd in listOf(true, false)) repeat(8) {
             refreshAccessibilityCache()
-            device.findObject(By.text(text))?.let { return it }
+            device.findObject(selector)?.let { return it }
             // Editors have a fixed footer; a screen-relative swipe can start
             // outside the LazyColumn and never move it. Use its actual viewport.
-            val bounds = visible(By.scrollable(true)).visibleBounds
-            device.swipe(bounds.centerX(), bounds.bottom - bounds.height() / 4,
-                bounds.centerX(), bounds.top + bounds.height() / 4, 35)
+            // UiAutomator's findObject returns the innermost match, so a horizontal chip
+            // row nested in a vertical sheet would win and each swipe would only nudge the
+            // sheet through it. Swipe the tallest scrollable viewport on screen instead.
+            val first = visible(By.scrollable(true))
+            val bounds = device.findObjects(By.scrollable(true))
+                .mapNotNull { runCatching { it.visibleBounds }.getOrNull() }
+                .maxByOrNull { it.height() } ?: first.visibleBounds
+            val lower = bounds.bottom - bounds.height() / 4
+            val upper = bounds.top + bounds.height() / 4
+            if (towardEnd) device.swipe(bounds.centerX(), lower, bounds.centerX(), upper, 35)
+            else device.swipe(bounds.centerX(), upper, bounds.centerX(), lower, 35)
             SystemClock.sleep(250)
         }
-        return visible(By.text(text))
+        return visible(selector)
     }
 
     protected fun shell(command: String): String = device.executeShellCommand(command)

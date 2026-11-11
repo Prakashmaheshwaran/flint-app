@@ -4,10 +4,12 @@ import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.datastore.NATIVE_TIMER_ID_PREFIX
+import com.flint.peakfocus.core.datastore.CONTRACT_TIMER_ID_PREFIX
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class TimerModelsTest {
@@ -71,6 +73,40 @@ class TimerModelsTest {
     @Test fun `empty or blank app selection is rejected`() {
         assertFalse(validTimerDraft(TimerDraft()))
         assertFalse(validTimerDraft(TimerDraft(apps = setOf(AppRef(" ")))))
+    }
+
+    @Test fun `allow-list Timer emits an app-only allow-list rule with the same id and deadline`() {
+        val start = 1_790_000_000_000L
+        val allowed = timerRule(draft.copy(allowListMode = true), start, "allow")
+        assertTrue(allowed.targets.allowListMode)
+        assertEquals(setOf(app), allowed.targets.apps)
+        assertTrue("allow-list websites are unsupported, so a Timer never carries domains", allowed.targets.domains.isEmpty())
+        assertTrue(allowed.id.startsWith(CONTRACT_TIMER_ID_PREFIX))
+        assertEquals(start, timerStartEpochMs(allowed))
+        assertEquals(start + 30 * 60_000L, allowed.expiresAtEpochMs)
+        assertEquals("Focus timer", allowed.name)
+        // Same lifecycle as a block-list Timer: no forked id, tier, exit or history path.
+        assertTrue(canEndNativeTimer(allowed))
+        assertFalse(canCancelTimer(allowed))
+        BreakLevel.entries.forEach { tier ->
+            assertEquals(tier, timerRule(draft.copy(allowListMode = true, breakLevel = tier), start, tier.name).breakLevel)
+        }
+        assertFalse("the default draft stays a block list", timerRule(draft, start, "block").targets.allowListMode)
+    }
+
+    @Test fun `empty or blank allow list is refused and never becomes a rule`() {
+        val invalid = listOf(
+            TimerDraft(allowListMode = true),
+            TimerDraft(apps = setOf(AppRef(" ")), allowListMode = true),
+        )
+        invalid.forEach { candidate ->
+            assertFalse(validTimerDraft(candidate))
+            try {
+                timerRule(candidate, 1000, "empty-allow")
+                fail("An empty allow list would block every app and must not become a rule")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
     }
 
     @Test(expected = IllegalArgumentException::class)

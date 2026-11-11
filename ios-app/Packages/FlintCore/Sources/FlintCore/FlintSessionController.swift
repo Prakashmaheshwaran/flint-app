@@ -9,6 +9,10 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
     case appGroupUnavailable
     case notAuthorized
     case emptySelection
+    /// An Allow List session must name the apps to keep available. An empty allow list would
+    /// shield everything Screen Time can shield, including Flint's own recovery reachability
+    /// (ADR-012 §7, PC-53), so it is refused before anything is written.
+    case emptyAllowList
     case tooManyTokens(count: Int, cap: Int)
     case durationTooShort(minimumMinutes: Int)
     case durationTooLong(maximumMinutes: Int)
@@ -44,6 +48,7 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
         case .appGroupUnavailable: return "Flint's shared storage is unavailable (App Group misconfigured)."
         case .notAuthorized: return "Allow Screen Time access for Flint first — without it iOS won't block anything."
         case .emptySelection: return "Pick at least one app or website to block first."
+        case .emptyAllowList: return FlintSelectionIssue.emptyAllowList.message
         case let .tooManyTokens(count, cap): return "Too many items selected (\(count)). The system limit is \(cap) — use a category instead."
         case let .durationTooShort(minimum): return "Sessions need to be at least \(minimum) \(minimum == 1 ? "minute" : "minutes")."
         case let .durationTooLong(maximum): return "Sessions can run for up to \(maximum / 60) hours \(maximum % 60) minutes."
@@ -158,11 +163,23 @@ public protocol FlintSessionShielding: AnyObject {
     /// identifies a target set without storing tokens.
     func fingerprint(of selection: FamilyActivitySelection) -> String
     func applyBlockList(_ selection: FamilyActivitySelection) throws
+    /// Applies an Allow List shield: everything Screen Time can shield except the selection's
+    /// applications. A shield adapter that cannot write an allow list must throw rather than
+    /// fall back to a block list, so an allow-list session never starts on a weaker shield.
+    func applyAllowList(_ selection: FamilyActivitySelection) throws
     /// Releases session-owned settings. Removal denial belongs to the derived guard adapter.
     func clear()
     /// True when the session-owned store still holds restrictions. Before the first session
     /// generation exists, this contradicts an absent record, so it is not idle proof (R-20).
     func retainsAppliedSettings() -> Bool
+}
+
+public extension FlintSessionShielding {
+    /// Fail closed: an adapter without an allow-list writer (a test double, or a platform seam
+    /// that can't express one) refuses instead of leaving a block-list shield in place.
+    func applyAllowList(_ selection: FamilyActivitySelection) throws {
+        throw FlintSessionError.protectionStateUnavailable
+    }
 }
 
 /// `DeviceActivityCenter` for the session's one-shot auto-clear.
@@ -475,7 +492,8 @@ public final class FlintSessionController {
     public func prepareStartToken(selection: FamilyActivitySelection, duration: TimeInterval,
         breakLevel: BreakLevel, name: String = "Focus", source: FlintSessionSource = .manual,
         origin: FlintSessionOrigin, ownerID: String? = nil, replacing: Bool = true,
-        route: String, operationID: String? = nil, untilDeactivation: Bool = false) throws -> FlintSessionStartToken {
+        route: String, operationID: String? = nil, untilDeactivation: Bool = false,
+        allowList: Bool = false) throws -> FlintSessionStartToken {
         guard let token = try withTransition({ () throws -> FlintSessionStartToken in
             prepareAcceptedInstallationForScope()
             try validateStartGate(origin: origin, ownerID: ownerID)
@@ -489,8 +507,10 @@ public final class FlintSessionController {
             guard let authority = persistence.authority(in: store), env.ledger() != nil else {
                 throw FlintSessionError.protectionStateUnavailable
             }
-            let fingerprint = startFingerprint(selection: selection, duration: duration, breakLevel: breakLevel,
-                name: name, source: source, origin: origin, ownerID: ownerID, replacing: replacing)
+            let fingerprint = startFingerprint(selection: allowList ? Self.applicationOnly(selection) : selection,
+                duration: duration, breakLevel: breakLevel,
+                name: name, source: source, origin: origin, ownerID: ownerID, replacing: replacing,
+                allowList: allowList)
             if let operationID, !operationID.isEmpty {
                 if let old = authority.acceptedStart(operationID), old.fingerprint != fingerprint {
                     throw FlintSessionError.conflictingStartRequest
@@ -518,10 +538,12 @@ public final class FlintSessionController {
 
     private func startFingerprint(selection: FamilyActivitySelection, duration: TimeInterval,
         breakLevel: BreakLevel, name: String, source: FlintSessionSource,
-        origin: FlintSessionOrigin, ownerID: String?, replacing: Bool) -> String {
+        origin: FlintSessionOrigin, ownerID: String?, replacing: Bool,
+        allowList: Bool = false) -> String {
         FlintSessionStartParameters(duration: duration, tier: breakLevel,
             selection: env.shield.fingerprint(of: selection), name: name, source: source,
-            origin: origin.rawValue, ownerID: ownerID, replacing: replacing).fingerprint
+            origin: origin.rawValue, ownerID: ownerID, replacing: replacing,
+            mode: allowList ? FlintSessionStartParameters.allowListMode : nil).fingerprint
     }
 
     private func validateStartGate(origin: FlintSessionOrigin, ownerID: String?) throws {
@@ -555,6 +577,12 @@ public final class FlintSessionController {
     /// Start an immediate block. `duration <= 0` means open-ended (until manually stopped),
     /// which only Easy may use (ADR-012 §1).
     ///
+    /// `allowList: true` starts an Allow List session instead: everything Screen Time can shield
+    /// stays blocked except the selection's applications. Its exceptions are applications only —
+    /// category and website picks are dropped before validation, and an allow list that names no
+    /// application is refused before anything is written (ADR-012 §7, PC-53). Tier rights,
+    /// confirmation, waits and replacement arbitration are the block list's, unchanged.
+    ///
     /// While another session runs: `replacing: false` (an additive start, e.g. a Focus turning on)
     /// is refused with `capacityUnavailable` — iOS Flint runs one session at a time; with
     /// `replacing: true` the replacement is decided by ADR-012 §2/§3 against the running
@@ -576,7 +604,8 @@ public final class FlintSessionController {
         requestID: String? = nil,
         expectedRevision: UInt64? = nil,
         replacing: Bool = true,
-        confirmed: Bool = false
+        confirmed: Bool = false,
+        allowList: Bool = false
     ) throws -> FlintActiveSession {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard let transition = beginTransition() else { throw FlintSessionError.protectionStateUnavailable }
@@ -591,13 +620,25 @@ public final class FlintSessionController {
         guard env.isAuthorized() else { throw FlintSessionError.notAuthorized }
         guard duration.isFinite else { throw FlintSessionError.protectionStateUnavailable }
 
-        let counts = env.shield.counts(of: selection)
-        guard counts.total > 0 else { throw FlintSessionError.emptySelection }
-        if counts.applications > FlintShieldLimits.tokenCap {
-            throw FlintSessionError.tooManyTokens(count: counts.applications, cap: FlintShieldLimits.tokenCap)
-        }
-        if counts.webDomains > FlintShieldLimits.tokenCap {
-            throw FlintSessionError.tooManyTokens(count: counts.webDomains, cap: FlintShieldLimits.tokenCap)
+        // An Allow List session's exceptions are individually picked applications; category and
+        // website picks cannot be expressed as exceptions, so they are dropped before anything
+        // is measured or written.
+        let sessionTargets = allowList ? Self.applicationOnly(selection) : selection
+        if allowList {
+            switch FlintSelectionValidation.issue(for: sessionTargets, context: .allowList) {
+            case .emptyAllowList?: throw FlintSessionError.emptyAllowList
+            case let .tooManyTokens(count, cap)?: throw FlintSessionError.tooManyTokens(count: count, cap: cap)
+            case .emptySelection?, nil: break
+            }
+        } else {
+            let counts = env.shield.counts(of: sessionTargets)
+            guard counts.total > 0 else { throw FlintSessionError.emptySelection }
+            if counts.applications > FlintShieldLimits.tokenCap {
+                throw FlintSessionError.tooManyTokens(count: counts.applications, cap: FlintShieldLimits.tokenCap)
+            }
+            if counts.webDomains > FlintShieldLimits.tokenCap {
+                throw FlintSessionError.tooManyTokens(count: counts.webDomains, cap: FlintShieldLimits.tokenCap)
+            }
         }
         if duration > 0 {
             switch FlintSessionAutoClearPlan.issue(forDuration: duration, strategy: env.shortSessionStrategy) {
@@ -639,8 +680,9 @@ public final class FlintSessionController {
             current = nil
         }
         let operationID = requestID ?? UUID().uuidString
-        let fingerprint = startFingerprint(selection: selection, duration: duration, breakLevel: breakLevel,
-            name: name, source: source, origin: origin, ownerID: ownerID, replacing: replacing)
+        let fingerprint = startFingerprint(selection: sessionTargets, duration: duration, breakLevel: breakLevel,
+            name: name, source: source, origin: origin, ownerID: ownerID, replacing: replacing,
+            allowList: allowList)
         if let accepted = acceptedStartResult(operationID) {
             guard accepted.fingerprint == fingerprint else { throw FlintSessionError.conflictingStartRequest }
             if accepted.outcome == .running, let current, current.id == accepted.sessionID { return current }
@@ -666,14 +708,17 @@ public final class FlintSessionController {
             if running.removalGuard == true, !removalGuard {
                 throw FlintSessionError.replacementDenied(until: running.stableLogicalEnd(clock: env.clock))
             }
-            let targets = env.shield.targets(of: selection)
-            let new = FlintProtectionSnapshot(mode: .blockList(
-                applications: targets.applications, categories: targets.categories,
-                webDomains: targets.webDomains), tier: breakLevel, end: endsAt)
+            let targets = env.shield.targets(of: sessionTargets)
+            let mode: FlintProtectionSnapshot<AnyHashable>.Mode = allowList
+                ? .allowList(allowedApplications: targets.applications)
+                : .blockList(applications: targets.applications, categories: targets.categories,
+                             webDomains: targets.webDomains)
+            let new = FlintProtectionSnapshot(mode: mode, tier: breakLevel, end: endsAt)
             let cause = causeState(of: running, at: now)
-            // Dominance needs the running session's own frozen targets. Without them (a session
-            // from an older build, or a lost snapshot) it can't be proven — the picker selection
-            // is the user's current draft, not what is blocked — so the replacement is weakening.
+            // Dominance needs the running session's own frozen targets **and its mode**. Without
+            // them (a session from an older build, or a lost snapshot) it can't be proven — the
+            // picker selection is the user's current draft, not what is enforced — so the
+            // replacement is weakening.
             let decision: FlintProtectionDecision
             if let oldSelection = store.loadSessionSelection(sessionID: running.id) {
                 decision = FlintProtectionPolicy.decideReplace(new, over: snapshot(of: running, selection: oldSelection), for: cause)
@@ -690,7 +735,8 @@ public final class FlintSessionController {
                 throw FlintSessionError.replacementDenied(until: running.stableLogicalEnd(clock: env.clock))
             case .wait:
                 let scope = Self.replacementScope(tier: breakLevel, duration: duration,
-                                                  targets: env.shield.fingerprint(of: selection))
+                                                  targets: env.shield.fingerprint(of: sessionTargets),
+                                                  allowList: allowList)
                 switch harderGate(for: running, kind: "replace", scope: scope,
                                   confirmed: confirmed && origin == .appUI) {
                 case .proceed: break
@@ -723,7 +769,8 @@ public final class FlintSessionController {
             ownerID: ownerID,
             plannedDuration: endsAt.map { $0.timeIntervalSince(wallNow) },
             startRequestID: operationID,
-            removalGuard: removalGuard
+            removalGuard: removalGuard,
+            allowListMode: allowList ? true : nil
         ).checkpointed(clock: env.clock)
         let previous = current
         let previousSelection = previous.flatMap { store.loadSessionSelection(sessionID: $0.id) }
@@ -753,7 +800,7 @@ public final class FlintSessionController {
             try ledger.transaction { state in
                 guard var authority = state.sessionAuthority else { throw FlintSessionAuthorityError.generationMismatch }
                 do {
-                    try authority.install(session, selection: JSONEncoder().encode(selection), source: source,
+                    try authority.install(session, selection: JSONEncoder().encode(sessionTargets), source: source,
                         operationID: operationID, fingerprint: fingerprint, expectedRevision: expectedRevision,
                         at: FlintLedgerInstant(clock: env.clock),
                         previousSelection: try previousSelection.map { try JSONEncoder().encode($0) })
@@ -786,15 +833,17 @@ public final class FlintSessionController {
         // 2. Persist before anything else changes, so the monitor always finds the record that
         //    matches the registration and shield it can see. The id-keyed target snapshot goes
         //    first: a monitor that already sees the new record can only find its own targets.
-        store.saveSessionSelection(selection, sessionID: session.id)
+        store.saveSessionSelection(sessionTargets, sessionID: session.id)
         store.saveActiveSession(session)
-        store.saveSelection(selection)
+        // Today's picker default stays the block-list selection: an Allow List session's
+        // exceptions must never become what the next ordinary session blocks.
+        if !allowList { store.saveSelection(sessionTargets) }
         guard store.loadActiveSession() == session else { throw FlintSessionError.protectionStateUnavailable }
 
         // 3. Apply before retiring the previous dependable end. If the host dies here, the
         // installing generation can recover while the last-good predecessor remains finite.
         do {
-            try env.shield.applyBlockList(selection)
+            try Self.applyShield(sessionTargets, for: session, shield: env.shield)
         } catch {
             // Unreachable after the count checks above, but never leave a half-started session:
             // drop the new registration and give the previous session back its record and end.
@@ -846,6 +895,24 @@ public final class FlintSessionController {
         guard persistence.emitStartIfPending(session) else { throw FlintSessionError.protectionStateUnavailable }
         env.publishStatus()
         return session
+    }
+
+    // MARK: Shield
+
+    /// The one session shield write. The session's own recorded mode decides which adapter call
+    /// runs, so the start, the reconcile, the monitor's interval start and crash recovery can
+    /// never write a different kind of shield than the record promises.
+    static func applyShield(_ selection: FamilyActivitySelection, for session: FlintActiveSession,
+                            shield: FlintSessionShielding) throws {
+        if session.isAllowList { try shield.applyAllowList(selection) } else { try shield.applyBlockList(selection) }
+    }
+
+    /// An Allow List's exceptions are individually picked applications; category and website
+    /// picks cannot be expressed as exceptions.
+    static func applicationOnly(_ selection: FamilyActivitySelection) -> FamilyActivitySelection {
+        var result = FamilyActivitySelection()
+        result.applicationTokens = selection.applicationTokens
+        return result
     }
 
     // MARK: Stop
@@ -1076,9 +1143,13 @@ public final class FlintSessionController {
 
     private func snapshot(of session: FlintActiveSession, selection: FamilyActivitySelection?) -> FlintProtectionSnapshot<AnyHashable> {
         let targets = selection.map(env.shield.targets(of:)) ?? FlintSessionTargets()
-        return FlintProtectionSnapshot(mode: .blockList(applications: targets.applications,
-                                                        categories: targets.categories,
-                                                        webDomains: targets.webDomains),
+        // The mode is part of what the running session enforces: comparing a block list against
+        // an allow list is never provable, so a mode change counts as weakening.
+        let mode: FlintProtectionSnapshot<AnyHashable>.Mode = session.isAllowList
+            ? .allowList(allowedApplications: targets.applications)
+            : .blockList(applications: targets.applications, categories: targets.categories,
+                         webDomains: targets.webDomains)
+        return FlintProtectionSnapshot(mode: mode,
                                        // Logical: a forward jump must not shorten what it protects (§9).
                                        tier: session.breakLevel, end: session.stableLogicalEnd(clock: env.clock))
     }
@@ -1099,10 +1170,15 @@ public final class FlintSessionController {
     public static let legacyFocusFilterName = "Focus Filter"
 
     /// What a replacement request is, as a stable scope: a different request — other targets,
-    /// tier or duration — needs a new wait (ADR-012 §4). `targets` is the shield's launch-stable
-    /// fingerprint of the requested selection.
-    static func replacementScope(tier: BreakLevel, duration: TimeInterval, targets: String) -> [String] {
-        ["tier:\(tier.rawValue)", "duration:\(Int(duration))", "targets:\(targets)"]
+    /// tier, duration or mode — needs a new wait (ADR-012 §4). `targets` is the shield's
+    /// launch-stable fingerprint of the requested selection. The block-list scope is unchanged
+    /// from before allow lists existed (persisted waits still match); the mode is named only by
+    /// an Allow List request, so switching modes restarts the wait.
+    static func replacementScope(tier: BreakLevel, duration: TimeInterval, targets: String,
+                                 allowList: Bool = false) -> [String] {
+        var parts = ["tier:\(tier.rawValue)", "duration:\(Int(duration))", "targets:\(targets)"]
+        if allowList { parts.append("mode:\(FlintSessionStartParameters.allowListMode)") }
+        return parts
     }
 
     private enum HarderGate: Equatable {
@@ -1233,7 +1309,7 @@ public final class FlintSessionController {
         // ended this session. Never re-apply Safari without a dependable end for a timed cause.
         if let store, let current = store.loadActiveSession(), current.id == session.id,
            let selection = sessionSelection(for: current, in: store) {
-            try? env.shield.applyBlockList(selection)
+            try? Self.applyShield(selection, for: current, shield: env.shield)
             if current.endsAt == nil || env.registrar.registeredActivityNames().contains(current.monitorName) {
                 env.webRestrictions.reconcile(current, clock: env.clock)
             }
@@ -1252,9 +1328,13 @@ public final class FlintSessionController {
     public static let repairInterval: TimeInterval = 60
 
     /// The session's own frozen targets; sessions saved by older builds have no snapshot and
-    /// fall back to the picker selection they were started from.
+    /// fall back to the picker selection they were started from. An Allow List session never
+    /// falls back: the picker is the block-list default, and re-applying it would replace its
+    /// allow list with a different shield. No snapshot means no re-apply — never a clear, never
+    /// a block-list write.
     private func sessionSelection(for session: FlintActiveSession, in store: FlintSessionStateStoring) -> FamilyActivitySelection? {
-        store.loadSessionSelection(sessionID: session.id) ?? store.loadSelection()
+        if let frozen = store.loadSessionSelection(sessionID: session.id) { return frozen }
+        return session.isAllowList ? nil : store.loadSelection()
     }
 
     /// Re-register `session`'s auto-clear for its remaining time under a fresh name: register
@@ -1416,7 +1496,7 @@ public final class FlintSessionController {
                 return
             }
             if let store, let selection = sessionSelection(for: session, in: store) {
-                try? env.shield.applyBlockList(selection)
+                try? Self.applyShield(selection, for: session, shield: env.shield)
                 env.webRestrictions.reconcile(session, clock: env.clock)
             }
 
@@ -1509,6 +1589,10 @@ final class LiveSessionShield: FlintSessionShielding {
             categories: selection.categoryTokens,
             webDomains: selection.webDomainTokens
         )
+    }
+
+    func applyAllowList(_ selection: FamilyActivitySelection) throws {
+        try store.applyAllowList(allowedApplications: selection.applicationTokens)
     }
 
 

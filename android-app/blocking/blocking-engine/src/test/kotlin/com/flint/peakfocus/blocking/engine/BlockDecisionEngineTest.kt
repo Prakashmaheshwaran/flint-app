@@ -5,6 +5,7 @@ import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.DomainRef
+import com.flint.peakfocus.core.model.SafetyFloor
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.Verdict
 import org.junit.Assert.assertEquals
@@ -248,6 +249,31 @@ class SafetyFloorEngineMatrixTest {
         val onlyDialer = rule("allow", setOf("com.android.dialer"), allowList = true)
         assertEquals(Verdict.Allow, engine.decide("com.android.settings", null, listOf(onlyDialer), self))
         assertTrue(engine.decide(control, null, listOf(onlyDialer), self) is Verdict.Block)
+    }
+
+    @Test fun `an allow-list Timer blocks an unlisted app but never a floor dialer Home or recovery surface`() {
+        val start = 1_793_181_600_000L
+        // Exactly the rule the Android Timer start path writes: session id, app-only allow list,
+        // one finite deadline. No schedule, no domains.
+        val timer = BlockRule(
+            id = BlockRule.SESSION_ID_PREFIX + "timer-$start-allow",
+            name = "Focus timer",
+            targets = BlockTargets(apps = setOf(AppRef("com.spotify.music")), allowListMode = true),
+            expiresAtEpochMs = start + 300_000,
+        )
+        val during = start + 1_000
+        assertEquals("the allowed app stays reachable", Verdict.Allow,
+            engine.decide("com.spotify.music", null, listOf(timer), self, nowEpochMs = during))
+        assertTrue("everything else is blocked", engine.decide(control, null, listOf(timer), self, nowEpochMs = during) is Verdict.Block)
+        for (pkg in floor) {
+            assertEquals("Timer on $pkg", Verdict.Allow, engine.decide(pkg, null, listOf(timer), self, nowEpochMs = during))
+        }
+        // Both detectors ask the same floor question with the device's resolved default dialer and
+        // Home app before the engine sees an event; those runtime surfaces are protected too.
+        val runtimeSurfaces = setOf("com.oem.custom.dialer", "com.oem.custom.launcher")
+        for (pkg in runtimeSurfaces) assertTrue(SafetyFloor.isProtected(pkg, self, runtimeSurfaces))
+        // Expiry ends the Timer: no rule remains to block the control app.
+        assertEquals(Verdict.Allow, engine.decide(control, null, listOf(timer), self, nowEpochMs = start + 300_000))
     }
 }
 
