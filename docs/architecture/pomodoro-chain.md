@@ -121,13 +121,23 @@ whole chain, so its tier still governs stopping, replacing and editing during a 
 - **Clock changes:** after a time zone change or a same-boot wall-clock drift of more than
   5 seconds, the host reconcile re-registers the remaining rest carriers from logical times,
   within the existing clock-rearm budget. A future rest gets its full carrier. The rest in
-  progress gets a carrier that starts now and warns at its logical end. A carrier that iOS
+  progress gets a carrier that starts now. Its whole-minute warning lands at the logical end or
+  less than a minute after it, never before. A carrier that iOS
   dropped is re-registered the same way.
 - **Known limit (device gate):** if the wall clock moves backward during a rest while the
   host is not running, the rest-end callback can arrive late. The shield returns at the next
   callback or host reconcile. Ordinary-break carriers have the same limitation. A rest-end
   callback that finds the session transition lock busy past the monitor timeout changes
-  nothing; the rest stays open until the carrier's next callback or a host reconcile.
+  nothing. A rest shorter than 15 minutes then gets a second chance at its padded carrier's
+  `intervalDidEnd`. A rest of 15 minutes or more has a single end callback, so recovery falls
+  to the next rest's carrier, the chain end or a host reconcile.
+- **Focus resume restores Safari:** a rest clears the session store, including its Safari
+  keys. When focus resumes and the parent's end registration is missing, the parent end is
+  re-armed first, so Safari's restrictions return with a dependable end. A rest is not started
+  when the frozen targets needed to restore focus are unavailable.
+- **Recovery restores carriers:** recovering an interrupted install re-registers missing rest
+  carriers. A time-zone change or wall drift re-times the remaining rests even after the
+  dropped-registration budget is spent.
 - **Pre-registration is observed:** after registering, the start reads back the registered
   activities. If iOS does not hold the parent end and every rest carrier, the chain is
   refused (`registration_not_observed`).
@@ -218,10 +228,13 @@ past `phaseEndsAt` without a newer publication shows the phase as unavailable, n
 stale focus or rest claim. A surface that cannot show phases truthfully shows only the
 parent ("Pomodoro", chain end) and makes no claim about the phase.
 
-- `phaseEndsAt` is not a snapshot validity boundary. The protection claim changes only when a
-  carrier callback or reconcile rewrites the store, and that path republishes. Shortening the
-  whole snapshot to the phase end would turn a single missed publication into "State
+- On iOS, `phaseEndsAt` is not a snapshot validity boundary. The protection claim changes only
+  when a carrier callback or reconcile rewrites the store, and that path republishes. Shortening
+  the whole snapshot to the phase end would turn a single missed publication into "State
   unavailable" for a device that is still protecting.
+- On Android, enforcement flips at the boundary through the projection alone, without a store
+  write, so the phase end does bound the snapshot's validity there. The glance reports
+  "needs a new check" rather than a stale phase.
 - On iOS, the Live Activity cannot re-render at a phase boundary while the app is closed, so
   it shows only the parent and its chain end, never a phase. The widget has timeline entries
   at `phaseEndsAt`, so it shows the phase and drops it at the boundary.

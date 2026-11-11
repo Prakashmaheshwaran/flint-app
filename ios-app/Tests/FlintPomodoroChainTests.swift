@@ -112,6 +112,7 @@ final class FlintPomodoroPlanTests: XCTestCase {
 final class FlintPomodoroSessionTests: XCTestCase {
 
     private var shield: PomoShield!
+    private var web: PomoWebRestrictions!
     private var registrar: PomoRegistrar!
     private var store: PomoStore!
     private var clock: PomoClock!
@@ -123,6 +124,7 @@ final class FlintPomodoroSessionTests: XCTestCase {
     override func setUp() {
         super.setUp()
         shield = PomoShield()
+        web = PomoWebRestrictions()
         registrar = PomoRegistrar()
         store = PomoStore()
         clock = PomoClock()
@@ -151,7 +153,7 @@ final class FlintPomodoroSessionTests: XCTestCase {
         return FlintSessionController(environment: FlintSessionEnvironment(
             store: { store },
             shield: shield,
-            webRestrictions: PomoWebRestrictions(),
+            webRestrictions: web,
             registrar: registrar,
             isAuthorized: { true },
             clock: clock.flintClock,
@@ -545,6 +547,44 @@ final class FlintPomodoroSessionTests: XCTestCase {
         XCTAssertEqual(store.active?.pomodoroPhase(clock: clock.flintClock)?.phase?.kind, .rest)
     }
 
+    func testFocusAfterARestRepairsAMissingParentEndBeforeRestoringSafariF01() throws {
+        let c = controller()
+        let session = try start(c, plan: plan)
+        let names = carriers(session)
+        clock.advance(25 * 60 + 60) // rest 1
+        c.handlePomodoroCarrier(.intervalDidStart, activity: names[0])
+        XCTAssertEqual(shield.clearCount, 1, "the rest clears the store, Safari keys included")
+        registrar.registered.remove(session.monitorName) // iOS dropped the parent's end
+        let webBefore = web.reconciled.count
+        clock.advance(4 * 60) // focus 2
+        c.handlePomodoroCarrier(.intervalWillEndWarning, activity: names[0])
+        let current = try XCTUnwrap(store.active)
+        XCTAssertNotEqual(current.monitorName, session.monitorName, "the parent end is re-armed first")
+        XCTAssertTrue(registrar.registered.contains(current.monitorName))
+        XCTAssertEqual(web.reconciled.dropFirst(webBefore).last, current.monitorName,
+                       "Safari's restrictions come back with focus")
+        XCTAssertEqual(plannedRestEvents(.ended, index: 1).count, 1)
+    }
+
+    func testARestIsNotStartedWithoutTheFrozenTargetsToRestoreFocusF01() throws {
+        let c = controller()
+        let session = try start(c, plan: plan)
+        store.sessionSelections.removeAll()
+        store.selection = nil
+        clock.advance(25 * 60 + 60) // rest 1
+        c.handlePomodoroCarrier(.intervalDidStart, activity: carriers(session)[0])
+        XCTAssertEqual(shield.clearCount, 0, "no rest without a way back to focus (fail-closed)")
+    }
+
+    func testRecoveredChainsGetTheirMissingRestCarriersBackF01() throws {
+        let c = controller()
+        let session = try start(c, plan: plan)
+        let names = carriers(session)
+        registrar.registered.remove(names[1])
+        c.prepareAcceptedInstallationForScope()
+        XCTAssertTrue(registrar.registered.contains(names[1]))
+    }
+
     func testAStaleCarrierStillReconcilesTheCurrentChainPhaseF01() throws {
         let c = controller()
         _ = try start(c, plan: plan)
@@ -683,8 +723,9 @@ final class FlintPomodoroGlanceTests: XCTestCase {
 
 // MARK: - Fakes
 
-private struct PomoWebRestrictions: FlintSessionWebRestricting {
-    func reconcile(_ session: FlintActiveSession, clock: FlintClock) {}
+private final class PomoWebRestrictions: FlintSessionWebRestricting {
+    var reconciled: [String] = []
+    func reconcile(_ session: FlintActiveSession, clock: FlintClock) { reconciled.append(session.monitorName) }
 }
 
 private final class PomoShield: FlintSessionShielding {

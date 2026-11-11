@@ -444,7 +444,15 @@ public final class FlintSessionController {
     /// A start preview may therefore finish applying an already-accepted pending session.
     public func prepareAcceptedInstallationForScope() {
         guard env.transitionLock() != nil else { return }
-        _ = withTransition { persistence.drainAcceptedInstallation() }
+        _ = withTransition {
+            persistence.drainAcceptedInstallation()
+            // Crash recovery re-registers a chain's parent end; its rest carriers come back here
+            // too, so a recovered chain never runs without its disclosed rests.
+            if let store = env.store(), let session = store.loadActiveSession(), let plan = session.pomodoro,
+               session.naturalEndObservedAt == nil, !isOver(session) {
+                repairPomodoroCarriers(session, plan: plan, in: store, now: env.clock.now(), wallMoved: false)
+            }
+        }
     }
 
     /// Whether the session's commitment is over by its logical (monotonic-governed) time.
@@ -626,14 +634,32 @@ public final class FlintSessionController {
     /// whole session store (its Safari restrictions live there too) and focus reapplies the
     /// session's frozen selection. Callers hold the transition lock.
     private func writePhaseShield(_ session: FlintActiveSession, in store: FlintSessionStateStoring?) {
+        guard let store, let selection = sessionSelection(for: session, in: store) else {
+            // Without the frozen targets focus could never be restored after a rest, so a rest is
+            // not started at all (fail-closed: the shield stays as it is).
+            if session.isInPomodoroRest(clock: env.clock) {
+                FlintSessionHealth.update(in: env.healthDefaults()) {
+                    $0.lastArmFailure = .init(sessionName: session.name,
+                        reason: "pomodoro_rest_without_targets", at: env.clock.now())
+                }
+            }
+            return
+        }
         if session.isInPomodoroRest(clock: env.clock) {
             env.shield.clear()
             return
         }
-        guard let store, let selection = sessionSelection(for: session, in: store) else { return }
         try? env.shield.applyBlockList(selection)
-        if session.endsAt == nil || env.registrar.registeredActivityNames().contains(session.monitorName) {
-            env.webRestrictions.reconcile(session, clock: env.clock)
+        var current = session
+        if session.pomodoro != nil, session.endsAt != nil,
+           !env.registrar.registeredActivityNames().contains(session.monitorName) {
+            // A rest cleared this cause's Safari keys, and restoring them needs a dependable end:
+            // repair the parent's end registration first, as host reconcile would (design §4).
+            _ = rearm(session, in: store, now: env.clock.now(), reason: .repair)
+            if let updated = store.loadActiveSession(), updated.id == session.id { current = updated }
+        }
+        if current.endsAt == nil || env.registrar.registeredActivityNames().contains(current.monitorName) {
+            env.webRestrictions.reconcile(current, clock: env.clock)
         }
     }
 
@@ -693,7 +719,10 @@ public final class FlintSessionController {
     private func reconcilePomodoroPhase(_ session: FlintActiveSession, in store: FlintSessionStateStoring?, now: Date) {
         guard let plan = session.pomodoro else { return }
         writePhaseShield(session, in: store)
-        observePlannedRests(session, plan: plan, in: store, now: now)
+        // The shield write may have re-armed the parent (a new monitor name): observe against
+        // the record as it now stands so the marker persists.
+        let current = store?.loadActiveSession().flatMap { $0.id == session.id ? $0 : nil } ?? session
+        observePlannedRests(current, plan: plan, in: store, now: now)
     }
 
     /// A planned-rest carrier callback. Its name is only a wake-up: the logical phase decides,
@@ -1522,8 +1551,10 @@ public final class FlintSessionController {
     private func repairPomodoroCarriers(_ session: FlintActiveSession, plan: FlintPomodoroPlan,
                                         in store: FlintSessionStateStoring, now: Date,
                                         wallMoved: Bool) {
+        // The budget bounds re-registering carriers iOS dropped. A real time-zone change or wall
+        // drift always re-times the remaining rests in place (same names, no extra pool slots).
         guard let elapsed = session.pomodoroElapsed(clock: env.clock),
-              (session.clockRearmCount ?? 0) < Self.maximumClockChangeRearms else { return }
+              wallMoved || (session.clockRearmCount ?? 0) < Self.maximumClockChangeRearms else { return }
         let names = Self.pomodoroCarrierNames(for: session)
         let registered = env.registrar.registeredActivityNames()
         // The chain's wall-equivalent start after any same-boot clock change.
@@ -1536,8 +1567,9 @@ public final class FlintSessionController {
             guard restEnd > now, rest.index - 1 < names.count else { continue }
             let name = names[rest.index - 1]
             guard wallMoved || !registered.contains(name) else { continue }
-            // A rest under way keeps only its end: its carrier restarts now, with the §4
-            // deadline adapter landing on the logical rest end.
+            // A rest under way keeps only its end: its carrier restarts now, and the §4 deadline
+            // adapter's whole-minute warning lands at, or under a minute after, the logical rest
+            // end (never before it: an early wake-up would find the rest still open).
             let carrier = restStart > now
                 ? Self.pomodoroCarrierPlan(rest: rest, start: anchor, calendar: env.clock.calendar())
                 : FlintSessionAutoClearPlan.make(start: FlintSessionAutoClearPlan.wholeSecond(atOrAfter: now),
