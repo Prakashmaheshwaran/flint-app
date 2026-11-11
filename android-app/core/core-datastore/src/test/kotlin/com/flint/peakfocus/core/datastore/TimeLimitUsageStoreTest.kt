@@ -373,6 +373,21 @@ class TimeLimitUsageStoreTest {
         }
     }
 
+    @Test fun R18b_neverInitializedLedgerIsRetryableNotCorruptAndPartialBytesStayCorrupt() = runBlocking {
+        val disk = Disk(legacy())
+        suspend fun state() = store(disk).state.first { it !is StorageState.Loading }
+        assertEquals(StorageState.Unavailable(StorageFailure.IO), state())
+        assertEquals(legacy(), disk.values.value) // Reading never initializes or writes a default.
+        store(disk).measurementContext("app", at())
+        assertTrue(state() is StorageState.Ready)
+        // Any orphaned Time-owned key is a broken ledger, never an uninitialized one.
+        for (key in listOf(TIME_USAGE_SCHEMA, TIME_USAGE_STATE, TIME_USAGE_ARCHIVE, TIME_USAGE_TARGETS, TIME_LIMIT_ZONE_SCHEMA)) {
+            val partial = Disk(disk.values.value.toMutablePreferences().also { it.remove(key) })
+            assertEquals(key.name, StorageState.Unavailable(StorageFailure.CORRUPT),
+                store(partial).state.first { it !is StorageState.Loading })
+        }
+    }
+
     private suspend fun expectUnavailable(disk: Disk) {
         try { store(disk).measurementContext("app", at()); fail("unavailable state accepted") }
         catch (_: StorageUnavailableException) { }
