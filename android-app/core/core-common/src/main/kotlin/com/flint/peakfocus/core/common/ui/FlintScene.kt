@@ -529,9 +529,10 @@ fun FlintTabBar(
                 .selectableGroup(),
         ) {
             plan.rows.forEach { tabs ->
+                // Never a fixed height: at large font scales the glyph plus label outgrow 56dp,
+                // and a pinned row clips the tab names. Items keep their 56/64dp minimum.
                 Row(
-                    Modifier.fillMaxWidth()
-                        .then(if (plan.singleRow) Modifier.height(56.dp) else Modifier.height(IntrinsicSize.Min)),
+                    Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     tabs.forEach { tab ->

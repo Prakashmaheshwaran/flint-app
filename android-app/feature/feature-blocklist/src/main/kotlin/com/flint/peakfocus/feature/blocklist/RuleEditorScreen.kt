@@ -19,6 +19,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -252,9 +256,11 @@ internal fun RuleEditorScreen(
                         value = draft.name,
                         onValueChange = { draft = draft.copy(name = it) },
                         singleLine = true,
+                        // BasicTextField has no theme color: without one it draws black on Ground.
                         textStyle = MaterialTheme.typography.headlineSmall.copy(
                             fontSize = 28.sp,
                             letterSpacing = (-0.5).sp,
+                            color = FlintPalette.Bone,
                         ),
                         cursorBrush = androidx.compose.ui.graphics.SolidColor(FlintPalette.Ember),
                         modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).semantics {
@@ -769,7 +775,11 @@ private fun SelectedDomainRow(domain: String, onRemove: () -> Unit) {
     }
 }
 
-/** Seven equal-width day pills, ISO order Mon..Sun, matching [IsoDays]. */
+/**
+ * Seven equal-width day pills, ISO order Mon..Sun, matching [IsoDays]. When the scaled labels
+ * cannot all fit on one line the pills wrap to two rows (4 + 3) instead of splitting a label
+ * mid-word ("Mo/n").
+ */
 @Composable
 internal fun DayOfWeekRow(
     selected: Set<Int>,
@@ -777,50 +787,67 @@ internal fun DayOfWeekRow(
     modifier: Modifier = Modifier,
 ) {
     val haptics = rememberFlintHaptics()
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        IsoDays.ALL.forEach { day ->
-            val isSelected = day in selected
-            val container by animateColorAsState(
-                targetValue = if (isSelected) FlintPalette.Ember else FlintPalette.Card,
-                animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-                label = "dayPillContainer",
-            )
-            // The label eases on the container's own spec — a snapped color would sit on the
-            // wrong side of the fill for the animation's first half.
-            val labelColor by animateColorAsState(
-                targetValue = if (isSelected) FlintPalette.OnEmber else FlintPalette.Mist,
-                animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-                label = "dayPillLabel",
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    // 48dp touch minimum; the visual pill stays compact via center alignment.
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(container)
-                    .border(1.dp, if (isSelected) FlintPalette.Ember else FlintPalette.Divider, RoundedCornerShape(14.dp))
-                    .toggleable(
-                        value = isSelected,
-                        role = Role.Checkbox,
-                        onValueChange = {
-                            haptics.tick()
-                            onToggle(day)
-                        },
-                    )
-                    .padding(vertical = FlintSpacing.sm),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = IsoDays.shortLabel(day),
-                    style = MaterialTheme.typography.titleSmall.copy(
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                    ),
-                    color = labelColor,
+    val labelStyle = MaterialTheme.typography.titleSmall.copy(
+        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+    )
+    val pill: @Composable (Int, Modifier) -> Unit = { day, pillModifier ->
+        val isSelected = day in selected
+        val container by animateColorAsState(
+            targetValue = if (isSelected) FlintPalette.Ember else FlintPalette.Card,
+            animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
+            label = "dayPillContainer",
+        )
+        // The label eases on the container's own spec — a snapped color would sit on the
+        // wrong side of the fill for the animation's first half.
+        val labelColor by animateColorAsState(
+            targetValue = if (isSelected) FlintPalette.OnEmber else FlintPalette.Mist,
+            animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
+            label = "dayPillLabel",
+        )
+        Box(
+            modifier = pillModifier
+                // 48dp touch minimum; the visual pill stays compact via center alignment.
+                .heightIn(min = 48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(container)
+                .border(1.dp, if (isSelected) FlintPalette.Ember else FlintPalette.Divider, RoundedCornerShape(14.dp))
+                .toggleable(
+                    value = isSelected,
+                    role = Role.Checkbox,
+                    onValueChange = {
+                        haptics.tick()
+                        onToggle(day)
+                    },
                 )
+                .padding(vertical = FlintSpacing.sm),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = IsoDays.shortLabel(day),
+                style = labelStyle,
+                color = labelColor,
+                maxLines = 1,
+            )
+        }
+    }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val gap = 6.dp
+        val widest = IsoDays.ALL.maxOf { day ->
+            measurer.measure(AnnotatedString(IsoDays.shortLabel(day)), labelStyle, softWrap = false).size.width
+        }
+        // Each pill needs its widest label plus a little side room to read as a pill.
+        val needed = (with(density) { widest.toDp() } + 8.dp) * IsoDays.ALL.size + gap * (IsoDays.ALL.size - 1)
+        val rows = if (needed <= maxWidth) listOf(IsoDays.ALL) else IsoDays.ALL.chunked(4)
+        val perRow = rows.maxOf { it.size }
+        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+            rows.forEach { days ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    days.forEach { day -> pill(day, Modifier.weight(1f)) }
+                    // Keep pills the same width in a short last row.
+                    repeat(perRow - days.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
     }

@@ -15,6 +15,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,7 +54,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -246,36 +249,66 @@ private fun ProtectionCard(health: HealthStatus, banner: BannerUi) {
             ) {
                 FlintStatusDot(accent, pulsing = banner.level == HealthLevel.HEALTHY, modifier = Modifier.size(10.dp))
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(banner.headline, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    banner.body,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                    color = FlintPalette.Mist,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(banner.headline, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
         }
+        // Full width and never ellipsized: the body carries the recovery guidance and the
+        // website-coverage disclosure for this state, which can run long at large font scales.
+        Text(
+            banner.body,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+            color = FlintPalette.Mist,
+        )
         Box(Modifier.fillMaxWidth().height(1.dp).background(FlintPalette.Hairline))
-        Row(Modifier.fillMaxWidth()) {
-            GrantStat("Accessibility", health.accessibilityEnabled, Modifier.weight(1f))
-            GrantStat("Usage access", health.usageAccessGranted, Modifier.weight(1f))
-            GrantStat("Battery", health.batteryExemptionGranted, Modifier.weight(1f))
+        val grants = listOf(
+            "Accessibility" to health.accessibilityEnabled,
+            "Usage access" to health.usageAccessGranted,
+            "Battery" to health.batteryExemptionGranted,
+        )
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val measurer = rememberTextMeasurer()
+            val density = LocalDensity.current
+            val widest = grants.maxOf { (label, _) ->
+                measurer.measure(AnnotatedString(label), grantLabelStyle(), softWrap = false).size.width
+            }
+            // Three columns only while every label fits whole; large font scales get a list.
+            if (with(density) { widest.toDp() } <= maxWidth / grants.size - 4.dp) {
+                Row(Modifier.fillMaxWidth()) {
+                    grants.forEach { (label, granted) -> GrantStat(label, granted, Modifier.weight(1f)) }
+                }
+            } else {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    grants.forEach { (label, granted) ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(label, style = grantLabelStyle(), modifier = Modifier.weight(1f))
+                            GrantValue(granted)
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
+private fun grantLabelStyle() = MaterialTheme.typography.labelSmall.copy(
+    fontSize = 12.sp,
+    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+)
+
+@Composable
+private fun GrantValue(granted: Boolean) {
+    Text(
+        if (granted) "Allowed" else "Off",
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+        color = if (granted) FlintPalette.Mist else FlintPalette.Danger,
+    )
+}
+
+@Composable
 private fun GrantStat(label: String, granted: Boolean, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), maxLines = 1)
-        Text(
-            if (granted) "Allowed" else "Off",
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
-            color = if (granted) FlintPalette.Mist else FlintPalette.Danger,
-            maxLines = 1,
-        )
+        Text(label, style = grantLabelStyle(), maxLines = 1)
+        GrantValue(granted)
     }
 }
 
@@ -301,7 +334,8 @@ private fun NotificationEnableCard() {
             modifier = Modifier.size(26.dp),
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("Heads-up before rules start?", style = MaterialTheme.typography.titleSmall)
+            // Android only notifies when a focus session ends; nothing fires before rules start.
+            Text("Heads-up when focus ends?", style = MaterialTheme.typography.titleSmall)
             Text(
                 "A quiet nudge when a focus session ends.",
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),

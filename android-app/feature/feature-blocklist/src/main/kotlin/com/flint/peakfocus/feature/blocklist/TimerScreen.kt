@@ -518,20 +518,33 @@ private fun TodayScene(
 /** M03's three-stat row: two serif numbers plus the resting app tiles. */
 @Composable
 private fun TodayStatsRow(focused: String, next: String?, restingApps: List<AppRef>) {
-    Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.Top) {
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(focused, style = MaterialTheme.typography.titleLarge.merge(FlintNumerals), maxLines = 1)
+    // Values may wrap at large font scales; each column spans the row so labels stay on one baseline.
+    Row(Modifier.fillMaxWidth().padding(top = 2.dp).height(IntrinsicSize.Min), verticalAlignment = Alignment.Top) {
+        Column(
+            Modifier.weight(1f).fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            StatValue(focused)
             Spacer(Modifier.height(5.dp))
             StatLabel("FOCUSED")
         }
         Box(Modifier.width(1.dp).height(34.dp).background(FlintPalette.Divider))
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(next ?: "—", style = MaterialTheme.typography.titleLarge.merge(FlintNumerals), maxLines = 1)
+        Column(
+            Modifier.weight(1f).fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            StatValue(next ?: "—")
             Spacer(Modifier.height(5.dp))
             StatLabel("NEXT")
         }
         Box(Modifier.width(1.dp).height(34.dp).background(FlintPalette.Divider))
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            Modifier.weight(1f).fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
             if (restingApps.isEmpty()) {
                 Text("—", style = MaterialTheme.typography.titleLarge.merge(FlintNumerals))
             } else {
@@ -563,6 +576,33 @@ private fun TodayStatsRow(focused: String, next: String?, restingApps: List<AppR
         }
     }
 }
+
+/**
+ * A stat value: short values ("1h 30m", "9:00 AM", "—") use the serif numeral; longer history
+ * states ("No focus sessions yet", "Focus history unavailable") are sentences, so they wrap in
+ * body text instead of being clipped to one numeral line. Neither form is ever clipped.
+ */
+@Composable
+private fun StatValue(text: String) {
+    if (text.length <= STAT_NUMERAL_MAX_CHARS) {
+        Text(
+            text,
+            style = MaterialTheme.typography.titleLarge.merge(FlintNumerals),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+    } else {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = FlintPalette.Mist,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+    }
+}
+
+private const val STAT_NUMERAL_MAX_CHARS = 8
 
 @Composable
 private fun StatLabel(text: String) {

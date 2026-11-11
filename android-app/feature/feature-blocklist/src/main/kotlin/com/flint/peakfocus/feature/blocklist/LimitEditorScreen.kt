@@ -271,7 +271,8 @@ private fun LimitEditorContent(
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            (value.toIntOrNull() ?: 0).let { if (draft.timeEnabled) "${it}m" else "$it" },
+                            // An empty or unparseable field is not a zero allowance; Save rejects it.
+                            value.trim().toIntOrNull()?.let { if (draft.timeEnabled) "${it}m" else "$it" } ?: "—",
                             style = MaterialTheme.typography.displaySmall.merge(FlintNumerals),
                         )
                         Text(unit, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = FlintPalette.Mist)
@@ -284,6 +285,8 @@ private fun LimitEditorContent(
             if (draft.timeEnabled) {
                 AllowanceStepper(
                     label = "Daily allowance · minutes",
+                    minusDescription = "Fewer minutes",
+                    plusDescription = "More minutes",
                     text = draft.minutesText,
                     onText = { draft = draft.copy(minutesText = it) },
                     onMinus = {
@@ -299,6 +302,8 @@ private fun LimitEditorContent(
             if (draft.openEnabled) {
                 AllowanceStepper(
                     label = "Daily allowance · credits",
+                    minusDescription = "Fewer credits",
+                    plusDescription = "More credits",
                     text = draft.opensText,
                     onText = { draft = draft.copy(opensText = it) },
                     onMinus = {
@@ -397,6 +402,8 @@ private fun AllowanceStepper(
     onText: (String) -> Unit,
     onMinus: () -> Unit,
     onPlus: () -> Unit,
+    minusDescription: String,
+    plusDescription: String,
 ) {
     Row(
         Modifier
@@ -414,7 +421,9 @@ private fun AllowanceStepper(
                 value = text,
                 onValueChange = { onText(it.filter { c -> c.isDigit() }) },
                 singleLine = true,
-                textStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp).merge(FlintNumerals),
+                // BasicTextField has no theme color: without one it draws black on the card.
+                textStyle = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp, color = FlintPalette.Bone)
+                    .merge(FlintNumerals),
                 cursorBrush = androidx.compose.ui.graphics.SolidColor(FlintPalette.Ember),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier
@@ -422,11 +431,11 @@ private fun AllowanceStepper(
                     .semantics { contentDescription = label },
             )
         }
-        FlintCircleButton(onClick = onMinus, contentDescription = "Less", size = 44.dp) {
+        FlintCircleButton(onClick = onMinus, contentDescription = minusDescription, size = 44.dp) {
             Icon(FlintGlyphs.minus, contentDescription = null, modifier = Modifier.size(16.dp))
         }
         Spacer(Modifier.width(8.dp))
-        FlintCircleButton(onClick = onPlus, contentDescription = "More", size = 44.dp) {
+        FlintCircleButton(onClick = onPlus, contentDescription = plusDescription, size = 44.dp) {
             Icon(FlintGlyphs.plus, contentDescription = null, modifier = Modifier.size(16.dp))
         }
     }

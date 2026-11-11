@@ -15,6 +15,10 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -302,7 +306,11 @@ fun FlintChipText(text: String, color: Color = Color.Unspecified) {
     )
 }
 
-/** Pill track with a raised segment — Block/Allow list, break level, Today/7 days. */
+/**
+ * Pill track with a raised segment — Block/Allow list, break level, Today/7 days. Full-width
+ * tracks split into equal segments while every label fits on one line; at large font scales
+ * the segments stack instead, so a label is never broken mid-word ("Hardcor/e").
+ */
 @Composable
 fun <T> FlintSegmented(
     options: List<Pair<T, String>>,
@@ -313,42 +321,65 @@ fun <T> FlintSegmented(
     enabled: Boolean = true,
 ) {
     val reducedMotion = rememberReducedMotion()
-    Row(
-        modifier
-            .clip(RoundedCornerShape(if (compact) 16.dp else 18.dp))
-            .background(if (compact) FlintPalette.BoneFill else FlintPalette.BoneTrack)
-            .padding(if (compact) 3.dp else 4.dp)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp),
-    ) {
-        options.forEach { (value, label) ->
-            val isSelected = value == selected
-            val fill by animateColorAsState(
-                if (isSelected) FlintPalette.Bone else Color.Transparent,
-                tween(if (reducedMotion) 0 else FlintMotion.DurationShort),
-                label = "segmentFill",
+    val labelStyle = MaterialTheme.typography.bodyMedium.copy(
+        fontSize = if (compact) MaterialTheme.typography.bodySmall.fontSize else MaterialTheme.typography.bodyMedium.fontSize,
+        fontWeight = MaterialTheme.typography.titleSmall.fontWeight,
+    )
+    val trackPadding = if (compact) 3.dp else 4.dp
+    val gap = if (compact) 2.dp else 4.dp
+    val segment: @Composable (T, String, Modifier) -> Unit = { value, label, segmentModifier ->
+        val isSelected = value == selected
+        val fill by animateColorAsState(
+            if (isSelected) FlintPalette.Bone else Color.Transparent,
+            tween(if (reducedMotion) 0 else FlintMotion.DurationShort),
+            label = "segmentFill",
+        )
+        Box(
+            segmentModifier
+                .minimumInteractiveComponentSize()
+                .clip(RoundedCornerShape(if (compact) 13.dp else 14.dp))
+                .background(fill)
+                .selectable(isSelected, enabled = enabled, role = Role.Tab) { onSelect(value) }
+                .heightIn(min = if (compact) 32.dp else 40.dp)
+                .padding(horizontal = if (compact) 12.dp else 4.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label,
+                style = labelStyle,
+                color = if (isSelected) FlintPalette.OnBone else FlintPalette.Mist,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
-            Box(
-                (if (compact) Modifier else Modifier.weight(1f))
-                    .minimumInteractiveComponentSize()
-                    .clip(RoundedCornerShape(if (compact) 13.dp else 14.dp))
-                    .background(fill)
-                    .selectable(isSelected, enabled = enabled, role = Role.Tab) { onSelect(value) }
-                    .heightIn(min = if (compact) 32.dp else 40.dp)
-                    .padding(horizontal = if (compact) 12.dp else 4.dp, vertical = 6.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = if (compact) MaterialTheme.typography.bodySmall.fontSize else MaterialTheme.typography.bodyMedium.fontSize,
-                        fontWeight = MaterialTheme.typography.titleSmall.fontWeight,
-                    ),
-                    color = if (isSelected) FlintPalette.OnBone else FlintPalette.Mist,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
+        }
+    }
+    val track = Modifier
+        .clip(RoundedCornerShape(if (compact) 16.dp else 18.dp))
+        .background(if (compact) FlintPalette.BoneFill else FlintPalette.BoneTrack)
+        .padding(trackPadding)
+        .selectableGroup()
+    if (compact) {
+        Row(modifier.then(track), horizontalArrangement = Arrangement.spacedBy(gap)) {
+            options.forEach { (value, label) -> segment(value, label, Modifier) }
+        }
+        return
+    }
+    BoxWithConstraints(modifier) {
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val segmentWidth = (maxWidth - trackPadding * 2 - gap * (options.size - 1)) / options.size
+        val fitsInRow = options.all { (_, label) ->
+            val pixels = measurer.measure(AnnotatedString(label), labelStyle, softWrap = false).size.width
+            with(density) { pixels.toDp() } + 8.dp <= segmentWidth
+        }
+        if (fitsInRow) {
+            Row(Modifier.fillMaxWidth().then(track), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                options.forEach { (value, label) -> segment(value, label, Modifier.weight(1f)) }
+            }
+        } else {
+            Column(Modifier.fillMaxWidth().then(track), verticalArrangement = Arrangement.spacedBy(gap)) {
+                options.forEach { (value, label) -> segment(value, label, Modifier.fillMaxWidth()) }
             }
         }
     }
