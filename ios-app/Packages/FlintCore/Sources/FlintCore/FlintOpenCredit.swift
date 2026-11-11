@@ -68,12 +68,13 @@ public enum FlintOpenCredit {
         let raw = defaults.object(forKey: FlintLedgerState.legacyOpenCreditKey)
         // R2p2-N03: initialization writes `[]` here before ledger creation, which the old
         // presence check read as an established legacy setup and thereby made a never-used
-        // quota unavailable. Positive provenance is the discriminator: the fresh-install
-        // receipt, or the legacy never-used proof written with that array. A genuine legacy
-        // install whose user deleted their rules kept its own saved `[]` (no proof) and must
-        // keep the closed "lost established counter" refusal; a surviving counter still wins.
+        // quota unavailable. An empty array counts as never used only with positive
+        // provenance: the completed fresh-install receipt, or the legacy never-used proof
+        // written with that array. A genuine legacy install whose user deleted their rules
+        // kept its own saved `[]` (no proof) and keeps the closed "lost established counter"
+        // refusal; a surviving counter still wins either way.
         let openRules = defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue)
-        let provenNeverUsed = receipt != .absent
+        let provenNeverUsed = receipt == .complete
             || defaults.data(forKey: FlintRuleStoreKey.openLimits.neverUsed) == FlintRuleInitialization.neverUsedProof
         let bootstrappedEmpty = (openRules as? Data) == Data("[]".utf8)
             && provenNeverUsed

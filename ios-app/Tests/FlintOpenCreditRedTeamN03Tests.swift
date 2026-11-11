@@ -7,8 +7,9 @@ import XCTest
 /// `FlintRuleStoreLock.prepareInitialization` (rule bootstrap / legacy upgrade) →
 /// `FlintProtectionLedger.appGroup()`-equivalent migration (which runs
 /// `FlintOpenCredit.importLegacy` before the pass import) → first Open rule setup → first
-/// credit acceptance. The ledger is built exactly like the App Group one so the migration hook,
-/// the durable initialized marker and the missing-file rule are identical to production.
+/// credit acceptance. The migration hook and the missing-file rule match production; the
+/// durable initialized marker is held by the harness rather than in the App Group suite, so
+/// its role as protection evidence during initialization is not modelled here.
 final class FlintOpenCreditRedTeamN03Tests: XCTestCase {
     /// Same instant as the other migration fixtures: 2026-10-28T12:00:00Z, UTC.
     private var now: Date { ISO8601DateFormatter().date(from: "2026-10-28T12:00:00Z")! }
@@ -107,6 +108,8 @@ final class FlintOpenCreditRedTeamN03Tests: XCTestCase {
         XCTAssertEqual(FlintRuleInitialization.receipt(in: h.defaults), .complete)
         // Re-read: the migration is already recorded, so no second import happens.
         state = try productionLedger(h).read().get()
+        XCTAssertTrue(state.migrations.contains(FlintLedgerState.legacyOpenCreditMigration))
+        XCTAssertEqual(state.openCredits.availability, .ready)
         let at = firstOpenRuleAndReconcile(h, state: &state)
         XCTAssertEqual(preview(state, at: at).remaining, 3)
     }
@@ -212,6 +215,8 @@ final class FlintOpenCreditRedTeamN03Tests: XCTestCase {
 
         XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
         XCTAssertEqual(FlintRuleInitialization.receipt(in: h.defaults), .absent)
+        // Literal key (not `FlintRuleStoreKey.openLimits.neverUsed`) so this guard also compiles
+        // and passes on the pre-fix source.
         XCTAssertNil(h.defaults.object(forKey: "flint.openLimit.rules.neverUsed.adr012"),
                      "a user's saved empty array is never proof of a never-used domain")
         var state = try productionLedger(h).read().get()
