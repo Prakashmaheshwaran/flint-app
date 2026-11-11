@@ -55,6 +55,7 @@ object BlockingHealthUi {
     fun shortReasonNote(reason: String): String? = when (reason) {
         "path-b-backup-unavailable" -> "Backup blocking off: Usage access is missing"
         "time-limits-need-usage-access" -> "Time limits can't measure app use without Usage access"
+        "time-limit-measurement-unavailable" -> "Time limits can't measure app use right now"
         else -> null
     }
 
