@@ -125,6 +125,12 @@ data class ProtectionStatus(
             validUntilElapsedRealtimeMs = null,
         )
 
+        /** The latest new block-surface mount delivered nothing (attach and any fallback failed). */
+        const val REASON_BLOCK_SURFACE_MOUNT_FAILED = "block-surface-mount-failed"
+
+        /** The overlay could not attach; only the best-effort full-screen Activity was requested. */
+        const val REASON_BLOCK_SURFACE_FALLBACK_ONLY = "block-surface-fallback-only"
+
         const val MAX_DISPLAY_NAME = 64
         private val DISPLAY_WHITESPACE = Regex("[\\p{Cntrl}\\s]+")
 
@@ -252,5 +258,8 @@ object ProtectionStatusHub {
         leaseUntilElapsedRealtimeMs: Long? = null,
     ) = publisher.publishPathBHealth(pathBState, degradedReasons, leaseUntilElapsedRealtimeMs)
 
-    internal fun resetForTests() = publisher.resetForTests()
+    internal fun resetForTests() {
+        BlockSurfaceMountHealth.publisher.resetForTests()
+        publisher.resetForTests()
+    }
 }

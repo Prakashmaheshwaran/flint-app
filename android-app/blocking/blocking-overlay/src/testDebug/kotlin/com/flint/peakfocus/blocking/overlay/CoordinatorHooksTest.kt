@@ -83,7 +83,7 @@ class CoordinatorHooksTest {
             override fun detach(view: View) = Unit
             override fun goHome() = Unit
         },
-        onBlockSurfaceUnavailable = if (withFallback) { _, _, _, _ -> fallbackLaunches++ } else null,
+        onBlockSurfaceUnavailable = if (withFallback) { _, _, _, _ -> fallbackLaunches++; true } else null,
         onEnforcementChanged = { enforcementChanges.incrementAndGet() },
         safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }, requiredRuntimeSources = emptySet()),
         focusStateStore = focus, configuredLimitsStore = limits, blockRulesStore = rules,
@@ -91,6 +91,7 @@ class CoordinatorHooksTest {
 
     @After fun tearDown() {
         BlockEventHooks.unregister(listener)
+        BlockSurfaceMountHealth.publisher.resetForTests()
         scope.cancel()
         ActiveRulesHolder.publish(ActiveRulesHolder.SOURCE_DATASTORE, emptyList())
         BlockExemptions.clearAll()

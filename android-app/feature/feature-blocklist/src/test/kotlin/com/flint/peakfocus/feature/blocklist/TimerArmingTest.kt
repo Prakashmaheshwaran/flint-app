@@ -89,6 +89,21 @@ class TimerArmingTest {
         assertTrue(phase(readyTimerStatus(at(1), listOf(id)), now = at(1), attempt = armed, live = false) is TimerArmingState.Degraded)
     }
 
+    @Test fun `R-30 a failed or fallback-only shield mount withholds Armed until a primary mount clears it`() {
+        val checked = readyTimerStatus(at(), listOf(id))
+        fun withReason(reason: String) = checked.copy(detectors = checked.detectors.copy(degradedReasons = setOf(reason)))
+        for (reason in listOf(ProtectionStatus.REASON_BLOCK_SURFACE_MOUNT_FAILED, ProtectionStatus.REASON_BLOCK_SURFACE_FALLBACK_ONLY)) {
+            for (attempt in listOf(attempt(), attempt().copy(hadArmed = true))) {
+                val degraded = phase(withReason(reason), attempt = attempt) as TimerArmingState.Degraded
+                assertTrue(reason, degraded.committed)
+                assertTrue(reason, degraded.reason.contains("saved end time is unchanged"))
+            }
+            // Start stays available: refusing a new Timer would only remove protection.
+            assertNull(timerPrerequisiteFailure(withReason(reason), permissions, true, at()))
+        }
+        assertTrue(phase(checked) is TimerArmingState.Armed)
+    }
+
     @Test fun `PC-58 restored Timer can use current proof but a cross-boot new-start acknowledgement cannot`() {
         val reboot = at(1, boot = "reboot")
         val status = readyTimerStatus(reboot, listOf(id))
