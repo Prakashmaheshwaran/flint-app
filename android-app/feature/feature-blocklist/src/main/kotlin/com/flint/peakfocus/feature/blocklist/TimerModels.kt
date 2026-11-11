@@ -63,6 +63,25 @@ internal fun draftPomodoroPlan(draft: TimerDraft): PomodoroPlan? {
     }.getOrNull()
 }
 
+/** Why a Pomodoro draft has no valid plan yet, so Begin is never disabled without a reason. */
+internal fun pomodoroDraftError(draft: TimerDraft): String? {
+    if (!draft.pomodoro) return null
+    val built = runCatching {
+        PomodoroPlan(focusMinutes = draft.focusMinutes, restMinutes = draft.restMinutes,
+            rounds = draft.rounds, longRestMinutes = draft.longRestMinutes,
+            longRestEvery = draft.longRestEvery)
+    }
+    built.exceptionOrNull()?.let { return it.message ?: "Adjust the plan to continue." }
+    return PomodoroPlan.validationError(built.getOrThrow())
+}
+
+/**
+ * The long-rest toggle is available when a long rest can be added, and always when one is set:
+ * a stale long rest must never become impossible to turn off.
+ */
+internal fun longRestToggleEnabled(draft: TimerDraft): Boolean =
+    draft.rounds > 2 || draft.longRestMinutes != null
+
 /** Plain-Timer duration choices, and the whole-chain length of a Pomodoro draft. */
 internal fun draftChainMinutes(draft: TimerDraft): Int =
     draftPomodoroPlan(draft)?.let { (it.totalMs / 60_000L).toInt() } ?: draft.durationMinutes

@@ -87,6 +87,19 @@ class PomodoroDraftTest {
         assertEquals(plan, timerRule(draft, now, "id").pomodoro)
     }
 
+    @Test fun `an invalid plan states why Begin is disabled and a set long rest stays removable`() {
+        assertNull(pomodoroDraftError(pomodoroDraft()))
+        // A long rest without its interval is the shape a stale draft used to reach.
+        val orphaned = pomodoroDraft(longRest = 15)
+        assertFalse(validTimerDraft(orphaned))
+        assertTrue(pomodoroDraftError(orphaned)!!.contains("both long-rest options or neither"))
+        // It must stay switchable off: the toggle is enabled while a long rest is set, but
+        // adding one still needs a round count that has room for an interval.
+        assertTrue(longRestToggleEnabled(orphaned))
+        assertFalse(longRestToggleEnabled(pomodoroDraft(rounds = 2)))
+        assertTrue(longRestToggleEnabled(pomodoroDraft(rounds = 4)))
+    }
+
     @Test fun `the running card text follows the phase and never the chain end`() {
         val plan = PomodoroPlan.DEFAULT
         assertEquals("Focus · round 1 of 4 · 25:00 left", pomodoroCardLine(plan, 0))

@@ -1026,6 +1026,16 @@ internal fun StartFocusSheet(
                     modifier = Modifier.padding(bottom = 10.dp).semantics(mergeDescendants = true) { },
                 )
             }
+            // A plan that lost its long-rest interval must say why Begin is disabled, rather
+            // than silently falling back to the plain duration controls.
+            pomodoroDraftError(state.draft)?.takeIf { footerPlan == null }?.let { problem ->
+                Text(
+                    problem,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FlintPalette.Danger,
+                    modifier = Modifier.padding(bottom = 10.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
             if (state.draft.breakLevel == BreakLevel.HARDCORE && footerPlan != null) {
                 Column(Modifier.padding(bottom = 10.dp)) { HardcoreCommitmentDisclosure() }
             }
@@ -1090,7 +1100,9 @@ private fun PomodoroDraftSection(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         FlintChip(onClick = { onLongRest(draft.longRestMinutes == null) },
-            selected = draft.longRestMinutes != null, enabled = enabled && draft.rounds > 2, height = 36.dp) {
+            selected = draft.longRestMinutes != null,
+            // A set long rest stays switchable off even when the round count no longer fits it.
+            enabled = enabled && longRestToggleEnabled(draft), height = 36.dp) {
             FlintChipText(if (draft.longRestMinutes == null) "Add a long rest" else "No long rest")
         }
     }
@@ -1421,6 +1433,15 @@ private fun CompleteScene(
                 color = FlintPalette.Mist,
                 modifier = Modifier.padding(top = 10.dp),
             )
+            // F01 §7: the rounds this history proves — a committed completion proves all of them.
+            FocusHistoryText.rounds(session)?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FlintPalette.Mist,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
             session.breaks?.let { Text(FocusHistoryText.breaks(it), color = FlintPalette.Mist, modifier = Modifier.padding(top = 6.dp)) }
             Spacer(Modifier.weight(1f).heightIn(min = 26.dp))
             CompleteStatsRow(session = session, summary = summary)

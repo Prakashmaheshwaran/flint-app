@@ -508,6 +508,39 @@ class TimerViewModelTest {
         assertEquals(0, store.endCalls)
     }
 
+    @Test fun `lowering rounds clears a long rest that no longer fits instead of dead-ending`() = runTest(dispatcher) {
+        val vm = model(InMemoryBlockRulesStore())
+        runCurrent()
+        vm.selectApps(listOf(app))
+        vm.selectPomodoro(true)
+        vm.selectRounds(4)
+        vm.selectLongRest(true)
+        vm.selectLongRestMinutes(15)
+        vm.selectLongRestEvery(3)
+        assertEquals(15, vm.uiState.value.draft.longRestMinutes)
+        assertEquals(3, vm.uiState.value.draft.longRestEvery)
+        assertNotNull(draftPomodoroPlan(vm.uiState.value.draft))
+
+        // Rounds 2 has no interval for a long rest: both fields are cleared together, so the
+        // plan stays valid and Begin is still available.
+        vm.selectRounds(2)
+        val draft = vm.uiState.value.draft
+        assertNull("no interval survives two rounds", draft.longRestEvery)
+        assertNull("the long rest is cleared with it", draft.longRestMinutes)
+        assertTrue(validTimerDraft(draft))
+        assertTrue(vm.uiState.value.canStart)
+        assertNull(pomodoroDraftError(draft))
+
+        // Back at four rounds a long rest can be added again, and it can always be removed.
+        vm.selectRounds(4)
+        vm.selectLongRest(true)
+        assertEquals(2, vm.uiState.value.draft.longRestEvery)
+        assertTrue(longRestToggleEnabled(vm.uiState.value.draft))
+        vm.selectLongRest(false)
+        assertNull(vm.uiState.value.draft.longRestMinutes)
+        assertNull(vm.uiState.value.draft.longRestEvery)
+    }
+
     private class ControlledStore(initial: List<BlockRule> = emptyList()) : BlockRulesStore {
         private val delegate = InMemoryBlockRulesStore(initial)
         var customFlow: Flow<List<BlockRule>>? = null

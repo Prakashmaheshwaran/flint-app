@@ -310,9 +310,13 @@ internal class TimerViewModel(
     fun selectRounds(rounds: Int) {
         if (!state.value.canEdit || !state.value.draft.pomodoro || rounds !in PomodoroPlan.roundChoices) return
         state.update { current ->
-            val every = current.draft.longRestEvery?.takeIf { it in 2 until rounds }
-            current.copy(draft = current.draft.copy(rounds = rounds,
-                longRestEvery = if (current.draft.longRestMinutes == null) null else every ?: 2.takeIf { rounds > 2 }))
+            val draft = current.draft
+            val longSet = draft.longRestMinutes != null
+            // An interval that no longer fits the round count is dropped; a long rest without a
+            // valid interval would leave an invalid plan that cannot be cleared once rounds ≤ 2.
+            val every = draft.longRestEvery?.takeIf { it in 2 until rounds } ?: 2.takeIf { longSet && rounds > 2 }
+            current.copy(draft = draft.copy(rounds = rounds, longRestEvery = every,
+                longRestMinutes = if (every == null) null else draft.longRestMinutes))
         }
     }
 
