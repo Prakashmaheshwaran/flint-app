@@ -192,12 +192,24 @@ extension FlintProtectionStatus {
         }
         // Legacy sessions predate origin tracking; absent origins retain the app UI default.
         // The end shown and published is the logical one: a same-boot wall jump moves it (§9).
-        let session = active.map {
-            FlintProtectionStatusBuilder.SessionInput($0,
-                armed: sessionArmed ?? activities.contains($0.monitorName),
-                kind: sessionKind,
-                origin: sessionOrigin ?? $0.origin.flatMap(FlintProtectionStatusSnapshot.Session.Origin.init(rawValue:)) ?? .appUI,
-                logicalEnd: $0.stableLogicalEnd(clock: clock))
+        // A frozen chain plan identifies a Pomodoro parent regardless of the caller's default.
+        let effectiveKind: FlintProtectionStatusSnapshot.Session.Kind =
+            active?.pomodoro != nil ? .pomodoro : sessionKind
+        let session = active.map { active -> FlintProtectionStatusBuilder.SessionInput in
+            let position = active.pomodoroPhase(clock: clock)
+            let elapsed = active.pomodoroElapsed(clock: clock)
+            let phase = position?.phase
+            let phaseEndsAt = phase.flatMap { phase in
+                elapsed.map { now.addingTimeInterval(phase.end - $0) }
+            }
+            return FlintProtectionStatusBuilder.SessionInput(active,
+                armed: sessionArmed ?? activities.contains(active.monitorName),
+                enforcing: !active.isInPomodoroRest(clock: clock),
+                kind: effectiveKind,
+                origin: sessionOrigin ?? active.origin.flatMap(FlintProtectionStatusSnapshot.Session.Origin.init(rawValue:)) ?? .appUI,
+                logicalEnd: active.stableLogicalEnd(clock: clock),
+                phase: phase == nil ? nil : (phase?.isRest == true ? .rest : .focus),
+                round: phase?.round, rounds: active.pomodoro?.rounds, phaseEndsAt: phaseEndsAt)
         }
         let liveActive = active.flatMap { $0.isLogicallyExpired(clock: clock) ? nil : $0 }
         // A recent observed wall-clock anomaly remains relevant without a manual session.

@@ -16,6 +16,8 @@ final class SessionViewModel: ObservableObject {
         let todaySeconds: TimeInterval?
         let isPreview: Bool
         let historyDegraded: Bool
+        /// "4 of 4 rounds" for a Pomodoro chain, from observed planned rests (F01).
+        var roundsText: String? = nil
         // Compatibility for RootView's existing presentation identity.
         var minutes: Int { Int(max(0, focusedSeconds) / 60) }
     }
@@ -23,8 +25,18 @@ final class SessionViewModel: ObservableObject {
     @Published var selection = FamilyActivitySelection()
     @Published var durationMinutes: Int = 45
     @Published var breakLevel: BreakLevel = .harder
+    /// Pomodoro mode: the whole focus/rest chain is one commitment (F01).
+    @Published var isPomodoro = false
+    @Published var pomodoroFocusMinutes = FlintPomodoroConfig.standard.focusMinutes
+    @Published var pomodoroRestMinutes = FlintPomodoroConfig.standard.breakMinutes
+    @Published var pomodoroRounds = FlintPomodoroConfig.standard.rounds
+    @Published var pomodoroLongRestMinutes: Int?
+    @Published var pomodoroLongRestEvery: Int?
     @Published private(set) var active: FlintActiveSession?
     @Published private(set) var remaining: TimeInterval = 0
+    /// The running chain's phase and its remaining time, derived from trusted logical time.
+    @Published private(set) var pomodoroPhase: FlintPomodoroPlan.Phase?
+    @Published private(set) var phaseRemaining: TimeInterval = 0
     @Published private(set) var savedGroups: [FlintAppGroup] = []
     @Published var finished: Finished? {
         didSet {
@@ -97,6 +109,12 @@ final class SessionViewModel: ObservableObject {
         if !observeLifecycle { active = initialSession; return }
         if let saved = FlintGroupStore()?.loadSelection() { selection = saved }
         savedGroups = FlintGroupStore()?.loadAppGroups() ?? []
+        let savedPomodoro = FlintPomodoroConfig.load()
+        pomodoroFocusMinutes = savedPomodoro.focusMinutes
+        pomodoroRestMinutes = savedPomodoro.breakMinutes
+        pomodoroRounds = savedPomodoro.rounds
+        pomodoroLongRestMinutes = savedPomodoro.longRestMinutes
+        pomodoroLongRestEvery = savedPomodoro.longRestEvery
         active = controller.activeSession
         #if DEBUG
         // `-FlintUIPreviewSession <easy|harder|hardcore>` shows a running session in the Simulator,
@@ -135,12 +153,31 @@ final class SessionViewModel: ObservableObject {
         active = current
         if current == nil {
             remaining = 0
+            pomodoroPhase = nil
+            phaseRemaining = 0
             harderStop = nil
             timer?.invalidate()
             if observesLifecycle { refreshCompletion() }
         } else {
             startTicking()
         }
+    }
+
+    /// The running chain's phase line: "Focus · round 2 of 4 · 12:03 left" or
+    /// "Rest · focus resumes in 4:10". nil for an ordinary session.
+    var phaseLine: String? {
+        guard let phase = pomodoroPhase, let plan = active?.pomodoro else { return nil }
+        let clock = Self.clockText(phaseRemaining)
+        return phase.isRest
+            ? "Rest · focus resumes in \(clock)"
+            : "Focus · round \(phase.round) of \(plan.rounds) · \(clock) left"
+    }
+
+    static func clockText(_ value: TimeInterval) -> String {
+        let total = max(0, Int(value.rounded()))
+        let hours = total / 3600, minutes = (total % 3600) / 60, seconds = total % 60
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
+                         : String(format: "%02d:%02d", minutes, seconds)
     }
 
     // MARK: Saved app groups (presets)
@@ -226,35 +263,60 @@ final class SessionViewModel: ObservableObject {
         let level: BreakLevel
         let source: FlintSessionSource
         let token: FlintSessionStartToken
+        let pomodoro: FlintPomodoroPlan?
     }
     private var startAttempt: StartAttempt?
+
+    /// The chain the Pomodoro controls describe, or nil when they are out of bounds (the sheet
+    /// explains and the start is refused).
+    var pomodoroPlan: FlintPomodoroPlan? {
+        guard isPomodoro else { return nil }
+        return FlintPomodoroPlan(focusMinutes: pomodoroFocusMinutes, restMinutes: pomodoroRestMinutes,
+            rounds: pomodoroRounds, longRestMinutes: pomodoroLongRestMinutes,
+            longRestEvery: pomodoroLongRestEvery)
+    }
+
+    /// The start button's length: the whole chain in Pomodoro mode.
+    var committedMinutes: Int {
+        pomodoroPlan.map(\.totalMinutes) ?? durationMinutes
+    }
 
     func start(confirmed: Bool = false) {
         defer { NotificationCenter.default.post(name: .flintProtectionConfigurationChanged, object: nil) }
         errorText = nil
         needsProtectionResume = false
         do {
+            let plan = pomodoroPlan
+            if isPomodoro && plan == nil {
+                errorText = "These Pomodoro settings aren't valid. Focus is 5–120 minutes, rest 1–60, and 2–8 rounds."
+                return
+            }
             if startAttempt == nil || !confirmed {
-                let source: FlintSessionSource = appliedGroupSelection == selection ? .preset : .manual
-                let duration = TimeInterval(durationMinutes * 60)
+                // A chain is a Pomodoro cause (policy kind and history source), whatever selection
+                // it blocks.
+                let source: FlintSessionSource = plan != nil ? .pomodoro
+                    : appliedGroupSelection == selection ? .preset : .manual
+                let duration = plan?.totalDuration ?? TimeInterval(durationMinutes * 60)
                 let token = try controller.prepareStartToken(selection: selection, duration: duration,
                     breakLevel: breakLevel, source: source, origin: .appUI,
-                    route: "app-ui.session", operationID: startRequestID)
+                    route: "app-ui.session", operationID: startRequestID, pomodoro: plan)
                 startAttempt = StartAttempt(selection: selection, duration: duration, level: breakLevel,
-                    source: source, token: token)
+                    source: source, token: token, pomodoro: plan)
             }
             guard let attempt = startAttempt else { return }
             active = try controller.startBlockNow(
                 selection: attempt.selection,
                 duration: attempt.duration,
                 breakLevel: attempt.level,
-                name: "Focus",
+                name: attempt.pomodoro == nil ? "Focus" : "Pomodoro",
                 source: attempt.source,
                 origin: .appUI,
                 requestID: attempt.token.operationID,
                 expectedRevision: attempt.token.expectedRevision,
-                confirmed: confirmed
+                confirmed: confirmed,
+                pomodoro: attempt.pomodoro
             )
+            if let plan = attempt.pomodoro { savePomodoroCadence(plan) }
             startRequestID = UUID().uuidString
             startAttempt = nil
             startTicking()
@@ -270,6 +332,12 @@ final class SessionViewModel: ObservableObject {
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }
+    }
+
+    private func savePomodoroCadence(_ plan: FlintPomodoroPlan) {
+        FlintPomodoroConfig(focusMinutes: plan.focusMinutes, breakMinutes: plan.restMinutes,
+            rounds: plan.rounds, longRestMinutes: plan.longRestMinutes,
+            longRestEvery: plan.longRestEvery).save()
     }
 
     /// The session screen's "End session". Easy ends now (the tap is the confirmation); Harder
@@ -426,10 +494,20 @@ final class SessionViewModel: ObservableObject {
     }
 
     private func tick() {
-        guard let active else { remaining = 0; return }
+        guard let active else { remaining = 0; pomodoroPhase = nil; phaseRemaining = 0; return }
         // Logical time, as enforcement uses it: a wall-clock change can't end the UI's block
         // while shields stay armed (ADR-012 §9).
         remaining = active.logicalRemaining(clock: .system) ?? 0
+        // The chain's phase ticks from the same trusted elapsed time as enforcement (F01).
+        if active.pomodoro != nil {
+            let phase = active.pomodoroPhase(clock: .system)?.phase
+            pomodoroPhase = phase
+            let elapsed = active.pomodoroElapsed(clock: .system) ?? 0
+            phaseRemaining = phase.map { max(0, $0.end - elapsed) } ?? 0
+        } else {
+            pomodoroPhase = nil
+            phaseRemaining = 0
+        }
         breakRemaining = ordinaryBreak?.remaining(at: .init(clock: .system)) ?? 0
         if resumingBreak || (ordinaryBreak != nil && breakRemaining <= 0) {
             Task { [weak self] in await self?.reconcileBreakIfNeeded() }
@@ -454,7 +532,8 @@ final class SessionViewModel: ObservableObject {
                   let session = history.completionToPresent(in: summary) else { return }
             self.finished = Finished(id: session.id, name: session.name, focusedSeconds: session.focusedSeconds,
                                      todaySeconds: summary.days.last?.focusedSeconds, isPreview: history.isPreview,
-                                     historyDegraded: summary.availability == .degraded)
+                                     historyDegraded: summary.availability == .degraded,
+                                     roundsText: session.roundsText)
         }
     }
 }

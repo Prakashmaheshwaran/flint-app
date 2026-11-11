@@ -35,6 +35,13 @@ struct SessionView: View {
 
                     if active.endsAt != nil {
                         VStack(spacing: 8) {
+                            if let phase = vm.phaseLine {
+                                Text(phase)
+                                    .font(FlintFont.text(14, weight: .semibold))
+                                    .foregroundStyle(FlintBrand.emberText)
+                                    .multilineTextAlignment(.center)
+                                    .accessibilityIdentifier("session.pomodoro.phase")
+                            }
                             Text(Self.clock(vm.remaining))
                                 .flintNumber(84)
                                 .accessibilityLabel("\(Self.spoken(vm.remaining)) left")
@@ -475,6 +482,12 @@ struct SessionCompleteView: View {
                 Text(completeLine)
                     .flintSecondary(15)
                     .padding(.top, 10)
+                if let rounds = finished.roundsText {
+                    Text(rounds)
+                        .flintSecondary(13)
+                        .padding(.top, 4)
+                        .accessibilityIdentifier("session.complete.rounds")
+                }
                 if finished.isPreview { Text("DEBUG · Seeded preview events").flintSecondary(12).padding(.top, 8) }
                 if finished.historyDegraded { Text(FocusHistoryText.degraded).flintSecondary(13).padding(.top, 8) }
 

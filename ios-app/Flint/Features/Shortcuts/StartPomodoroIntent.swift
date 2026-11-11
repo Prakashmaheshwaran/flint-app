@@ -2,15 +2,30 @@
 import AppIntents
 import FlintCore
 
-/// One timed focus round. Break lengths and round counts are not exposed until the durable
-/// multi-round state machine ships; legacy runner requests also execute only one round.
+/// A whole Pomodoro focus/rest chain: one commitment spanning every focus round and the planned
+/// rests between them (F01). Existing shortcuts keep their meaning: the focus parameter is the
+/// same non-optional value, and leaving Rounds empty runs one plain focus round exactly as the
+/// legacy intent did. Setting 2–8 rounds starts the chain; an empty rest uses the saved cadence.
+/// A chain outside the plan bounds is refused with its limits.
 struct StartPomodoroIntent: AppIntent {
-    static var title: LocalizedStringResource = "Start Pomodoro Focus Round"
-    static var description = IntentDescription("Start one focus round over your blocked apps. Run it again when you're ready for another round.")
+    static var title: LocalizedStringResource = "Start Pomodoro"
+    static var description = IntentDescription("Start a Pomodoro over your blocked apps. Set 2–8 rounds for a chain of focus rounds with planned rests between them, all one commitment; leave Rounds empty for a single focus round.")
     static var openAppWhenRun = false
 
-    @Parameter(title: "Focus minutes", default: 25)
+    @Parameter(title: "Focus minutes", description: "For a chain: 5–120, in steps of 5.", default: 25)
     var focusMinutes: Int
+
+    @Parameter(title: "Rest minutes", description: "1–60. Leave empty for your saved cadence.")
+    var restMinutes: Int?
+
+    @Parameter(title: "Rounds", description: "2–8 starts a focus/rest chain. Leave empty (or 1) for a single focus round.")
+    var rounds: Int?
+
+    @Parameter(title: "Long rest minutes", description: "Optional 5–60 rest, at least the normal rest. Leave empty for none.")
+    var longRestMinutes: Int?
+
+    @Parameter(title: "Long rest every", description: "Optional: place the long rest every 2–7 rounds. Set both long-rest values or neither.")
+    var longRestEvery: Int?
 
     @Parameter(title: "App Group", description: "A saved group to block. Leave empty to reuse your last selection.")
     var appGroup: FlintAppGroupEntity?
@@ -20,30 +35,59 @@ struct StartPomodoroIntent: AppIntent {
 
     static var parameterSummary: some ParameterSummary {
         Summary("Pomodoro focus for \(\.$focusMinutes) minutes") {
+            \.$rounds
+            \.$restMinutes
+            \.$longRestMinutes
+            \.$longRestEvery
             \.$appGroup
             \.$requestID
         }
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
+        let saved = FlintPomodoroConfig.load()
         let config = FlintPomodoroConfig(
-            focusMinutes: max(1, focusMinutes),
-            breakMinutes: 0,
-            rounds: 1
+            focusMinutes: focusMinutes,
+            breakMinutes: restMinutes ?? saved.breakMinutes,
+            rounds: rounds ?? 1,
+            longRestMinutes: longRestMinutes,
+            longRestEvery: longRestMinutes == nil ? nil : (longRestEvery ?? saved.longRestEvery)
         )
-        let request = FlintShortcutsRunner.pomodoroRoundRequest(config, appGroupID: appGroup?.id, breakLevel: .easy)
-        let prepared = try FlintShortcutsRunner.prepare(request, source: .pomodoro, requestID: requestID)
+        let level = BreakLevel.easy
         do {
+            if let plan = FlintPomodoroPlan(config: config) {
+                let prepared = try FlintShortcutsRunner.prepare(
+                    FlintShortcutsRunner.pomodoroRequest(plan, appGroupID: appGroup?.id, breakLevel: level),
+                    source: .pomodoro, requestID: requestID, pomodoro: plan)
+                _ = try await startConfirmingIfNeeded(
+                    { try FlintShortcutsRunner.start(prepared, confirmed: $0) },
+                    hardcore: level == .hardcore, minutes: plan.totalMinutes, replaying: prepared.replaying)
+                if prepared.replaying {
+                    return .result(dialog: "This Pomodoro chain is already running.")
+                }
+                return .result(dialog: "Pomodoro started: \(plan.rounds) rounds of \(plan.focusMinutes) minutes with \(Self.restText(plan)) rests. \(plan.totalMinutes) minutes in all.")
+            }
+            // A chain the plan bounds reject is refused with its limits rather than silently run
+            // as something else; only a single round is an ordinary focus session.
+            guard config.rounds <= 1 else { throw FlintShortcutsError.invalidPomodoroPlan }
+            let request = FlintShortcutsRunner.pomodoroRoundRequest(config, appGroupID: appGroup?.id,
+                                                                   breakLevel: level)
+            let prepared = try FlintShortcutsRunner.prepare(request, source: .pomodoro, requestID: requestID)
             _ = try await startConfirmingIfNeeded(
                 { try FlintShortcutsRunner.start(prepared, confirmed: $0) },
-                hardcore: false, minutes: config.focusMinutes, replaying: prepared.replaying)
+                hardcore: level == .hardcore, minutes: config.focusMinutes, replaying: prepared.replaying)
+            if prepared.replaying { return .result(dialog: "This request's focus session is already running.") }
+            return .result(dialog: "Focus session started. Blocking for \(config.focusMinutes) minutes.")
         } catch FlintSessionError.startAlreadyEnded(_, _) {
-            return .result(dialog: "This request's focus round already ended. It wasn't started again.")
+            return .result(dialog: "This request already ended. It wasn't started again.")
         }
-        if prepared.replaying { return .result(dialog: "This request's focus round is already running.") }
-        return .result(
-            dialog: "Focus round started. Blocking for \(config.focusMinutes) minutes."
-        )
+    }
+
+    private static func restText(_ plan: FlintPomodoroPlan) -> String {
+        guard let long = plan.longRestMinutes, let every = plan.longRestEvery else {
+            return "\(plan.restMinutes)-minute"
+        }
+        return "\(plan.restMinutes)-minute (a \(long)-minute rest every \(every) rounds)"
     }
 }
 #endif
