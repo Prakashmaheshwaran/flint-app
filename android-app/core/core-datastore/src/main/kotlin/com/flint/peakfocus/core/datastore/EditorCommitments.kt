@@ -162,6 +162,9 @@ internal fun limitShape(pkg: String, tier: BreakLevel, budget: Int, dailyZoneId:
     name = pkg, tier = tier, allowListMode = false, apps = setOf(pkg), domains = emptySet(), budget = budget, dailyZoneId = dailyZoneId,
 )
 
+/** A one-time window is a new finite commitment: strictly shorter than 24 elapsed hours. */
+internal const val ONE_TIME_MAX_MS = 24 * 60 * 60 * 1000L
+
 /**
  * Structural + commitment validation at commit time. [zone] is the rule's saved occurrence zone
  * (the editor passes its materialized cause zone, else the default zone); a dated one-time start
@@ -173,9 +176,6 @@ internal fun limitShape(pkg: String, tier: BreakLevel, budget: Int, dailyZoneId:
  * wall-clock rewind must not make a start look authorable when the trusted timeline has already
  * passed it — authoring and activation read one clock.
  */
-/** A one-time window is a new finite commitment: strictly shorter than 24 elapsed hours. */
-internal const val ONE_TIME_MAX_MS = 24 * 60 * 60 * 1000L
-
 internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClockStamp,
                                 zone: String = TimeZone.getDefault().id,
                                 trustedWallEpochMs: Long = now.wallEpochMs): String? {

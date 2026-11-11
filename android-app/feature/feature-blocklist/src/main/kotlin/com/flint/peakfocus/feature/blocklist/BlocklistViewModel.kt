@@ -249,9 +249,10 @@ internal class BlocklistViewModel(
      */
     fun saveRule(draft: RuleDraft, onSaved: () -> Unit = {}) {
         // The saved record is the baseline, as in the editor: an active or finished one-time
-        // rule's past start is not re-judged. The commit gate remains the authority.
+        // rule's past start is not re-judged. If the list isn't loaded yet, the editor already
+        // gated this edit against its baseline; the commit gate remains the authority either way.
         val saved = draft.id?.let { id ->
-            (rules.value as? RulesUiState.Ready)?.rules?.singleOrNull { it.id == id }?.let(::ruleDraftOf)
+            (rules.value as? RulesUiState.Ready)?.rules?.singleOrNull { it.id == id }?.let(::ruleDraftOf) ?: draft
         }
         if (validate(draft, original = saved).isNotEmpty()) return
         val rule = draft.toRule(id = draft.id ?: newRuleId())
