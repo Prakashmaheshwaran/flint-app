@@ -251,9 +251,18 @@ class DataStoreEditorCommitmentStore(
 
     override suspend fun commitTimer(rule: BlockRule, now: AccessClockStamp, safety: EditorSafety): TimerStartResult = transact(now) { prefs, now ->
         if (hasActiveProtectionRecovery(prefs, now)) return@transact TimerStartResult.Rejected("Resume protection first.")
+        // An allow-list Timer inverts the selection: everything outside it is blocked. That
+        // breadth needs a fresh floor reading, exactly like a schedule/Sleep allow-list rule
+        // (PC-53). Refuse before prepare() so a degraded device performs no write at all.
+        if (rule.targets.allowListMode && !safety.resolved) {
+            return@transact TimerStartResult.Rejected(ALLOW_LIST_SAFETY_UNRESOLVED_MESSAGE)
+        }
         var state = prepare(prefs, now)
         require(rule.id.startsWith(CONTRACT_TIMER_ID_PREFIX) && rule.schedule == null && rule.enabled)
-        require(!rule.targets.allowListMode && rule.targets.apps.isNotEmpty() && rule.targets.apps.none { it.packageName.isBlank() || it.packageName in floor(safety) })
+        require(rule.targets.apps.isNotEmpty() && rule.targets.apps.none { it.packageName.isBlank() })
+        // A block list may not spend the floor on its own escape surfaces. An allow list only
+        // keeps apps reachable, so naming a floor app there is harmless (mirrors the editor).
+        require(rule.targets.allowListMode || rule.targets.apps.none { it.packageName in floor(safety) })
         require(isValidNewSessionDuration((rule.expiresAtEpochMs ?: 0) - now.wallEpochMs))
         val current = prefs.editorRules()
         if (state.causes.size >= MAX_EDITOR_CAUSES) return@transact TimerStartResult.Rejected("Protection capacity is full. Finish an existing commitment and try again.")
@@ -536,7 +545,7 @@ class DataStoreEditorCommitmentStore(
             val old = current.singleOrNull { it.id == rule.id }
             validateEditorRule(rule, old, now)?.let { return it }
             if (rule.targets.allowListMode && !safety.resolved && (old == null || !old.enabled || old.targets != rule.targets || (!old.targets.allowListMode && rule.targets.allowListMode))) {
-                return "Calling or Home safety could not be checked. Protection health is degraded; try again before starting allow-list protection."
+                return ALLOW_LIST_SAFETY_UNRESOLVED_MESSAGE
             }
             if (!rule.targets.allowListMode && rule.targets.apps.any { it.packageName in floor(safety) }) return "Calling, Home, system recovery and Flint apps stay available. Remove those apps from this selection."
         }

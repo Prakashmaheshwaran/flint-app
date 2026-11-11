@@ -2,8 +2,10 @@ package com.flint.peakfocus.feature.blocklist
 
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -61,5 +63,21 @@ class TimerAppPickerTest {
         compose.onNodeWithText("1 SELECTED").assertExists()
         compose.onNodeWithText("1").assertExists() // Footer count.
         compose.onNodeWithText("Done · 1 app").assertIsEnabled()
+    }
+
+    @Test fun `allow-list mode asks which apps stay available and claims the rest are blocked`() {
+        compose.setContent {
+            TimerAppPicker(
+                appsState = InstalledAppsUiState.Ready(apps),
+                initiallySelected = draft,
+                onConfirm = {},
+                onCancel = {},
+                allowListMode = true,
+            )
+        }
+        compose.onNodeWithText("What stays available").assertExists()
+        compose.onNodeWithText("Everything else is blocked while this timer runs.").assertExists()
+        // The picker's own floor note already says these governed surfaces are never blocked.
+        compose.onAllNodesWithText("What rests").assertCountEquals(0)
     }
 }

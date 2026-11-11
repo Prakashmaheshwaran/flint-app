@@ -113,6 +113,14 @@ interface EditorCommitmentStore {
 /** A fresh resolution supplied by the adapter, never a permission bit or a visible shield. */
 data class EditorSafety(val resolved: Boolean, val excludedPackages: Set<String> = emptySet())
 
+/**
+ * One refusal for new (or newly broadened) allow-list protection while the safety floor could not
+ * be resolved (PC-53). The rule editor and Timer start share the exact same line so neither path
+ * invents a softer or stronger description of the same degraded health.
+ */
+internal const val ALLOW_LIST_SAFETY_UNRESOLVED_MESSAGE =
+    "Calling or Home safety could not be checked. Protection health is degraded; try again before starting allow-list protection."
+
 /** Publication boundaries must replace stale Ready state even when decoding throws unexpectedly. */
 fun editorPublicationFailure(cause: Throwable): StorageFailure = when (cause) {
     is StorageUnavailableException -> cause.reason

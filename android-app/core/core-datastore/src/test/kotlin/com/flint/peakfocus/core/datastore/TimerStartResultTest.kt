@@ -17,6 +17,10 @@ class TimerStartResultTest {
     private fun at(elapsed: Long = 0, wall: Long = elapsed) = AccessClockStamp(base + wall, 10_000 + elapsed, "boot")
     private fun timer(id: String, start: Long = base) = BlockRule(CONTRACT_TIMER_ID_PREFIX + "$start-$id", "Timer",
         BlockTargets(apps = setOf(AppRef("app"))), expiresAtEpochMs = start + 300_000)
+    /** The immediate Allow List Timer shape: the picked apps are kept available, everything else is blocked. */
+    private fun allowListTimer(id: String, start: Long = base, apps: Set<String> = setOf("com.spotify.music")) =
+        BlockRule(CONTRACT_TIMER_ID_PREFIX + "$start-$id", "Focus timer",
+            BlockTargets(apps = apps.map { AppRef(it) }.toSet(), allowListMode = true), expiresAtEpochMs = start + 300_000)
     private class Disk : DataStore<Preferences> {
         val values = MutableStateFlow(emptyPreferences())
         var writes = 0
@@ -50,6 +54,73 @@ class TimerStartResultTest {
         val rule = timer("new", now.wallEpochMs)
         assertEquals(TimerStartResult.Applying(rule.id, now), store.commitTimer(rule, at(), EditorSafety(true)))
         assertEquals(setOf(other, rule), DataStoreBlockRulesStore(disk).rules.first().toSet())
+    }
+
+    @Test fun `an allow-list Timer commits with the exact inverted rule under resolved safety`() = runBlocking {
+        val disk = Disk(); val store = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
+        val rule = allowListTimer("allow")
+        assertEquals(TimerStartResult.Applying(rule.id, at()), store.commitTimer(rule, at(), EditorSafety(true)))
+        assertEquals(listOf(rule), DataStoreBlockRulesStore(disk).rules.first())
+        // It materializes as one finite session like any other Timer, not a permanent rule.
+        val cause = readEditorState(disk.values.value).causes.getValue(ruleCauseKey(rule.id))
+        assertEquals(rule.id, cause.occurrenceId)
+        assertEquals(300_000L, cause.interval!!.remainingMs(at()))
+    }
+
+    @Test fun `PC-53 an allow-list Timer is refused without a fresh floor resolution and writes nothing`() = runBlocking {
+        val disk = Disk(); val store = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
+        store.reconcile(at())
+        val before = disk.values.value; val writes = disk.writes
+        assertEquals(TimerStartResult.Rejected(ALLOW_LIST_SAFETY_UNRESOLVED_MESSAGE),
+            store.commitTimer(allowListTimer("degraded"), at(), EditorSafety(false)))
+        assertEquals(before, disk.values.value); assertEquals(writes, disk.writes)
+    }
+
+    @Test fun `an empty allow list is refused and never reaches storage`() = runBlocking {
+        val disk = Disk(); val store = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
+        try {
+            store.commitTimer(allowListTimer("empty", apps = emptySet()), at(), EditorSafety(true))
+            fail("An empty allow list would block every app")
+        } catch (_: IllegalArgumentException) {
+        }
+        try {
+            store.commitTimer(allowListTimer("blank", apps = setOf("  ")), at(), EditorSafety(true))
+            fail("A blank allow-list package is not a target")
+        } catch (_: IllegalArgumentException) {
+        }
+        assertTrue(DataStoreBlockRulesStore(disk).rules.first().isEmpty())
+    }
+
+    @Test fun `PC-52 a floor app inside an allow list is permitted while a block list still refuses it`() = runBlocking {
+        val staticFloor = SafetyFloor.STATIC_PACKAGES.first()
+        val runtimeFloor = "com.oem.custom.dialer"
+        val safety = EditorSafety(true, setOf(runtimeFloor))
+        val allowedDisk = Disk()
+        val allowedStore = DataStoreEditorCommitmentStore(allowedDisk, defaultZone = { "UTC" })
+        val allowed = allowListTimer("allow-floor", apps = setOf(staticFloor, runtimeFloor, "com.spotify.music"))
+        assertEquals(TimerStartResult.Applying(allowed.id, at()), allowedStore.commitTimer(allowed, at(), safety))
+        assertEquals(listOf(allowed), DataStoreBlockRulesStore(allowedDisk).rules.first())
+
+        val blockedDisk = Disk()
+        val blockedStore = DataStoreEditorCommitmentStore(blockedDisk, defaultZone = { "UTC" })
+        for (floorApp in listOf(staticFloor, runtimeFloor)) {
+            try {
+                blockedStore.commitTimer(timer("block-floor").copy(targets = BlockTargets(apps = setOf(AppRef(floorApp)))),
+                    at(), safety)
+                fail("A block list must never spend $floorApp")
+            } catch (_: IllegalArgumentException) {
+            }
+        }
+        assertTrue(DataStoreBlockRulesStore(blockedDisk).rules.first().isEmpty())
+    }
+
+    @Test fun `a running allow-list Timer still occupies the single Timer slot`() = runBlocking {
+        val disk = Disk(); val store = DataStoreEditorCommitmentStore(disk, defaultZone = { "UTC" })
+        val first = allowListTimer("first")
+        assertTrue(store.startTimer(first, at(), EditorSafety(true)))
+        assertEquals(TimerStartResult.Rejected("A Timer is already active. Finish it before starting another."),
+            store.commitTimer(allowListTimer("second"), at(), EditorSafety(true)))
+        assertEquals(listOf(first), DataStoreBlockRulesStore(disk).rules.first())
     }
 
     @Test fun `PC-54 forward wall edit cannot replace a logically active Timer at commit`() = runBlocking {

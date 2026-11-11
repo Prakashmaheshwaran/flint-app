@@ -125,6 +125,42 @@ class TimerViewModelTest {
         assertEquals(BreakLevel.HARDER, vm.uiState.value.draft.breakLevel)
     }
 
+    @Test fun `allow-list start commits the inverted rule and keeps the picked apps`() = runTest(dispatcher) {
+        val store = ControlledStore()
+        val vm = model(store)
+        runCurrent()
+        vm.selectApps(listOf(app, otherApp))
+        vm.selectAllowListMode(true)
+        assertTrue(vm.uiState.value.draft.allowListMode)
+        vm.start()
+        runCurrent()
+        val saved = vm.uiState.value.sessions.single()
+        assertTrue(saved.targets.allowListMode)
+        assertEquals(
+            setOf(AppRef(app.packageName, app.label), AppRef(otherApp.packageName, otherApp.label)),
+            saved.targets.apps,
+        )
+        assertTrue(saved.targets.domains.isEmpty())
+        assertTrue(store.rules.first().single().targets.allowListMode)
+    }
+
+    @Test fun `the mode cannot change while a Timer runs and toggling keeps the draft apps`() = runTest(dispatcher) {
+        val saved = session("session-running")
+        val store = ControlledStore(listOf(saved))
+        val vm = model(store)
+        runCurrent()
+        vm.selectAllowListMode(true)
+        assertFalse("a running Timer owns the mode", vm.uiState.value.draft.allowListMode)
+
+        val idle = model(ControlledStore())
+        runCurrent()
+        idle.selectApps(listOf(app))
+        idle.selectAllowListMode(true)
+        idle.selectAllowListMode(false)
+        assertEquals(setOf(AppRef(app.packageName, app.label)), idle.uiState.value.draft.apps)
+        assertEquals(0, store.startCalls)
+    }
+
     @Test fun `pending picker edits leave the draft untouched until confirmation`() = runTest(dispatcher) {
         val vm = model(InMemoryBlockRulesStore())
         runCurrent()

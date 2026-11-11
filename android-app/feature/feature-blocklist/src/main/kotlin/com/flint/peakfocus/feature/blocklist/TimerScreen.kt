@@ -92,6 +92,7 @@ import com.flint.peakfocus.core.common.ui.FlintMark
 import com.flint.peakfocus.core.common.ui.FlintNavPanel
 import com.flint.peakfocus.core.common.ui.FlintRadioCard
 import com.flint.peakfocus.core.common.ui.FlintSectionTitle
+import com.flint.peakfocus.core.common.ui.FlintSegmented
 import com.flint.peakfocus.core.common.ui.FlintStatusPill
 import com.flint.peakfocus.core.common.ui.GhostButton
 import com.flint.peakfocus.core.common.ui.QuietButton
@@ -175,6 +176,7 @@ fun TimerScreen(
             TimerAppPicker(
                 appsState = state.appsState,
                 initiallySelected = state.draft.apps.map { it.packageName }.toSet(),
+                allowListMode = state.draft.allowListMode,
                 onConfirm = { viewModel.selectApps(it); pickingApps = false },
                 onCancel = { pickingApps = false },
                 modifier = modifier,
@@ -236,6 +238,7 @@ fun TimerScreen(
             onRetryProtection = viewModel::retryStartProtection,
             onSetup = onSetup,
             setupAvailable = setupLabel != null,
+            onAllowListMode = viewModel::selectAllowListMode,
         )
     }
 
@@ -262,12 +265,17 @@ fun TimerScreen(
         )
     }
     state.sessions.firstOrNull { it.id == viewingId }?.let { session ->
+        val allowList = session.targets.allowListMode
         AlertDialog(
             onDismissRequest = { viewingId = null },
-            title = { Text("Selected apps and sites") },
+            title = { Text(if (allowList) "Allowed apps" else "Selected apps and sites") },
             text = {
                 Column {
-                    Text("This selection stays fixed until the timer ends.", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        if (allowList) "These apps stay available until the timer ends. Everything else is blocked."
+                        else "This selection stays fixed until the timer ends.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     LazyColumn(Modifier.heightIn(max = 360.dp)) {
                         items(session.targets.apps.distinctBy { it.packageName }.sortedBy { appLabel(it) }, key = { it.packageName }) { app ->
                             Text(appLabel(app), Modifier.padding(vertical = FlintSpacing.sm))
@@ -284,9 +292,10 @@ fun TimerScreen(
 }
 
 /**
- * The timer's "What rests" picker. [initiallySelected] is the confirmed draft; the screen's
- * header, footer and Add label all derive from the pending selection, so this wrapper must not
- * supply a selection count as [AppPickerScreen.eyebrow].
+ * The timer's target picker. [initiallySelected] is the confirmed draft; the screen's header,
+ * footer and Add label all derive from the pending selection, so this wrapper must not supply a
+ * selection count as [AppPickerScreen.eyebrow]. [allowListMode] only changes the claim, never the
+ * picker's behavior: the same apps are chosen, but they are the ones kept available.
  */
 @Composable
 internal fun TimerAppPicker(
@@ -295,10 +304,12 @@ internal fun TimerAppPicker(
     onConfirm: (List<InstalledApp>) -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    allowListMode: Boolean = false,
 ) {
     AppPickerScreen(
         appsState = appsState,
-        title = "What rests",
+        title = if (allowListMode) "What stays available" else "What rests",
+        subtitle = if (allowListMode) "Everything else is blocked while this timer runs." else null,
         multiSelect = true,
         initiallySelected = initiallySelected,
         onConfirm = onConfirm,
@@ -780,6 +791,7 @@ internal fun StartFocusSheet(
     onRetryProtection: () -> Unit,
     onSetup: () -> Unit,
     setupAvailable: Boolean = true,
+    onAllowListMode: (Boolean) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -870,6 +882,8 @@ internal fun StartFocusSheet(
             }
 
             val draftApps = state.draft.apps.toList()
+            val allowListMode = state.draft.allowListMode
+            val appsNoun = if (draftApps.size == 1) "app" else "apps"
             FlintCard(
                 modifier = Modifier.padding(top = 20.dp),
                 onClick = if (state.canEdit && state.appsState is InstalledAppsUiState.Ready) onPickApps else null,
@@ -878,13 +892,18 @@ internal fun StartFocusSheet(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            if (draftApps.isEmpty()) "Choose what rests"
-                            else "${draftApps.size} ${if (draftApps.size == 1) "app" else "apps"} resting",
+                            when {
+                                draftApps.isEmpty() && allowListMode -> "Choose apps to allow"
+                                draftApps.isEmpty() -> "Choose what rests"
+                                allowListMode -> "${draftApps.size} $appsNoun allowed"
+                                else -> "${draftApps.size} $appsNoun resting"
+                            },
                             style = MaterialTheme.typography.titleSmall,
                         )
                         Text(
                             when {
                                 state.appsState is InstalledAppsUiState.Loading && state.appsError == null -> "Loading apps…"
+                                draftApps.isEmpty() && allowListMode -> "Tap to choose the apps that stay available"
                                 draftApps.isEmpty() -> "Tap to choose the apps you want a break from"
                                 else -> "Tap to change apps"
                             },
@@ -898,7 +917,8 @@ internal fun StartFocusSheet(
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         draftApps.take(6).forEach { app ->
-                            FlintAppTile(packageName = app.packageName, label = app.label, size = 36.dp, cornerRadius = 11.dp)
+                            FlintAppTile(packageName = app.packageName, label = app.label, size = 36.dp, cornerRadius = 11.dp,
+                                resting = !allowListMode)
                         }
                         if (draftApps.size > 6) {
                             Box(
@@ -915,6 +935,21 @@ internal fun StartFocusSheet(
                     }
                 }
             }
+            // Placed outside the tappable card so choosing a mode never opens the picker.
+            FlintSegmented(
+                options = listOf(false to "Block list", true to "Allow list"),
+                selected = allowListMode,
+                onSelect = onAllowListMode,
+                enabled = state.canEdit,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            )
+            Text(
+                if (allowListMode) "Everything else is blocked while this runs. Calling, Home, Settings and Flint stay available."
+                else "Only the apps above are blocked. Calling, Home, Settings and Flint stay available.",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = FlintPalette.Mist,
+                modifier = Modifier.padding(top = 8.dp),
+            )
             state.appsError?.let {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(it, color = FlintPalette.Danger, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
@@ -992,7 +1027,11 @@ internal fun StartFocusSheet(
                 onStart,
                 enabled = state.canStart && state.startPrerequisite == null,
             )
-            val hint = if (state.draft.apps.isEmpty()) "Choose what rests first." else null
+            val hint = when {
+                state.draft.apps.isEmpty() && state.draft.allowListMode -> "Choose at least one app to allow."
+                state.draft.apps.isEmpty() -> "Choose what rests first."
+                else -> null
+            }
             if (hint != null) {
                 Text(hint, style = MaterialTheme.typography.bodySmall,
                     color = if (state.error != null) FlintPalette.Danger else FlintPalette.Mist,
@@ -1107,6 +1146,7 @@ private fun SessionRestCard(
     onViewApps: () -> Unit,
 ) {
     val apps = session.targets.apps.toList()
+    val allowList = session.targets.allowListMode
     Column(
         Modifier
             .fillMaxWidth()
@@ -1129,7 +1169,8 @@ private fun SessionRestCard(
                         label = app.label,
                         size = 32.dp,
                         cornerRadius = 10.dp,
-                        resting = true,
+                        // An allowed app is never shown with the "resting" badge.
+                        resting = !allowList,
                     )
                 }
                 if (apps.size > 5) {
@@ -1146,7 +1187,8 @@ private fun SessionRestCard(
                 }
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "${apps.size} ${if (apps.size == 1) "app" else "apps"} ${if (armed) "resting" else "selected"}",
+                    if (allowList) "Allow list · ${apps.size} ${if (apps.size == 1) "app" else "apps"} allowed"
+                    else "${apps.size} ${if (apps.size == 1) "app" else "apps"} ${if (armed) "resting" else "selected"}",
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                     color = FlintPalette.Mist,
                     modifier = Modifier
@@ -1159,7 +1201,10 @@ private fun SessionRestCard(
         Box(Modifier.fillMaxWidth().height(1.dp).background(FlintPalette.Hairline))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Locked until it ends", style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp))
+                Text(
+                    if (allowList) "Everything else is blocked" else "Locked until it ends",
+                    style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp),
+                )
                 Text(
                     if (session.breakLevel == BreakLevel.HARDCORE) "Flint can’t be deleted while Hardcore runs."
                     else timerExitHint(session),
