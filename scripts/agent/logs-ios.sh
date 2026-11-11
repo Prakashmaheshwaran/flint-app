@@ -5,5 +5,5 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$here/common.sh"
 simulator=${IOS_SIM:-iPhone 17}
 device=$(xcrun simctl list devices available --json | python3 "$here/ios-device.py" "$simulator")
-echo "Flint logs: device=$simulator ($device) bundle=com.flint.peakfocus"
+echo "Flint logs: device=$simulator ($device) bundle=app.flint.focus"
 exec xcrun simctl spawn "$device" log stream --level debug --style compact --predicate 'process == "Flint"'

@@ -22,10 +22,10 @@ checks actual bundled privacy manifests, and rejects known DEBUG fixture markers
 
 ## Targets and data boundaries
 
-The host `com.flint.peakfocus` embeds four Screen Time extensions
+The host `app.flint.focus` embeds four Screen Time extensions
 (`.monitor`, `.shield-config`, `.shield-action`, `.report`) plus the
 WidgetKit extension declared in project.yml. The Screen Time bundles use Family Controls
-and `group.com.flint.peakfocus`; the widget uses its declared App Group and does not
+and `group.app.flint.focus`; the widget uses its declared App Group and does not
 acquire enforcement authority. Shared logic lives in the local
 [FlintCore package](Packages/FlintCore).
 
