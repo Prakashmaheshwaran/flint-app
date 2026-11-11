@@ -498,8 +498,13 @@ class BlockActivity : ComponentActivity() {
                 .putExtra(EXTRA_RECOVERY_TARGET, targetPackage))
         }.isSuccess
 
-        /** Launch the fallback block screen for [packageName] with a resolved [cause]. */
-        fun launch(context: Context, packageName: String, label: String?, cause: BlockCause) {
+        /**
+         * Launch the fallback block screen for [packageName] with a resolved [cause].
+         * False only when the launch request threw. True is *not* delivery proof: Android's
+         * background-activity-launch limits can drop it silently, so callers report this
+         * surface as fallback-only, never as a mounted shield.
+         */
+        fun launch(context: Context, packageName: String, label: String?, cause: BlockCause): Boolean =
             // Best-effort: without SYSTEM_ALERT_WINDOW, background-activity-launch limits may
             // block this too — Path B degrades honestly (strategy doc §3).
             runCatching {
@@ -515,7 +520,6 @@ class BlockActivity : ComponentActivity() {
                         .putExtra(EXTRA_DISPLAY_END, cause.displayEnd?.endsAtEpochMs ?: NO_END)
                         .putExtra(EXTRA_RULE_ID, cause.ruleId),
                 )
-            }
-        }
+            }.isSuccess
     }
 }

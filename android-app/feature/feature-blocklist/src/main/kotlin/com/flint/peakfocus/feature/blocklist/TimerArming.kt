@@ -61,6 +61,21 @@ private fun timerSnapshotFailure(status: ProtectionStatus, now: AccessClockStamp
         status.validUntilElapsedRealtimeMs?.let { now.elapsedRealtimeMs < it } != true)
         "The protection check is stale or unavailable. Retry to check again." else null
 
+/**
+ * R-30: the latest real shield mount did not deliver a primary surface. Deliberately absent
+ * from the start preflight: refusing a new Timer never adds protection, and its mount is still
+ * attempted. It only withholds Armed until a later primary mount succeeds.
+ */
+private fun timerSurfaceFailure(status: ProtectionStatus): String? = with(status.detectors.degradedReasons) {
+    when {
+        ProtectionStatus.REASON_BLOCK_SURFACE_MOUNT_FAILED in this ->
+            "Flint couldn't show its block screen. Its saved end time is unchanged. Open a blocked app to retry, or check setup."
+        ProtectionStatus.REASON_BLOCK_SURFACE_FALLBACK_ONLY in this ->
+            "Flint couldn't draw its block screen over apps, so blocking may not appear. Its saved end time is unchanged. Check setup."
+        else -> null
+    }
+}
+
 /** A stored row cannot become Armed without a fresh check naming that exact Timer. */
 internal fun timerArmingState(attempt: TimerArmAttempt, status: ProtectionStatus,
                              permissions: TimerPermissions, livePathA: Boolean,
@@ -76,6 +91,7 @@ internal fun timerArmingState(attempt: TimerArmAttempt, status: ProtectionStatus
         return if (withinGrace) TimerArmingState.Checking(attempt.ruleId)
             else TimerArmingState.Degraded(attempt.ruleId, reason, committed = true)
     }
+    timerSurfaceFailure(status)?.let { return TimerArmingState.Degraded(attempt.ruleId, it, committed = true) }
     val observed = checkNotNull(status.observedAt)
     val afterCommit = attempt.committedAt?.let { trustedElapsedMs(it, observed) != null } ?: true
     val exactCause = status.activeCauses.any {
