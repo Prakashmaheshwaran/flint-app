@@ -71,6 +71,11 @@ public enum FlintSessionLifecycleEvent: Equatable, Sendable {
     case passUsed(FlintActiveSession, at: Date)
     case globalPassUsed(operationID: String, sessions: [FlintActiveSession], recoveryEnd: Date?, at: Date)
     case failedToArm(FlintActiveSession, reason: String, at: Date)
+    /// A planned Pomodoro rest boundary that a monitor, the host or a reconciler observed
+    /// (F01). `logicalAt` is the rest's logical wall equivalent, never a wall-clock guess;
+    /// `inferred` marks an observation more than about two seconds after the boundary.
+    case plannedRest(FlintActiveSession, index: Int, kind: FlintPlannedRestKind, logicalAt: Date,
+                     breakEnd: Date?, inferred: Bool)
     indirect case annotated(FlintSessionLifecycleEvent, origin: String?, reason: String?, observedAt: Date?,
                            timeConfidence: FlintEventTimeConfidence? = nil)
 
@@ -78,6 +83,12 @@ public enum FlintSessionLifecycleEvent: Equatable, Sendable {
         if case let .annotated(event, _, _, _, _) = self { return event.unannotated }
         return self
     }
+}
+
+/// Which boundary of a planned rest was observed.
+public enum FlintPlannedRestKind: String, Equatable, Sendable {
+    case started = "break_started"
+    case ended = "break_ended"
 }
 
 /// Receives lifecycle events inside enforcement paths, including the monitor extension.
@@ -196,6 +207,18 @@ public enum FlintSessionLifecycle {
                                   observedAt: Date? = nil, timeConfidence: FlintEventTimeConfidence? = nil) {
         emit(.globalPassUsed(operationID: operationID, sessions: sessions, recoveryEnd: recoveryEnd, at: date),
              origin: origin, reason: reason, observedAt: observedAt, timeConfidence: timeConfidence)
+    }
+
+    /// One planned-rest boundary was observed. The caller deduplicates on the session record's
+    /// `pomodoroObservedPhase` under the transition lock, so duplicate callbacks never emit twice.
+    public static func didObservePlannedRest(_ session: FlintActiveSession, index: Int,
+                                             kind: FlintPlannedRestKind, logicalAt: Date,
+                                             breakEnd: Date? = nil, observedAt: Date? = nil,
+                                             inferred: Bool = false,
+                                             timeConfidence: FlintEventTimeConfidence? = nil) {
+        emit(.plannedRest(session, index: index, kind: kind, logicalAt: logicalAt,
+                          breakEnd: breakEnd, inferred: inferred),
+             observedAt: observedAt, timeConfidence: timeConfidence)
     }
 
     /// Arming the session's out-of-app teardown failed. Diagnostic only; not an end.

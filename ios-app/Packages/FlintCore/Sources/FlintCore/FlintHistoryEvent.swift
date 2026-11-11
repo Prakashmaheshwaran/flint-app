@@ -69,6 +69,8 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
     public var sessions: [String]?
     public var recoveryEnd: Int64?
     public var timeConfidence: FlintEventTimeConfidence?
+    /// Planned focus-round count of a Pomodoro chain (F01). Additive: older readers ignore it.
+    public var rounds: Int?
 
     public init(type: FlintHistoryEventType, session: String, at: Date,
                 id: String = UUID().uuidString, timeZone: TimeZone = .current,
@@ -77,7 +79,7 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
                 by: String? = nil, breakEnd: Date? = nil, reason: String? = nil, v: Int = 1,
                 originRoute: String? = nil, observedAt: Date? = nil, kind: String? = nil,
                 grant: String? = nil, sessions: [String]? = nil, recoveryEnd: Date? = nil,
-                timeConfidence: FlintEventTimeConfidence? = nil) {
+                timeConfidence: FlintEventTimeConfidence? = nil, rounds: Int? = nil) {
         self.v = v; self.id = id; self.type = type; self.session = session
         self.at = Self.milliseconds(at); tz = timeZone.identifier
         self.inferred = inferred; self.plannedEnd = plannedEnd.map(Self.milliseconds)
@@ -88,6 +90,7 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
         self.kind = kind; self.grant = grant; self.sessions = sessions
         self.recoveryEnd = recoveryEnd.map(Self.milliseconds)
         self.timeConfidence = timeConfidence
+        self.rounds = rounds
     }
 
     public var date: Date { Self.date(at) }
@@ -121,7 +124,7 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
             self.init(type: .started, session: s.id, at: s.startedAt,
                       id: Self.lifecycleID(.started, session: s.id), timeZone: timeZone,
                       plannedEnd: s.endsAt, tier: s.breakLevel.rawValue,
-                      source: source.rawValue, name: s.name)
+                      source: source.rawValue, name: s.name, rounds: s.pomodoro?.rounds)
         case let .ended(s, route, at):
             let type: FlintHistoryEventType = route == .completed ? .completed : .endedEarly
             self.init(type: type, session: s.id, at: at,
@@ -139,6 +142,16 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
         case let .failedToArm(s, reason, at):
             // Each arm attempt can fail independently; the session is not an operation ID.
             self.init(type: .failedToArm, session: s.id, at: at, timeZone: timeZone, reason: reason)
+        case let .plannedRest(s, index, kind, logicalAt, breakEnd, isInferred):
+            // One planned rest of a Pomodoro chain: `grant` pairs its started/ended events and
+            // `kind` keeps it apart from an ordinary user-requested break.
+            let type: FlintHistoryEventType = kind == .started ? .breakStarted : .breakEnded
+            let grant = "\(s.id).rest\(index)"
+            self.init(type: type, session: s.id, at: logicalAt,
+                      id: Self.plannedRestID(kind, session: s.id, index: index, grant: grant),
+                      timeZone: timeZone, inferred: isInferred ? true : nil,
+                      breakEnd: kind == .started ? breakEnd : nil,
+                      kind: "planned", grant: grant)
         case let .annotated(event, origin, reason, observedAt, timeConfidence):
             self.init(event, timeZone: timeZone)
             self.originRoute = origin; self.reason = reason ?? self.reason
@@ -158,5 +171,13 @@ public struct FlintHistoryEvent: Codable, Equatable, Sendable, Identifiable {
             identity.append(contentsOf: field.utf8)
         }
         return "lifecycle-v1-" + SHA256.hash(data: identity).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// A planned rest's boundary identity: one row per rest and boundary, whatever process or
+    /// duplicate callback observes it.
+    private static func plannedRestID(_ kind: FlintPlannedRestKind, session: String,
+                                      index: Int, grant: String) -> String {
+        lifecycleID(kind == .started ? .breakStarted : .breakEnded, session: session,
+                    discriminator: "planned.\(index).\(grant)")
     }
 }

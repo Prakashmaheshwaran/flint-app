@@ -57,6 +57,13 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     public let naturalEndObservedAt: Date?
     /// Disclosed opt-in frozen at acceptance. Missing in older documents means not opted in.
     public let removalGuard: Bool?
+    /// The frozen phase plan of a Pomodoro chain (F01). nil = an ordinary single session; old
+    /// records decode without it and keep behaving as before.
+    public let pomodoro: FlintPomodoroPlan?
+    /// The highest phase index whose planned-rest transitions were already reported to history.
+    /// Persisted on the record so duplicate callbacks from the host and the monitor, or a replayed
+    /// callback, emit each rest's events once. An observation, not a commitment.
+    public let pomodoroObservedPhase: Int?
 
     public static let currentContractVersion = 1
 
@@ -82,7 +89,9 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         clockRearmCount: Int? = nil,
         remainingCheckpoint: FlintSessionRemainingCheckpoint? = nil,
         naturalEndObservedAt: Date? = nil,
-        removalGuard: Bool? = nil
+        removalGuard: Bool? = nil,
+        pomodoro: FlintPomodoroPlan? = nil,
+        pomodoroObservedPhase: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -106,6 +115,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         self.remainingCheckpoint = remainingCheckpoint
         self.naturalEndObservedAt = naturalEndObservedAt
         self.removalGuard = removalGuard
+        self.pomodoro = pomodoro
+        self.pomodoroObservedPhase = pomodoroObservedPhase
     }
 
     /// Time left on the commitment, by the clock ADR-012 §9 trusts: within the boot that started
@@ -177,7 +188,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             plannedDuration: plannedDuration, startRequestID: startRequestID,
             clockRearmCount: clockRearmCount, remainingCheckpoint: checkpoint,
             naturalEndObservedAt: naturalEndObservedAt ?? self.naturalEndObservedAt,
-            removalGuard: removalGuard)
+            removalGuard: removalGuard, pomodoro: pomodoro,
+            pomodoroObservedPhase: pomodoroObservedPhase)
     }
 
     /// Whether the commitment is over by `logicalRemaining` (allowing `slack` for the whole-second
@@ -252,7 +264,46 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             clockRearmCount: countsTowardClockLimit ? (clockRearmCount ?? 0) + 1 : clockRearmCount,
             remainingCheckpoint: remainingCheckpoint,
             naturalEndObservedAt: naturalEndObservedAt,
-            removalGuard: removalGuard
+            removalGuard: removalGuard,
+            pomodoro: pomodoro,
+            pomodoroObservedPhase: pomodoroObservedPhase
         )
+    }
+
+    /// The same session with a new planned-rest observation marker (F01). History dedup only:
+    /// it never changes what the session commits or enforces.
+    public func observingPomodoroPhase(_ index: Int?) -> FlintActiveSession {
+        FlintActiveSession(
+            id: id, name: name, startedAt: startedAt, endsAt: endsAt, breakLevel: breakLevel,
+            monitorName: monitorName, monotonicStart: monotonicStart, bootSessionID: bootSessionID,
+            autoClearTimeZoneID: autoClearTimeZoneID, autoClearUTCOffset: autoClearUTCOffset,
+            usesEndWarning: usesEndWarning, rearmCount: rearmCount, lastRearmAt: lastRearmAt,
+            contractVersion: contractVersion, origin: origin, ownerID: ownerID,
+            plannedDuration: plannedDuration, startRequestID: startRequestID,
+            clockRearmCount: clockRearmCount, remainingCheckpoint: remainingCheckpoint,
+            naturalEndObservedAt: naturalEndObservedAt, removalGuard: removalGuard,
+            pomodoro: pomodoro, pomodoroObservedPhase: index)
+    }
+
+    // MARK: Pomodoro phase (F01)
+
+    /// Trusted logical elapsed time of a Pomodoro chain: `plannedDuration − logicalRemaining`.
+    /// nil for an ordinary session, an open-ended one, or a record without a frozen plan.
+    public func pomodoroElapsed(clock: FlintClock) -> TimeInterval? {
+        guard pomodoro != nil, let remaining = logicalRemaining(clock: clock) else { return nil }
+        let planned = max(0, plannedDuration ?? endsAt.map { $0.timeIntervalSince(startedAt) } ?? 0)
+        return max(0, min(planned, planned - remaining))
+    }
+
+    /// The chain's current phase, derived only from trusted elapsed time. A wall-clock change, a
+    /// process restart or a bounded reboot re-anchor can only move this forward.
+    public func pomodoroPhase(clock: FlintClock) -> FlintPomodoroPlan.Position? {
+        guard let plan = pomodoro, let elapsed = pomodoroElapsed(clock: clock) else { return nil }
+        return plan.phaseAt(elapsed: elapsed)
+    }
+
+    /// Whether the parent is in a planned rest right now: its own store stops enforcing.
+    public func isInPomodoroRest(clock: FlintClock) -> Bool {
+        pomodoroPhase(clock: clock)?.phase?.isRest == true
     }
 }
