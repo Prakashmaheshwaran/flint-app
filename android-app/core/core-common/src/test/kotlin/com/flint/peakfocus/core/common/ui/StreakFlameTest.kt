@@ -34,38 +34,38 @@ class StreakFlameTest {
     }
 
     @Test
-    fun `breathing stays within four percent and reaches both extremes`() {
-        // Four full 1.5s cycles, 1200 samples: scale must live in [0.96, 1.04].
+    fun `breathing stays within a subtle live range and reaches both extremes`() {
+        // Four full 1.5s cycles, 1200 samples: lively emoji breath in [0.97, 1.03].
         var min = Float.MAX_VALUE
         var max = -Float.MAX_VALUE
         var t = 0.0
         while (t < 6.0) {
             val s = breathScale(breathPhase01(t))
-            assertTrue("scale $s out of range at t=$t", s >= 0.96f && s <= 1.04f)
+            assertTrue("scale $s out of range at t=$t", s >= 0.97f && s <= 1.03f)
             if (s < min) min = s
             if (s > max) max = s
             t += 6.0 / 1200.0
         }
         // Extremes are actually reached, not just theoretically inside.
-        assertTrue("min $min never nears 0.96", min < 0.965f)
-        assertTrue("max $max never nears 1.04", max > 1.035f)
+        assertTrue("min $min never nears 0.97", min < 0.975f)
+        assertTrue("max $max never nears 1.03", max > 1.025f)
     }
 
     @Test
-    fun `glow alpha stays within quarter to point four five and reaches both ends`() {
+    fun `glow alpha stays bounded and reaches both ends`() {
         // 1001 samples across the full breath range, no milestone flash.
         var min = Float.MAX_VALUE
         var max = -Float.MAX_VALUE
         for (i in 0..1000) {
             val a = haloAlpha(i / 1000f, 0f)
-            assertTrue("glow $a out of range", a >= 0.25f && a <= 0.45f)
+            assertTrue("glow $a out of range", a >= 0.22f && a <= 0.4205f)
             if (a < min) min = a
             if (a > max) max = a
         }
-        assertTrue("glow min $min never reaches 0.25", min < 0.251f)
-        assertTrue("glow max $max never reaches 0.45", max > 0.449f)
+        assertTrue("glow min $min never reaches 0.22", min <= 0.2205f)
+        assertTrue("glow max $max never reaches 0.42", max >= 0.4195f)
         // A full milestone flash lifts the glow without clipping.
-        assertEquals(0.60f, haloAlpha(1f, 1f), 1e-6f)
+        assertEquals(0.57f, haloAlpha(1f, 1f), 1e-6f)
     }
 
     @Test
