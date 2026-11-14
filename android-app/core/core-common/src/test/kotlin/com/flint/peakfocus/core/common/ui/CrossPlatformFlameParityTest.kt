@@ -18,9 +18,9 @@ class CrossPlatformFlameParityTest {
 
     @Test
     fun `renderers share core geometry and timing`() {
-        assertBoth("val w: Float = s * 0.76f", "let w = s * 0.76", "width scale")
-        assertBoth("val h: Float = s * 0.90f", "let h = s * 0.90", "height scale")
-        assertBoth("val baseY: Float = s * 0.95f", "let baseY = s * 0.95", "base anchor")
+        assertBoth("val w: Float = s * 0.76f", "w = s * 0.76", "width scale")
+        assertBoth("val h: Float = s * 0.90f", "h = s * 0.90", "height scale")
+        assertBoth("val baseY: Float = s * 0.95f", "baseY = s * 0.95", "base anchor")
         assertBoth("STATIC_FLAME_SECONDS: Double = 0.72", "STATIC_FLAME_SECONDS: Double = 0.72", "static pose")
         assertBoth("STATE_CROSSFADE_MS: Int = 320", "STATE_CROSSFADE_SECONDS: Double = 0.32", "state cross-fade")
         assertBoth("StreakFlameState.AtRisk -> 0.6f", "mood == .warning ? 0.6 : 1.0", "at-risk rate")
@@ -32,11 +32,13 @@ class CrossPlatformFlameParityTest {
         assertTrue(android.contains("DormantBodyStops"))
         assertTrue(android.contains("private fun drawAsh"))
         assertTrue(android.contains("buildOuter(body, geo, 0f, 0f, 1f, 1f, 0f, 0f)"))
+        assertTrue(android.contains("pointed"))
         assertTrue(ios.contains("Recognizable low-intensity flame"))
-        assertTrue(ios.contains("dormantBodyStops"))
+        assertTrue(ios.contains("dormant"))
         assertTrue(ios.contains("private func drawAsh"))
-        assertTrue(ios.contains("drawAsh"))
+        assertTrue(ios.contains("func buildAsh"))
         assertFalse(android.contains("grey mountain"))
+        assertFalse(ios.contains("grey mountain"))
     }
 
     @Test
@@ -57,6 +59,8 @@ class CrossPlatformFlameParityTest {
         assertEquals(1, iosSources.sumOf { Regex("""struct FlintStreakEmber: View""").findAll(it).count() })
         assertEquals(1, iosSources.sumOf { Regex("""func drawEmber\(""").findAll(it).count() })
         assertEquals(1, iosSources.sumOf { Regex("""func drawAsh\(""").findAll(it).count() })
+        assertEquals(1, iosSources.sumOf { Regex("""func buildOuter\(""").findAll(it).count() })
+        assertEquals(1, iosSources.sumOf { Regex("""func buildCore\(""").findAll(it).count() })
         assertTrue(androidWrapper.contains("StreakFlame("))
     }
 
