@@ -16,8 +16,27 @@ struct TodayView: View {
     @State private var health = FlintArmingHealth()
     @State private var observation: FlintProtectionObservation?
     @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var showStreakSheet = false
 
     private let presets: [(name: String, minutes: Int)] = [("Deep study", 90), ("Reading", 30), ("Workout", 60)]
+
+    private var streakMood: StreakEmberMood {
+        let streak = history.summary?.streak ?? 0
+        let completedToday = (history.summary?.days.last?.completed ?? 0) > 0
+        if streak <= 0 { return .dormant }
+        return completedToday ? .active : .warning
+    }
+
+    /// Spoken badge label. The flame itself is decorative, and a zero streak never claims a
+    /// count. Before the first summary arrives (or when history is unavailable) the badge is
+    /// neutral rather than claiming "no active streak" for data the app has not read.
+    private var streakBadgeLabel: String {
+        guard let summary = history.summary,
+              summary.availability != .unavailable else { return "Focus streak" }
+        let streak = summary.streak
+        if streak <= 0 { return "No active focus streak" }
+        return streak == 1 ? "Focus streak, 1 day" : "Focus streak, \(streak) days"
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -25,7 +44,8 @@ struct TodayView: View {
                 if typeSize.isAccessibilitySize || geometry.size.height < 700 {
                     FlintGroundBackground()
                 } else {
-                    EmberLandscape()
+                    // Clean horizon — streak candle lives in the top-right header.
+                    EmberLandscape(orbCenter: nil)
                 }
 
                 ScrollView {
@@ -40,6 +60,13 @@ struct TodayView: View {
         }
         .sheet(isPresented: $showStart) {
             StartFocusSheet(vm: vm) { showStart = false }
+        }
+        .sheet(isPresented: $showStreakSheet) {
+            FocusStreakCelebrationSheet(
+                streak: history.summary?.streak ?? 0,
+                mood: streakMood,
+                onContinue: { showStreakSheet = false }
+            )
         }
         .task {
             auth.refresh()
@@ -71,9 +98,20 @@ struct TodayView: View {
                 Text(now.formatted(.dateTime.weekday(.wide).day().month(.wide)).replacingOccurrences(of: ",", with: " ·"))
                     .flintEyebrow()
                 Spacer()
+                Button {
+                    showStreakSheet = true
+                } label: {
+                    FlintStreakEmber(mood: streakMood, size: 40)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .accessibilityIdentifier("today.streak.ember")
+                .accessibilityLabel(streakBadgeLabel)
+                .accessibilityHint("Opens your focus streak")
                 FlintMark(size: 20)
             }
-            .padding(.top, 18)
+            .padding(.top, 14)
 
             Text(headline)
                 .flintTitle(31)

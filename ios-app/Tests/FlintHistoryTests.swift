@@ -229,9 +229,15 @@ final class FlintHistoryTests: XCTestCase {
             let start = utc.date(byAdding: .day, value: offset, to: midnight)!
             events += absoluteSession(start: start, end: start.addingTimeInterval(60), id: String(offset))
         }
-        XCTAssertEqual(summary(events, now: midnight.addingTimeInterval(120)).streak, 3)
-        XCTAssertEqual(summary(Array(events.dropLast(2)), now: midnight.addingTimeInterval(120)).streak, 2)
-        XCTAssertEqual(summary(events, now: midnight.addingTimeInterval(120), start: midnight).streak, 1)
+        let full = summary(events, now: midnight.addingTimeInterval(120))
+        XCTAssertEqual(full.streak, 3)
+        XCTAssertEqual(full.bestRecordedStreak, 3)
+        let withoutToday = summary(Array(events.dropLast(2)), now: midnight.addingTimeInterval(120))
+        XCTAssertEqual(withoutToday.streak, 2)
+        XCTAssertEqual(withoutToday.bestRecordedStreak, 2)
+        let clipped = summary(events, now: midnight.addingTimeInterval(120), start: midnight)
+        XCTAssertEqual(clipped.streak, 1)
+        XCTAssertEqual(clipped.bestRecordedStreak, 1)
     }
     func testStoreConcurrentInstancesProduceCompleteLinesAndStableMetadata() {
         let a = store(), b = store(); let created = a.read().historyStart

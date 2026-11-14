@@ -5,6 +5,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 
 ## [Unreleased]
 
+### Focus streaks
+- **Cinematic streak celebration.** Insights gains a Focus Streak card (current streak,
+  best recorded streak, this week's completed days, honest "no active streak" state) and a
+  bottom-sheet celebration on Today with a Canvas-drawn flame. The flame animates on a single
+  30 fps `withFrameNanos` loop, honours Reduce Motion, stops when the sheet closes, and uses
+  gold for active, gold at a slower rate for at-risk, and a static gray flame at zero.
+- **Streak semantics.** Only completed Timer focus sessions count; multiple completions in one
+  local calendar day count once; a missed calendar day ends the current run; best recorded
+  streak is derived from retained history, never a separate counter. Days use the device's
+  current time zone (travel rebuckets history; stored `tz` remains provenance).
+- **Parity.** Android and iOS share scenario IDs S01–S20 for streak lifecycle, including DST,
+  local-midnight attribution and restart behaviour.
+
 ### v1 — integration/v1 (refreshed 2026-10-30)
 
 This is an integration summary, not a published v1 release or store/device acceptance.

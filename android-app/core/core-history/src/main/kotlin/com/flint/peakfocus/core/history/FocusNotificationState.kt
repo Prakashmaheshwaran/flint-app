@@ -2,6 +2,9 @@ package com.flint.peakfocus.core.history
 
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -47,8 +50,16 @@ class FocusNotificationState(private val file: File) : FocusCompletionDeliverySt
         val temp = File(file.parentFile, file.name + ".tmp")
         try {
             FileOutputStream(temp).use { it.write(bytes); it.flush(); it.fd.sync() }
-            check(temp.renameTo(file))
-        } finally { temp.delete() }
+            val target = file.toPath()
+            val source = temp.toPath()
+            try {
+                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            temp.delete()
+        }
     }
     private companion object { val mutex = Mutex() }
 }

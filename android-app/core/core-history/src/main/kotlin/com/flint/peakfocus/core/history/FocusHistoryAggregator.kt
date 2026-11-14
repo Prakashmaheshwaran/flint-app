@@ -41,6 +41,12 @@ data class FocusSummary(
     val streak: Int,
     /** Owner outbox retention lost events; existing intervals/counts are never backfilled. */
     val lifecycleEventsMissing: Boolean = false,
+    /**
+     * Longest consecutive completed-focus-day run in retained history since [historyStart].
+     * Derived only — never a separate persisted counter. Label UI as "Best recorded streak"
+     * because retention/historyStart mean this is not an all-time claim.
+     */
+    val bestRecordedStreak: Int = 0,
 )
 
 object FocusHistoryAggregator {
@@ -91,13 +97,46 @@ object FocusHistoryAggregator {
                 unconfirmed[day] ?: 0,
             )
         }.toList()
+        val today = date(now, zone)
+        val streak = currentStreak(completed.keys, today, startDate)
+        val best = maxOf(streak, bestRecordedStreak(completed.keys, startDate))
+        return FocusSummary(availability, sessions, days, streak, bestRecordedStreak = best)
+    }
+
+    /**
+     * Current streak: consecutive completed local days ending today, or yesterday when today
+     * has no completion. Zero when neither today nor yesterday is completed. Days before
+     * [historyStart] break the run. Multiple completions on one day count once.
+     *
+     * Local days are always derived in the *current* [zone] passed to [summarize]
+     * (`Instant.atZone(zone)` of each completion end). Stored event `tz` is provenance only;
+     * changing the device time zone rebuckets history without rewriting event timestamps.
+     */
+    fun currentStreak(completedDays: Set<LocalDate>, today: LocalDate, historyStart: LocalDate): Int {
+        var cursor = if (today in completedDays) today else today.minusDays(1)
         var streak = 0
-        var streakDay = date(now, zone)
-        if (completed[streakDay] == null) streakDay = streakDay.minusDays(1)
-        while (streakDay >= startDate && (completed[streakDay] ?: 0) > 0) {
-            streak++; streakDay = streakDay.minusDays(1)
+        while (cursor >= historyStart && cursor in completedDays) {
+            streak++
+            cursor = cursor.minusDays(1)
         }
-        return FocusSummary(availability, sessions, days, streak)
+        return streak
+    }
+
+    /** Longest consecutive completed-day run retained since [historyStart]. */
+    fun bestRecordedStreak(completedDays: Set<LocalDate>, historyStart: LocalDate): Int {
+        val sorted = completedDays.filter { it >= historyStart }.sorted()
+        if (sorted.isEmpty()) return 0
+        var best = 1
+        var run = 1
+        for (index in 1 until sorted.size) {
+            if (sorted[index] == sorted[index - 1].plusDays(1)) {
+                run++
+                best = maxOf(best, run)
+            } else {
+                run = 1
+            }
+        }
+        return best
     }
 
     fun sessions(events: List<HistoryEvent>, now: Long, activeSessionIds: Set<String>): List<FocusSession> {

@@ -123,6 +123,98 @@ final class FocusHistoryPresentationTests: XCTestCase {
         XCTAssertEqual(FocusHistoryText.today(result), "5m")
         XCTAssertNil(FocusHistoryModel.latestCompletion(in: result, acknowledgedID: nil))
     }
+    func testFocusStreakPresentationHiddenUnavailableAndEmpty() {
+        XCTAssertEqual(FocusStreakPresentation.make(nil), .hidden)
+        XCTAssertEqual(FocusStreakPresentation.make(summary([], state: .unavailable)), .hidden)
+        XCTAssertEqual(FocusStreakPresentation.make(summary([], state: .empty)), .empty)
+        let earlyOnly = [FlintHistoryEvent(type: .started, session: "a", at: now.addingTimeInterval(-1800),
+                                           plannedEnd: now, tier: "easy", source: "manual", name: "Read"),
+                         FlintHistoryEvent(type: .endedEarly, session: "a", at: now.addingTimeInterval(-900), route: "manual_stop")]
+        XCTAssertEqual(FocusStreakPresentation.make(summary(earlyOnly)), .empty)
+    }
+    func testFocusStreakPresentationActiveStripAndCopy() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let midnight = calendar.startOfDay(for: now)
+        var events: [FlintHistoryEvent] = []
+        for offset in [-3, -2, -1, 0] {
+            let start = calendar.date(byAdding: .day, value: offset, to: midnight)!
+            events += absoluteSession(start: start, end: start.addingTimeInterval(600), id: "\(offset)")
+        }
+        let result = FlintHistoryAggregator.summarize(
+            .init(events: events, historyStart: calendar.date(byAdding: .day, value: -2, to: midnight), availability: .value),
+            activeSessionID: nil, now: midnight.addingTimeInterval(120), calendar: calendar)
+        guard case .visible(let streak, let caption, let best, let bestCaption, let weekCompleted,
+                            let weekCaption, let days, let footnote, let isActive, let statusLine,
+                            let completedToday, _) =
+                FocusStreakPresentation.make(result, calendar: calendar) else {
+            return XCTFail("expected visible streak presentation")
+        }
+        XCTAssertEqual(streak, 3)
+        XCTAssertTrue(isActive)
+        XCTAssertTrue(completedToday)
+        XCTAssertEqual(statusLine, FocusHistoryText.streakCompletedToday)
+        XCTAssertEqual(caption, FocusHistoryText.streakDaysInARow(3))
+        XCTAssertEqual(best, 3)
+        XCTAssertEqual(bestCaption, FocusHistoryText.bestRecordedStreak(3))
+        XCTAssertEqual(weekCompleted, 3)
+        XCTAssertEqual(weekCaption, FocusHistoryText.streakWeekCompleted(3))
+        XCTAssertEqual(footnote, FocusHistoryText.streakFootnote)
+        XCTAssertEqual(days.filter { $0.kind == .unavailable }.count, 4)
+        XCTAssertEqual(days.filter { $0.kind == .completed }.count, 3)
+        XCTAssertEqual(days.last?.isToday, true)
+        XCTAssertEqual(FocusHistoryText.streakDaysInARow(1), "1 day in a row")
+        XCTAssertEqual(FocusHistoryText.streakWeekCompleted(1), "1 completed focus day this week")
+    }
+    func testFocusStreakPresentationTodayIncompleteUsesYesterdayAnchor() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let midnight = calendar.startOfDay(for: now)
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: midnight)!
+        let events = absoluteSession(start: yesterday, end: yesterday.addingTimeInterval(600), id: "y")
+        let result = FlintHistoryAggregator.summarize(
+            .init(events: events, historyStart: yesterday, availability: .value),
+            activeSessionID: nil, now: midnight.addingTimeInterval(120), calendar: calendar)
+        guard case .visible(let streak, _, _, _, _, _, let days, _, let isActive, let statusLine,
+                            let completedToday, _) =
+                FocusStreakPresentation.make(result, calendar: calendar) else {
+            return XCTFail("expected visible streak presentation")
+        }
+        XCTAssertEqual(streak, 1)
+        XCTAssertTrue(isActive)
+        XCTAssertFalse(completedToday)
+        XCTAssertEqual(statusLine, FocusHistoryText.streakNotCompletedToday)
+        XCTAssertEqual(days.last?.kind, .incomplete)
+        XCTAssertEqual(days.last?.isToday, true)
+        XCTAssertEqual(days.dropLast().last?.kind, .completed)
+    }
+    func testFocusStreakPresentationBrokenShowsRestartWithoutShaming() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let midnight = calendar.startOfDay(for: now)
+        let older = calendar.date(byAdding: .day, value: -3, to: midnight)!
+        let events = absoluteSession(start: older, end: older.addingTimeInterval(600), id: "old")
+        let result = FlintHistoryAggregator.summarize(
+            .init(events: events, historyStart: calendar.date(byAdding: .day, value: -10, to: midnight), availability: .value),
+            activeSessionID: nil, now: midnight.addingTimeInterval(120), calendar: calendar)
+        guard case .visible(let streak, let caption, let best, let bestCaption, _, _, _, let footnote,
+                            let isActive, let statusLine, let completedToday, _) =
+                FocusStreakPresentation.make(result, calendar: calendar) else {
+            return XCTFail("expected visible zero streak")
+        }
+        XCTAssertEqual(streak, 0)
+        XCTAssertFalse(isActive)
+        XCTAssertFalse(completedToday)
+        XCTAssertNil(statusLine)
+        XCTAssertEqual(caption, FocusHistoryText.streakNoActive)
+        XCTAssertEqual(footnote, FocusHistoryText.streakRestart)
+        XCTAssertEqual(best, 1)
+        XCTAssertEqual(bestCaption, FocusHistoryText.bestRecordedStreak(1))
+    }
+    private func absoluteSession(start: Date, end: Date, id: String) -> [FlintHistoryEvent] {
+        [.init(type: .started, session: id, at: start, plannedEnd: end, tier: "easy", source: "manual", name: "Focus"),
+         .init(type: .completed, session: id, at: end)]
+    }
     private func session(_ id: String, end: Date) -> [FlintHistoryEvent] {
         [.init(type: .started, session: id, at: end.addingTimeInterval(-1800), plannedEnd: end,
                tier: "easy", source: "manual", name: "Read"), .init(type: .completed, session: id, at: end)]

@@ -49,11 +49,15 @@ public struct FlintHistorySummary: Sendable {
     public let sessions: [FlintHistorySessionSummary]
     public let days: [FlintHistoryDay]
     public let streak: Int
+    /// Longest consecutive completed-focus-day run retained since historyStart.
+    /// Derived only. UI must label it "Best recorded streak" — not an all-time claim.
+    public let bestRecordedStreak: Int
     public var focusedSeconds: TimeInterval { days.compactMap(\.focusedSeconds).reduce(0, +) }
 
     public init(availability: FlintHistoryAvailability, sessions: [FlintHistorySessionSummary],
-                days: [FlintHistoryDay], streak: Int) {
-        self.availability = availability; self.sessions = sessions; self.days = days; self.streak = streak
+                days: [FlintHistoryDay], streak: Int, bestRecordedStreak: Int = 0) {
+        self.availability = availability; self.sessions = sessions; self.days = days
+        self.streak = streak; self.bestRecordedStreak = bestRecordedStreak
     }
 }
 
@@ -90,13 +94,50 @@ public enum FlintHistoryAggregator {
             }
         }
         let completedDays = Set(sessions.filter { $0.outcome == .completed }.map { calendar.startOfDay(for: $0.endedAt) })
-        var cursor = completedDays.contains(today) ? today : calendar.date(byAdding: .day, value: -1, to: today)
+        let streak = currentStreak(completedDays: completedDays, today: today, historyStart: historyDay, calendar: calendar)
+        let best = max(streak, bestRecordedStreak(completedDays: completedDays, historyStart: historyDay, calendar: calendar))
+        return .init(availability: snapshot.availability, sessions: sessions, days: days,
+                     streak: streak, bestRecordedStreak: best)
+    }
+
+    /// Current streak: consecutive completed local days ending today, or yesterday when today
+    /// has no completion. Zero when neither today nor yesterday is completed. Days before
+    /// historyStart break the run. Multiple completions on one day count once.
+    ///
+    /// Local days use the *current* calendar time zone (`startOfDay(for:)` of each completion
+    /// end). Stored event `tz` is provenance only; changing the device time zone rebuckets
+    /// history without rewriting event timestamps.
+    public static func currentStreak(completedDays: Set<Date>, today: Date, historyStart: Date?,
+                                     calendar: Calendar) -> Int {
+        guard let historyStart else { return 0 }
+        var cursor: Date? = completedDays.contains(today) ? today : calendar.date(byAdding: .day, value: -1, to: today)
         var streak = 0
-        while let day = cursor, let historyDay, day >= historyDay, completedDays.contains(day) {
+        while let day = cursor, day >= historyStart, completedDays.contains(day) {
             streak += 1
             cursor = calendar.date(byAdding: .day, value: -1, to: day)
         }
-        return .init(availability: snapshot.availability, sessions: sessions, days: days, streak: streak)
+        return streak
+    }
+
+    /// Longest consecutive completed-day run retained since historyStart.
+    public static func bestRecordedStreak(completedDays: Set<Date>, historyStart: Date?,
+                                          calendar: Calendar) -> Int {
+        guard let historyStart else { return 0 }
+        let sorted = completedDays.filter { $0 >= historyStart }.sorted()
+        guard !sorted.isEmpty else { return 0 }
+        var best = 1
+        var run = 1
+        for index in 1..<sorted.count {
+            let previous = sorted[index - 1]
+            let expected = calendar.date(byAdding: .day, value: 1, to: previous)
+            if sorted[index] == expected {
+                run += 1
+                best = max(best, run)
+            } else {
+                run = 1
+            }
+        }
+        return best
     }
 
     public static func sessionSummaries(_ records: [FlintHistoryEvent], activeSessionID: String?,

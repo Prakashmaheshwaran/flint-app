@@ -3,7 +3,9 @@ package com.flint.peakfocus.feature.blocklist
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -53,7 +55,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -80,6 +84,9 @@ import com.flint.peakfocus.core.common.ui.FlintEyebrow
 import com.flint.peakfocus.core.common.ui.FlintGlyphs
 import com.flint.peakfocus.core.common.ui.FlintMark
 import com.flint.peakfocus.core.common.ui.FlintNavPanel
+import com.flint.peakfocus.core.common.ui.FlintStreakEmber
+import com.flint.peakfocus.core.common.ui.FocusStreakCelebrationSheet
+import com.flint.peakfocus.core.common.ui.FocusStreakSheetCopy
 import com.flint.peakfocus.core.common.ui.GhostButton
 import com.flint.peakfocus.core.common.ui.QuietButton
 import com.flint.peakfocus.core.common.ui.SunArc
@@ -89,6 +96,7 @@ import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.history.FocusHistoryText
 import com.flint.peakfocus.core.history.FocusSession
 import com.flint.peakfocus.core.history.FocusSummary
+import com.flint.peakfocus.core.history.HistoryAvailability
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -299,8 +307,15 @@ private fun TodayScene(
     onDismiss: () -> Unit,
     modifier: Modifier,
 ) {
+    var showStreakSheet by remember { mutableStateOf(false) }
+    val streak = history?.streak ?: 0
+    val historyKnown = history != null && history.availability != HistoryAvailability.UNAVAILABLE
+    val completedToday = history?.days?.lastOrNull()?.completed?.let { it > 0 } == true
+    val emberMood = FocusStreakSheetCopy.moodFrom(streak, completedToday)
+
     Box(modifier.fillMaxSize()) {
-        EmberLandscape()
+        // Clean horizon — streak candle lives in the top-right, not the center.
+        EmberLandscape(orbCenter = null)
         BoxWithConstraints(Modifier.fillMaxSize().padding(contentPadding)) {
             Column(
                 Modifier
@@ -311,8 +326,34 @@ private fun TodayScene(
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column {
-                    Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         FlintEyebrow(remember { todayLabel() }, Modifier.weight(1f))
+                        Box(
+                            Modifier
+                                .size(48.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClickLabel = "Show streak details",
+                                    role = Role.Button,
+                                    onClick = { showStreakSheet = true },
+                                )
+                                .semantics {
+                                    // One merged node: the flame itself is silent, so TalkBack
+                                    // hears the count once, with the day singular/zero handled.
+                                    // Unreadable history (null or UNAVAILABLE) stays neutral
+                                    // instead of claiming "no active streak".
+                                    contentDescription = streakBadgeDescription(historyKnown, streak)
+                                }
+                                .testTag("today.streak.ember"),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            FlintStreakEmber(mood = emberMood, size = 40.dp)
+                        }
                         FlintMark(Modifier.size(20.dp))
                     }
                     Text(
@@ -381,6 +422,13 @@ private fun TodayScene(
                     Spacer(Modifier.height(12.dp))
                 }
             }
+        }
+        if (showStreakSheet) {
+            FocusStreakCelebrationSheet(
+                streak = streak,
+                mood = emberMood,
+                onDismiss = { showStreakSheet = false },
+            )
         }
     }
 }
@@ -747,6 +795,25 @@ private val todayPresets: List<TimerPreset>
 
 private fun todayLabel(): String =
     SimpleDateFormat("EEEE · d MMMM", Locale.getDefault()).format(Date())
+
+/**
+ * TalkBack label for the Today streak badge. One node announces the count once: a single
+ * day is singular ("1 day", never "1 days"), and the zero/no-streak state is stated
+ * explicitly instead of leaving a bare "Focus streak" with no status.
+ */
+internal fun streakBadgeLabel(streak: Int): String = when {
+    streak <= 0 -> "No active focus streak"
+    streak == 1 -> "Focus streak, 1 day"
+    else -> "Focus streak, $streak days"
+}
+
+/**
+ * Badge label that stays neutral until history is readable. `UNAVAILABLE` means the store could
+ * not be read, which is not the same as a zero streak; claiming "no active streak" there would
+ * be false. A loaded zero still says "No active focus streak".
+ */
+internal fun streakBadgeDescription(historyKnown: Boolean, streak: Int): String =
+    if (historyKnown) streakBadgeLabel(streak) else "Focus streak"
 
 /** Timer rule ids carry no start time, so the arc derives it from the persisted rule when it can. */
 private fun BlockRule.createdAtEpochMsOrNull(): Long? = timerStartEpochMs(this)

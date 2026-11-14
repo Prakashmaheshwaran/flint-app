@@ -59,8 +59,16 @@ class AppDetailCopyTest {
 
     @Test fun `times show the weekday only when not today`() {
         val now = 1_767_268_800_000L // 2026-01-01T12:00Z, a Thursday
-        assertEquals("1:30 PM", detailTimeText(now + 5_400_000, now, ZoneOffset.UTC, Locale.US))
-        assertEquals("Fri 9:00 AM", detailTimeText(now + 75_600_000, now, ZoneOffset.UTC, Locale.US))
+        val locale = Locale.US
+        val zone = ZoneOffset.UTC
+        val timeFormatter = java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(locale)
+        val todayAt = java.time.Instant.ofEpochMilli(now + 5_400_000).atZone(zone)
+        val tomorrowAt = java.time.Instant.ofEpochMilli(now + 75_600_000).atZone(zone)
+        assertEquals(todayAt.format(timeFormatter), detailTimeText(now + 5_400_000, now, zone, locale))
+        assertEquals(
+            tomorrowAt.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, locale) + " " + tomorrowAt.format(timeFormatter),
+            detailTimeText(now + 75_600_000, now, zone, locale),
+        )
     }
 
     @Test fun `website lines carry the original check time or say no check exists`() {

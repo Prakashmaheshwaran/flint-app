@@ -65,12 +65,29 @@ import com.flint.peakfocus.core.common.theme.FlintPalette
  * a bone confirm, quiet text actions, hairline ghosts, chips, segmented pills and the switch.
  */
 
-/** True when the system animator scale is off — ambient motion (glow, breath, drift) stops. */
+/**
+ * The Reduce Motion policy in one place: Android exposes an animator scale rather than a
+ * boolean, and any value below `1` (`0`, `0.5`, `0.75`) means "less motion". `1` (and any
+ * larger value, which is not a normal setting) means full motion.
+ *
+ * Pure so the policy is testable without a device; every `rememberReducedMotion()` consumer
+ * inherits exactly this threshold.
+ */
+internal fun isReducedMotionScale(scale: Float): Boolean = scale < 1f
+
+/**
+ * True when the system asks for reduced motion.
+ *
+ * Kept in sync with iOS's boolean `accessibilityReduceMotion`, so both platforms agree on
+ * when to show the static flame pose.
+ */
 @Composable
 fun rememberReducedMotion(): Boolean {
     val context = LocalContext.current
     val resolver = context.contentResolver
-    fun readSetting() = Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    fun readSetting() = isReducedMotionScale(
+        Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f),
+    )
     var reduced by remember(resolver) { mutableStateOf(readSetting()) }
     DisposableEffect(resolver) {
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {

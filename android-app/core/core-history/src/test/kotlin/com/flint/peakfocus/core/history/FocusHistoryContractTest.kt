@@ -216,9 +216,15 @@ class FocusHistoryContractTest {
     }
     @Test fun FH19_streakTodayOrYesterdayAndStopsAtHistoryStart() {
         val events = (-2L..0L).flatMap { day -> listOf(started(start + day * 24 * hour, "$day"), complete(start + day * 24 * hour + hour, "$day")) }
-        assertEquals(3, summary(events).streak)
-        assertEquals(2, summary(events.dropLast(2)).streak)
-        assertEquals(1, summary(events, historyStart = start).streak)
+        val full = summary(events)
+        assertEquals(3, full.streak)
+        assertEquals(3, full.bestRecordedStreak)
+        val withoutToday = summary(events.dropLast(2))
+        assertEquals(2, withoutToday.streak)
+        assertEquals(2, withoutToday.bestRecordedStreak)
+        val clipped = summary(events, historyStart = start)
+        assertEquals(1, clipped.streak)
+        assertEquals(1, clipped.bestRecordedStreak)
     }
 
     @Test fun codecEscapesAllFlatValuesAndRejectsMalformedRecords() {

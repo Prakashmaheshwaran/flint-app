@@ -77,7 +77,7 @@ final class FocusHistoryModel: ObservableObject {
 }
 
 enum FocusHistoryText {
-    static let definition = "Counts focus sessions you start. Schedules and limits aren’t counted."
+    static let definition = "Counts focus sessions you start. Schedules and limits aren’t counted. Calendar days use this device’s current time zone."
     static let degraded = "Some history couldn’t be read."
 
     static func unconfirmed(_ days: [FlintHistoryDay]) -> String? {
@@ -117,6 +117,180 @@ enum FocusHistoryText {
     static func clearFeedback(success: Bool, keptRunningSession: Bool) -> String {
         guard success else { return "Focus history couldn’t be cleared. Try again." }
         return "Focus history cleared." + (keptRunningSession ? " Your running session was kept." : "")
+    }
+
+    static let streakTitle = NSLocalizedString("Focus streak", comment: "Insights focus streak heading")
+    /// Under-number label — streak sheet format (Opal-like composition, Flint copy).
+    static let dayStreakLabel = NSLocalizedString("Day streak", comment: "Insights focus streak under-number label")
+    static let streakSheetSubtitle = NSLocalizedString(
+        "Days in a row you focused with Flint",
+        comment: "Insights focus streak sheet subtitle")
+    static let streakContinue = NSLocalizedString(
+        "Continue",
+        comment: "Focus streak celebration continue button")
+    static let streakFootnote = NSLocalizedString(
+        "One completed focus session makes a day count. Days use this device’s current time zone.",
+        comment: "Insights focus streak footnote")
+
+    static func streakMotivation(mood: StreakEmberMood, streak: Int) -> String {
+        switch mood {
+        case .active:
+            if streak >= 7 {
+                return NSLocalizedString(
+                    "Quiet consistency. Return tomorrow.",
+                    comment: "Focus streak motivation active long")
+            }
+            return NSLocalizedString(
+                "One completed day at a time.",
+                comment: "Focus streak motivation active")
+        case .warning:
+            return NSLocalizedString(
+                "Your streak still holds. Finish a focus session today.",
+                comment: "Focus streak motivation warning")
+        case .dormant:
+            return NSLocalizedString(
+                "A completed focus session lights the first day.",
+                comment: "Focus streak motivation dormant")
+        }
+    }
+    static let streakEmpty = NSLocalizedString(
+        "Your first focus session starts your streak.",
+        comment: "Insights focus streak empty state")
+    static let streakNoActive = NSLocalizedString(
+        "No active streak",
+        comment: "Insights focus streak zero state")
+    static let streakRestart = NSLocalizedString(
+        "A new streak starts with a completed focus session.",
+        comment: "Insights focus streak restart hint")
+    static let streakCompletedToday = NSLocalizedString(
+        "Completed today",
+        comment: "Insights focus streak completed-today status")
+    static let streakNotCompletedToday = NSLocalizedString(
+        "Not completed today",
+        comment: "Insights focus streak awaiting-today status")
+    static let streakBestLabel = NSLocalizedString(
+        "Best recorded streak",
+        comment: "Insights best recorded streak eyebrow")
+
+    static func streakDaysInARow(_ streak: Int) -> String {
+        if streak == 1 {
+            return NSLocalizedString("1 day in a row", comment: "Insights focus streak singular")
+        }
+        return String.localizedStringWithFormat(
+            NSLocalizedString("%ld days in a row", comment: "Insights focus streak plural"), streak)
+    }
+
+    static func streakWeekCompleted(_ count: Int) -> String {
+        if count == 1 {
+            return NSLocalizedString(
+                "1 completed focus day this week",
+                comment: "Insights focus streak weekly singular")
+        }
+        return String.localizedStringWithFormat(
+            NSLocalizedString("%ld completed focus days this week",
+                              comment: "Insights focus streak weekly plural"), count)
+    }
+
+    static func bestRecordedStreak(_ count: Int) -> String {
+        if count == 1 {
+            return NSLocalizedString(
+                "Best recorded streak · 1 day",
+                comment: "Insights best recorded streak singular")
+        }
+        return String.localizedStringWithFormat(
+            NSLocalizedString("Best recorded streak · %ld days",
+                              comment: "Insights best recorded streak plural"), count)
+    }
+}
+
+/// Pure Insights mapping for the Focus Streak card. Aggregation stays in FlintCore.
+enum FocusStreakDayKind: Equatable {
+    case unavailable, completed, incomplete
+}
+
+struct FocusStreakDayPresentation: Equatable, Identifiable {
+    var id: Date { start }
+    let start: Date
+    let weekdayLabel: String
+    let accessibilityLabel: String
+    let kind: FocusStreakDayKind
+    let isToday: Bool
+}
+
+enum FocusStreakPresentation: Equatable {
+    case hidden
+    case empty
+    case visible(streak: Int, streakCaption: String, bestRecorded: Int?, bestCaption: String?,
+                 weekCompleted: Int, weekCaption: String, days: [FocusStreakDayPresentation],
+                 footnote: String, isActive: Bool, statusLine: String?, completedToday: Bool,
+                 emberMood: StreakEmberMood)
+
+    static func make(_ summary: FlintHistorySummary?, calendar: Calendar = .current) -> FocusStreakPresentation {
+        guard let summary else { return .hidden }
+        switch summary.availability {
+        case .unavailable:
+            return .hidden
+        case .empty:
+            return .empty
+        case .value, .degraded:
+            let anyCompleted = summary.sessions.contains { $0.outcome == .completed }
+                || summary.days.contains { $0.completed > 0 }
+            guard anyCompleted else { return .empty }
+            let todayStart = summary.days.last.map { calendar.startOfDay(for: $0.start) }
+            let days = summary.days.map { day -> FocusStreakDayPresentation in
+                let weekday = day.start.formatted(.dateTime.weekday(.narrow))
+                let dateLabel = day.start.formatted(date: .abbreviated, time: .omitted)
+                let kind: FocusStreakDayKind
+                let status: String
+                if day.focusedSeconds == nil {
+                    kind = .unavailable
+                    status = NSLocalizedString("no data", comment: "Focus streak day unavailable")
+                } else if day.completed > 0 {
+                    kind = .completed
+                    status = NSLocalizedString("completed focus day", comment: "Focus streak day completed")
+                } else {
+                    kind = .incomplete
+                    status = NSLocalizedString("no completed focus session", comment: "Focus streak day incomplete")
+                }
+                let isToday = todayStart.map { calendar.isDate(day.start, inSameDayAs: $0) } ?? false
+                let todaySuffix = isToday
+                    ? NSLocalizedString(", today", comment: "Focus streak day today suffix") : ""
+                return FocusStreakDayPresentation(
+                    start: day.start,
+                    weekdayLabel: weekday,
+                    accessibilityLabel: "\(dateLabel), \(status)\(todaySuffix)",
+                    kind: kind,
+                    isToday: isToday)
+            }
+            let weekCompleted = days.filter { $0.kind == .completed }.count
+            let active = summary.streak > 0
+            let best = summary.bestRecordedStreak > 0 ? summary.bestRecordedStreak : nil
+            let completedToday = days.last?.kind == .completed
+            let statusLine: String? = {
+                guard active else { return nil }
+                return completedToday
+                    ? FocusHistoryText.streakCompletedToday
+                    : FocusHistoryText.streakNotCompletedToday
+            }()
+            let emberMood: StreakEmberMood = {
+                if !active { return .dormant }
+                return completedToday ? .active : .warning
+            }()
+            return .visible(
+                streak: summary.streak,
+                streakCaption: active ? FocusHistoryText.streakDaysInARow(summary.streak)
+                    : FocusHistoryText.streakNoActive,
+                bestRecorded: best,
+                bestCaption: best.map(FocusHistoryText.bestRecordedStreak),
+                weekCompleted: weekCompleted,
+                weekCaption: FocusHistoryText.streakWeekCompleted(weekCompleted),
+                days: days,
+                footnote: active ? FocusHistoryText.streakFootnote : FocusHistoryText.streakRestart,
+                isActive: active,
+                statusLine: statusLine,
+                completedToday: completedToday,
+                emberMood: emberMood)
+        }
     }
 }
 
