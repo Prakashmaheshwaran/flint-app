@@ -48,7 +48,7 @@ enum class StreakFlameState {
     /** Same flame cooling: reduced heat, slower motion. */
     AtRisk,
 
-    /** Cooled ash with a faint ember; no animation. */
+    /** Recognizable low-intensity flame; no animation. */
     Inactive,
 }
 
@@ -67,48 +67,34 @@ internal fun flameTick(elapsedSeconds: Double, fps: Double): Long =
 internal fun breathPhase01(elapsedSeconds: Double): Float =
     ((sin(elapsedSeconds * 2.0 * PI / 1.5) + 1.0) / 2.0).toFloat()
 
-/** Flame brightness per state; inactive emits no light. */
+/** Flame brightness per state; inactive is dim but still recognizably a flame. */
 internal fun flameIntensity(state: StreakFlameState): Float = when (state) {
     StreakFlameState.Active -> 1f
-    StreakFlameState.AtRisk -> 0.9f
-    StreakFlameState.Inactive -> 0f
+    StreakFlameState.AtRisk -> 0.88f
+    StreakFlameState.Inactive -> 0.45f
 }
 
-/**
- * Pose used for Reduce Motion and host-rendered captures (slightly into the cycle).
- */
+/** Pose used for Reduce Motion and host-rendered captures. */
 internal const val STATIC_FLAME_SECONDS: Double = 0.72
 
 /** Cross-fade between streak states; one dissolve, no loop restart. */
 internal const val STATE_CROSSFADE_MS: Int = 320
 
-/**
- * Fringe stroke widths in dp, keyed to the rendered size.
- *
- * The fringe is the optical halo outside the silhouette. At badge sizes it must stay
- * near 1 dp or it swallows the contour (a constant 2.4 dp was ~10% of a 24 dp icon).
- * Hero sizes keep the fuller two-pass treatment.
- */
+/** Fringe stroke widths in dp, keyed to the rendered size. */
 internal fun fringeWidthsDp(sizeDp: Float): Pair<Float, Float> = when {
-    sizeDp < 48f -> 0.6f to 1.0f
+    sizeDp < 48f -> 0.7f to 1.1f
     sizeDp < 120f -> 1.0f to 1.8f
-    else -> 1.4f to 2.8f
+    else -> 1.4f to 2.6f
 }
 
-/**
- * Flicker rate per state. At-risk runs the same motion at 0.6x so the flame reads
- * heavier; inactive never animates.
- */
+/** Flicker rate per state. At-risk runs slower; inactive is static. */
 internal fun flickerRate(state: StreakFlameState): Float = when (state) {
     StreakFlameState.Active -> 1f
     StreakFlameState.AtRisk -> 0.6f
     StreakFlameState.Inactive -> 0f
 }
 
-/**
- * Cycle fraction in [0, 1): the oscillator argument reduced in double precision first,
- * then converted to Float, so unbounded inputs stay exact in the reduction.
- */
+/** Cycle fraction in [0, 1). */
 internal fun reducedPhase(elapsedSeconds: Double, rate: Float, freq: Double): Float {
     val x = (elapsedSeconds / 6.0) * rate * freq
     return (((x % 1.0) + 1.0) % 1.0).toFloat()
@@ -121,17 +107,17 @@ internal fun sparkSeed(elapsedSeconds: Double, rate: Float, index: Int): Float {
     return if (s >= 1f) 0f else s
 }
 
-/** Dancing tip offset: two incommensurate frequencies, never visibly loops. */
+/** Dancing tip offset. */
 internal fun tipFlickerDx(elapsedSeconds: Double, rate: Float, halfW: Float): Float {
     val twoPi = 2f * PI.toFloat()
-    return sin(reducedPhase(elapsedSeconds, rate, 2.1) * twoPi) * halfW * 0.05f +
-        sin(reducedPhase(elapsedSeconds, rate, 3.7) * twoPi + 0.8f) * halfW * 0.02f
+    return sin(reducedPhase(elapsedSeconds, rate, 2.1) * twoPi) * halfW * 0.06f +
+        sin(reducedPhase(elapsedSeconds, rate, 3.7) * twoPi + 0.8f) * halfW * 0.025f
 }
 
 /** Slow whole-flame tilt in degrees. */
 internal fun tiltDegrees(elapsedSeconds: Double, rate: Float): Float {
     val twoPi = 2f * PI.toFloat()
-    return sin(reducedPhase(elapsedSeconds, rate, 0.9) * twoPi + 0.5f) * 1.2f
+    return sin(reducedPhase(elapsedSeconds, rate, 0.9) * twoPi + 0.5f) * 1.4f
 }
 
 /** Slow vertical bob in pixels. */
@@ -140,35 +126,22 @@ internal fun bobOffset(elapsedSeconds: Double, rate: Float, unit: Float): Float 
     return sin(reducedPhase(elapsedSeconds, rate, 2.2) * twoPi) * unit * 0.004f
 }
 
-/** Ember brightness envelope: fades in from the base, out at the tip. */
+/** Ember brightness envelope. */
 internal fun sparkAlpha(seed: Float, intensity: Float): Float =
     sin(seed * PI.toFloat()) * 0.75f * intensity
 
-/**
- * Loop time for one frame. The anchor carries the phase a pause froze, so resuming
- * (re-focus, scroll back, window return) continues the pose instead of snapping to
- * [STATIC_FLAME_SECONDS].
- */
+/** Loop time for one frame. */
 internal fun frameElapsed(anchorSeconds: Double, startNanos: Long, nowNanos: Long): Double =
     anchorSeconds + (nowNanos - startNanos) / 1_000_000_000.0
 
-/** Breathing scale: breath01 0..1 maps to 0.96..1.04 (±4% around 1.0). */
+/** Breathing scale: 0.96..1.04. */
 internal fun breathScale(breath01: Float): Float = 0.96f + 0.08f * breath01
 
-/** Outer glow alpha: breath01 0..1 maps to 0.25..0.45, plus milestone flash. */
+/** Outer glow alpha. */
 internal fun haloAlpha(breath01: Float, flash: Float): Float =
     (0.25f + 0.20f * breath01 + flash * 0.15f).coerceIn(0f, 1f)
 
-/**
- * Reference silhouette: rendered H:W ≈ 1.32 (Pinterest reference measured 1.288) with a
- * wide fuel base and a dominant central blade.
- *
- * The contour spans ±0.45 w, so the *visible* silhouette is 0.90 w wide against a
- * 0.90 s tall body: the visible aspect is s / w, not h / w. Sizing w from h alone
- * (the old 0.693 s) drew a 1.45 flame — measurably narrower than the approved
- * 1.30–1.35 silhouette. Every other proportion (core, hot base, contact light,
- * embers) is expressed in multiples of w, so widening the scale unit keeps them intact.
- */
+/** Flame geometry for an iconic upward fire silhouette. */
 internal class FlameGeometry(val s: Float) {
     val w: Float = s * 0.76f
     val h: Float = s * 0.90f
@@ -186,127 +159,109 @@ internal class FlameBrushSet(
     val ash: Brush,
 )
 
-/**
- * Active ramp: the reference's red-orange body (top) melting to saturated orange at
- * the fuel base. The pale yellow lives in the core, not the shell.
- */
+/** Active: rich red/orange outer flame. */
 internal val ActiveBodyStops = arrayOf(
-    0.00f to Color(0xFFFB922F),
-    0.34f to Color(0xFFFB7A22),
-    0.70f to Color(0xFFF34415),
-    1.00f to Color(0xFFC7300B),
+    0.00f to Color(0xFFFFD24A),
+    0.18f to Color(0xFFFFA02A),
+    0.45f to Color(0xFFFF6A1A),
+    0.72f to Color(0xFFE63A10),
+    1.00f to Color(0xFFC41E08),
 )
 
-/**
- * At-risk ramp: still-real amber at the base, cooling progressively upward.
- *
- * A cooling flame loses heat from the top first, so the lower body keeps saturated
- * orange while only the upper body darkens toward charcoal. This is deliberately not
- * a uniform tan wash, and contains no red warning colour.
- */
+/** At-risk: same silhouette, cooling amber tones. */
 internal val AtRiskBodyStops = arrayOf(
-    0.00f to Color(0xFFF6A23C),
-    0.22f to Color(0xFFEA8A2B),
-    0.46f to Color(0xFFCF6E1E),
-    0.72f to Color(0xFFA6551C),
-    0.90f to Color(0xFF7E4017),
-    1.00f to Color(0xFF5C3014),
+    0.00f to Color(0xFFFFC86A),
+    0.22f to Color(0xFFF2A23A),
+    0.46f to Color(0xFFD97828),
+    0.72f to Color(0xFFB85A24),
+    0.90f to Color(0xFF8C431C),
+    1.00f to Color(0xFF6A3318),
 )
 
-/**
- * Warm cooling chrome for at-risk streak text (hero number, status line), derived from
- * [AtRiskBodyStops] so the surrounding UI cannot drift back to the legacy red/rose
- * warning colour. Public because the feature modules style their own warning text.
- */
+/** Dormant: recognizable low-intensity flame silhouette. */
+internal val DormantBodyStops = arrayOf(
+    0.00f to Color(0xFFB8A898),
+    0.25f to Color(0xFF9C8C82),
+    0.55f to Color(0xFF7A6E68),
+    0.80f to Color(0xFF5C524E),
+    1.00f to Color(0xFF433C3A),
+)
+
+/** Warm cooling chrome for at-risk streak text. */
 val StreakCoolTop: Color = Color(0xFFF2C892)
 val StreakCoolDeep: Color = Color(0xFFC1731F)
 
 internal fun brushSet(state: StreakFlameState, geo: FlameGeometry): FlameBrushSet {
-    val body = if (state == StreakFlameState.Active) {
-        Brush.verticalGradient(
-            *ActiveBodyStops,
-            startY = geo.baseY,
-            endY = geo.baseY - geo.h,
+    val bodyStops = when (state) {
+        StreakFlameState.Active -> ActiveBodyStops
+        StreakFlameState.AtRisk -> AtRiskBodyStops
+        StreakFlameState.Inactive -> DormantBodyStops
+    }
+    val body = Brush.verticalGradient(*bodyStops, startY = geo.baseY, endY = geo.baseY - geo.h)
+    val core = when (state) {
+        StreakFlameState.Active -> Brush.radialGradient(
+            0.00f to Color(0xFFFFFFFF),
+            0.20f to Color(0xFFFFF6C8),
+            0.48f to Color(0xFFFFE08A),
+            0.78f to Color(0xFFFFB020),
+            1.00f to Color(0x00FF8A00),
+            center = Offset(geo.cx, geo.baseY - geo.h * 0.20f),
+            radius = geo.h * 0.42f,
         )
-    } else {
-        Brush.verticalGradient(
-            *AtRiskBodyStops,
-            startY = geo.baseY,
-            endY = geo.baseY - geo.h,
+        StreakFlameState.AtRisk -> Brush.radialGradient(
+            0.00f to Color(0xFFFFF0D0),
+            0.30f to Color(0xFFFFD08A),
+            0.65f to Color(0xFFF0A040),
+            1.00f to Color(0x00D07020),
+            center = Offset(geo.cx, geo.baseY - geo.h * 0.18f),
+            radius = geo.h * 0.36f,
+        )
+        StreakFlameState.Inactive -> Brush.radialGradient(
+            0.00f to Color(0x66FFD8A8),
+            0.45f to Color(0x33C8A078),
+            1.00f to Color(0x00807060),
+            center = Offset(geo.cx, geo.baseY - geo.h * 0.16f),
+            radius = geo.h * 0.30f,
         )
     }
-    val core = if (state == StreakFlameState.Active) {
-        Brush.radialGradient(
-            0.00f to Color(0xFFFFF6C8),
-            0.35f to Color(0xFFFFE08A),
-            0.72f to Color(0xFFFDCC3B),
-            1.00f to Color(0x00FB922F),
-            center = Offset(geo.cx, geo.baseY - geo.h * 0.14f),
-            radius = geo.h * 0.46f,
-        )
-    } else {
-        // Residual heat: a compact amber pocket low in the body, not a full-length core.
-        Brush.radialGradient(
-            0.00f to Color(0xE6FFD27E),
-            0.42f to Color(0x99FFB35A),
-            1.00f to Color(0x00E08A2E),
-            center = Offset(geo.cx, geo.baseY - geo.h * 0.10f),
-            radius = geo.h * 0.34f,
-        )
-    }
-    val bloomCentre = Offset(geo.cx, geo.baseY - geo.h * 0.34f)
+    val bloomCentre = Offset(geo.cx, geo.baseY - geo.h * 0.38f)
     val bloom = Brush.radialGradient(
-        0.00f to Color(0x38FF9A3C),
-        0.55f to Color(0x14FF9A3C),
-        1.00f to Color(0x00FF9A3C),
-        center = bloomCentre,
-        radius = geo.h * 1.05f,
+        0.00f to when (state) { StreakFlameState.Active -> Color(0x40FF7A1A); StreakFlameState.AtRisk -> Color(0x28E08A30); StreakFlameState.Inactive -> Color(0x10807060) },
+        0.55f to when (state) { StreakFlameState.Active -> Color(0x18FF6A10); StreakFlameState.AtRisk -> Color(0x10C07028); StreakFlameState.Inactive -> Color(0x08606058) },
+        1.00f to Color(0x00000000),
+        center = bloomCentre, radius = geo.h * 1.00f,
     )
     val bloomInner = Brush.radialGradient(
-        0.00f to Color(0x2EFFD27A),
-        1.00f to Color(0x00FFD27A),
-        center = bloomCentre,
-        radius = geo.h * 0.58f,
+        0.00f to when (state) { StreakFlameState.Active -> Color(0x33FFD060); StreakFlameState.AtRisk -> Color(0x22E0B060); StreakFlameState.Inactive -> Color(0x0C908070) },
+        1.00f to Color(0x00000000),
+        center = bloomCentre, radius = geo.h * 0.55f,
     )
     val contact = Brush.radialGradient(
-        0.00f to Color(0x1FFB922F),
-        1.00f to Color(0x00FB922F),
-        center = Offset(geo.cx, geo.baseY - geo.h * 0.02f),
-        radius = geo.w * 0.70f,
+        0.00f to when (state) { StreakFlameState.Active -> Color(0x22FF8A20); StreakFlameState.AtRisk -> Color(0x14C07028); StreakFlameState.Inactive -> Color(0x08606058) },
+        1.00f to Color(0x00000000),
+        center = Offset(geo.cx, geo.baseY - geo.h * 0.02f), radius = geo.w * 0.70f,
     )
-    val hotBase = if (state == StreakFlameState.Active) {
-        Brush.radialGradient(
-            0.00f to Color(0xFFFFFFFF),
-            0.45f to Color(0xA6FFFDE6),
-            1.00f to Color(0x00FFFDE6),
-            center = Offset(geo.cx, geo.baseY - geo.h * 0.08f),
-            radius = geo.w * 0.24f,
+    val hotBase = when (state) {
+        StreakFlameState.Active -> Brush.radialGradient(
+            0.00f to Color(0xF2FFFFFF), 0.35f to Color(0xCCFFF8D8), 0.70f to Color(0x66FFE8A0), 1.00f to Color(0x00FFB040),
+            center = Offset(geo.cx, geo.baseY - geo.h * 0.12f), radius = geo.w * 0.28f,
         )
-    } else {
-        // At-risk keeps residual heat, but it is amber, never white-hot.
-        Brush.radialGradient(
-            0.00f to Color(0xE6FFD9A0),
-            0.45f to Color(0x99FFB35A),
-            1.00f to Color(0x00E08A2E),
-            center = Offset(geo.cx, geo.baseY - geo.h * 0.08f),
-            radius = geo.w * 0.24f,
+        StreakFlameState.AtRisk -> Brush.radialGradient(
+            0.00f to Color(0xCCFFF0D0), 0.45f to Color(0x88FFD89A), 1.00f to Color(0x00D08030),
+            center = Offset(geo.cx, geo.baseY - geo.h * 0.10f), radius = geo.w * 0.24f,
+        )
+        StreakFlameState.Inactive -> Brush.radialGradient(
+            0.00f to Color(0x44E8D8C8), 0.50f to Color(0x18B0A090), 1.00f to Color(0x00000000),
+            center = Offset(geo.cx, geo.baseY - geo.h * 0.10f), radius = geo.w * 0.22f,
         )
     }
     val ash = Brush.linearGradient(
-        0.00f to Color(0xFF655E56),
-        0.40f to Color(0xFF3A3530),
-        0.72f to Color(0xFF262220),
-        1.00f to Color(0xFF151312),
-        start = Offset(geo.cx, geo.baseY - geo.h * 0.32f),
-        end = Offset(geo.cx, geo.baseY),
+        0.00f to Color(0xFF655E56), 0.40f to Color(0xFF3A3530), 0.72f to Color(0xFF262220), 1.00f to Color(0xFF151312),
+        start = Offset(geo.cx, geo.baseY - geo.h * 0.32f), end = Offset(geo.cx, geo.baseY),
     )
     return FlameBrushSet(body, core, bloom, bloomInner, contact, hotBase, ash)
 }
 
-/**
- * Pure draw pipeline behind [StreakFlame]. Kept separate so host tests can render the exact
- * production pixels without a device or Compose UI test framework.
- */
 internal class StreakFlamePainter(
     val geometry: FlameGeometry,
     private val compact: Boolean,
@@ -324,52 +279,43 @@ internal class StreakFlamePainter(
     private val brushes = HashMap<StreakFlameState, FlameBrushSet>()
 
     private val paint = Paint()
-
-    /** Cached layer bounds for the state dissolve; rebuilt only when the canvas resizes. */
     private var layerSize: Size = Size.Unspecified
     private var layerRect: Rect = Rect.Zero
 
     fun draw(scope: DrawScope, state: StreakFlameState, elapsed: Double, flashIn: Float) {
         val flash = flashIn.coerceIn(0f, 1f)
         val brush = brushes.getOrPut(state) { brushSet(state, geometry) }
-        if (state == StreakFlameState.Inactive) {
-            drawAsh(scope, brush, flash)
-            return
-        }
         val geo = geometry
-        val t = elapsed
-        val rate = flickerRate(state)
-        val intensity = if (state == StreakFlameState.Active) 1f else 0.85f
-        val tipDx = tipFlickerDx(t, rate, geo.w * 0.5f) * intensity
-        val tilt = tiltDegrees(t, rate) * intensity
-        val bob = bobOffset(t, rate, geo.s) * intensity
-        val breath = breathScale(breathPhase01(t))
-        val sway = (sin(reducedPhase(t, rate, 1.0) * twoPi()) * 0.020f +
-            sin(reducedPhase(t, rate, 2.3) * twoPi() + 1.3f) * 0.010f) * geo.w * intensity
-        val lickL = sin(reducedPhase(t, rate, 1.3) * twoPi() + 1f) * geo.w * 0.030f * intensity
-        val lickR = sin(reducedPhase(t, rate, 1.9) * twoPi() + 2.2f) * geo.w * 0.026f * intensity
+        val animate = state != StreakFlameState.Inactive
+        val t = if (animate) elapsed else STATIC_FLAME_SECONDS
+        val rate = if (animate) flickerRate(state) else 0f
+        val intensity = flameIntensity(state)
+        val tipDx = if (animate) tipFlickerDx(t, rate, geo.w * 0.5f) * intensity else 0f
+        val tilt = if (animate) tiltDegrees(t, rate) * intensity else 0f
+        val bob = if (animate) bobOffset(t, rate, geo.s) * intensity else 0f
+        val breath01 = if (animate) breathPhase01(t) else 0.5f
+        val breath = if (animate) breathScale(breath01) else 1f
+        val sway = if (animate) (sin(reducedPhase(t, rate, 1.0) * twoPi()) * 0.022f +
+            sin(reducedPhase(t, rate, 2.3) * twoPi() + 1.3f) * 0.012f) * geo.w * intensity else 0f
+        val lickL = if (animate) sin(reducedPhase(t, rate, 1.3) * twoPi() + 1f) * geo.w * 0.032f * intensity else 0f
+        val lickR = if (animate) sin(reducedPhase(t, rate, 1.9) * twoPi() + 2.2f) * geo.w * 0.028f * intensity else 0f
         val heightScale = 1f + (breath - 1f) * 0.45f
         val widen = 1f + (breath - 1f) * 0.55f
-        val coreTop = if (state == StreakFlameState.Active) 0.56f else 0.44f
+        val coreTop = when (state) {
+            StreakFlameState.Active -> 0.62f
+            StreakFlameState.AtRisk -> 0.54f
+            StreakFlameState.Inactive -> 0.50f
+        }
 
-        scope.drawCircle(
-            brush = brush.bloom,
-            radius = geo.h * 1.05f,
-            center = Offset(geo.cx, geo.baseY - geo.h * 0.34f),
-            alpha = (if (compact) 0.10f else if (state == StreakFlameState.Active) 0.20f else 0.11f) + flash * 0.06f,
-        )
-        scope.drawCircle(
-            brush = brush.bloomInner,
-            radius = geo.h * 0.58f,
-            center = Offset(geo.cx, geo.baseY - geo.h * 0.30f),
-            alpha = (if (compact) 0.06f else if (state == StreakFlameState.Active) 0.16f else 0.09f) + flash * 0.05f,
-        )
+        val bloomA = when (state) {
+            StreakFlameState.Active -> (if (compact) 0.14f else 0.22f)
+            StreakFlameState.AtRisk -> (if (compact) 0.09f else 0.13f)
+            StreakFlameState.Inactive -> (if (compact) 0.05f else 0.07f)
+        } + flash * 0.06f
+        scope.drawCircle(brush = brush.bloom, radius = geo.h * 1.00f, center = Offset(geo.cx, geo.baseY - geo.h * 0.38f), alpha = bloomA)
+        scope.drawCircle(brush = brush.bloomInner, radius = geo.h * 0.55f, center = Offset(geo.cx, geo.baseY - geo.h * 0.34f), alpha = bloomA * 0.8f)
         if (!compact) {
-            scope.drawOval(
-                brush = brush.contact,
-                topLeft = Offset(geo.cx - geo.w * 0.52f, geo.baseY - geo.h * 0.03f),
-                size = Size(geo.w * 1.04f, geo.h * 0.10f),
-            )
+            scope.drawOval(brush = brush.contact, topLeft = Offset(geo.cx - geo.w * 0.50f, geo.baseY - geo.h * 0.03f), size = Size(geo.w * 1.00f, geo.h * 0.10f))
         }
 
         scope.withTransform({
@@ -378,25 +324,35 @@ internal class StreakFlamePainter(
         }) {
             buildOuter(body, geo, tipDx, sway, heightScale, widen, lickL, lickR)
             scope.drawPath(body, brush.body)
-            scope.drawPath(body, Color(0xFFFF6A2A), alpha = 0.10f, style = fringeInner)
-            scope.drawPath(body, Color(0xFFFFC24A), alpha = 0.04f, style = fringeOuter)
+            val fringeA = when (state) {
+                StreakFlameState.Active -> 0.14f
+                StreakFlameState.AtRisk -> 0.10f
+                StreakFlameState.Inactive -> 0.06f
+            }
+            scope.drawPath(body, Color(0xFFFF5A18), alpha = fringeA, style = fringeInner)
+            scope.drawPath(body, Color(0xFFFFC040), alpha = fringeA * 0.5f, style = fringeOuter)
+
             buildCore(core, geo, tipDx, sway, heightScale, widen, coreTop)
             scope.drawPath(core, brush.core)
+
+            val hotA = when (state) {
+                StreakFlameState.Active -> (if (compact) 0.34f else 0.42f)
+                StreakFlameState.AtRisk -> (if (compact) 0.22f else 0.28f)
+                StreakFlameState.Inactive -> (if (compact) 0.12f else 0.16f)
+            } + (breath - 1f) * 0.8f + flash * 0.12f
             scope.drawOval(
                 brush = brush.hotBase,
-                alpha = (if (compact) 0.24f else 0.32f) + (breath - 1f) * 0.8f + flash * 0.14f,
-                topLeft = Offset(geo.cx - geo.w * 0.12f, geo.baseY - geo.h * 0.12f),
-                size = Size(geo.w * 0.24f, geo.h * 0.11f),
+                alpha = hotA.coerceIn(0f, 1f),
+                topLeft = Offset(geo.cx - geo.w * 0.14f, geo.baseY - geo.h * 0.13f),
+                size = Size(geo.w * 0.28f, geo.h * 0.12f),
             )
-            drawEmbers(scope, geo, t, rate, intensity)
+
+            if (animate && emberCount > 0) {
+                drawEmbers(scope, geo, t, rate, intensity)
+            }
         }
     }
 
-    /**
-     * One-shot state dissolve: the outgoing state keeps its current phase, the incoming
-     * state fades in over it. Progress is driven by a single [Animatable] in the
-     * composable, never by a second animation loop.
-     */
     fun drawCrossFade(
         scope: DrawScope,
         from: StreakFlameState,
@@ -406,38 +362,23 @@ internal class StreakFlamePainter(
         progress: Float,
     ) {
         val p = progress.coerceIn(0f, 1f)
-        if (from == to || p >= 1f) {
-            draw(scope, to, elapsed, flashIn)
-            return
-        }
+        if (from == to || p >= 1f) { draw(scope, to, elapsed, flashIn); return }
         withLayerAlpha(scope, 1f - p) { draw(scope, from, elapsed, flashIn) }
         withLayerAlpha(scope, p) { draw(scope, to, elapsed, flashIn) }
     }
 
-    /** Applies a group alpha without allocating per frame; alpha 1 draws directly. */
     private inline fun withLayerAlpha(scope: DrawScope, alpha: Float, block: () -> Unit) {
         val a = alpha.coerceIn(0f, 1f)
-        if (a >= 0.999f) {
-            block()
-            return
-        }
+        if (a >= 0.999f) { block(); return }
         if (a <= 0.001f) return
         paint.alpha = a
         val canvas = scope.drawContext.canvas
         canvas.saveLayer(layerBounds(scope.size), paint)
-        try {
-            block()
-        } finally {
-            canvas.restore()
-        }
+        try { block() } finally { canvas.restore() }
     }
 
-    /** Reuses one layer rect so a dissolve frame allocates nothing in the draw path. */
     private fun layerBounds(size: Size): Rect {
-        if (size != layerSize) {
-            layerSize = size
-            layerRect = Rect(0f, 0f, size.width, size.height)
-        }
+        if (size != layerSize) { layerSize = size; layerRect = Rect(0f, 0f, size.width, size.height) }
         return layerRect
     }
 
@@ -446,76 +387,34 @@ internal class StreakFlamePainter(
             val seed = sparkSeed(t, rate, i)
             val alpha = sparkAlpha(seed, intensity)
             if (alpha <= 0.03f) continue
-            val y = geo.baseY - geo.h * (0.38f + seed * 0.52f)
-            val x = geo.cx + sin(seed * 5f + i * 2.1f) * geo.w * 0.16f
+            val y = geo.baseY - geo.h * (0.42f + seed * 0.50f)
+            val x = geo.cx + sin(seed * 5f + i * 2.1f) * geo.w * 0.14f
             val r = geo.s * (0.004f + 0.0015f * (i % 2))
-            scope.drawCircle(
-                color = Color(0xFFFFB86B),
-                alpha = alpha.coerceIn(0f, 0.8f),
-                radius = r,
-                center = Offset(x, y),
-            )
-            scope.drawLine(
-                color = Color(0xFFFF8A3C),
-                alpha = alpha.coerceIn(0f, 0.35f),
-                start = Offset(x, y + r * 2.2f),
-                end = Offset(x, y - r * 0.8f),
-                strokeWidth = r * 0.9f,
-            )
+            scope.drawCircle(color = Color(0xFFFFD070), alpha = alpha.coerceIn(0f, 0.85f), radius = r, center = Offset(x, y))
+            scope.drawLine(color = Color(0xFFFFA040), alpha = alpha.coerceIn(0f, 0.35f), start = Offset(x, y + r * 2.0f), end = Offset(x, y - r * 0.8f), strokeWidth = r * 0.9f)
         }
     }
 
+    /** Retained for API compatibility; dormant renders as a low-intensity flame silhouette. */
     private fun drawAsh(scope: DrawScope, brush: FlameBrushSet, flash: Float) {
         val geo = geometry
-        buildAsh(ash, geo)
-
-        // Residual ember: a warm coal sitting in the ash notch. It scales up at badge
-        // sizes so it stays the recognisable focal point when detail is dropped.
-        val emberX = geo.cx - geo.w * 0.06f
-        val emberY = geo.baseY - geo.h * 0.20f
-        val emberR = geo.w * if (compact) 0.11f else 0.085f
-
-        scope.drawCircle(
-            brush = brush.bloomInner,
-            radius = geo.h * 0.30f,
-            center = Offset(emberX, emberY),
-            alpha = (if (compact) 0.20f else 0.12f) + flash * 0.05f,
+        buildOuter(body, geo, 0f, 0f, 1f, 1f, 0f, 0f)
+        scope.drawPath(body, brush.body)
+        scope.drawPath(body, Color(0xFF8A7A70), alpha = 0.10f, style = fringeInner)
+        buildCore(core, geo, 0f, 0f, 1f, 1f, 0.50f)
+        scope.drawPath(core, brush.core)
+        scope.drawOval(
+            brush = brush.hotBase,
+            alpha = (if (compact) 0.12f else 0.16f) + flash * 0.08f,
+            topLeft = Offset(geo.cx - geo.w * 0.14f, geo.baseY - geo.h * 0.13f),
+            size = Size(geo.w * 0.28f, geo.h * 0.12f),
         )
-        scope.drawPath(ash, brush.ash)
-
-        // A charcoal shard always breaks the silhouette: this is what stops the mound
-        // reading as a smooth pebble at 24-40 dp. Extra chips/planes are hero-only.
-        buildShard(crack, geo, -1)
-        scope.drawPath(crack, Color(0xFF2C2521))
-        if (!compact) {
-            buildShard(crack, geo, 1)
-            scope.drawPath(crack, Color(0xFF352D26))
-            // Soft shading planes, kept very low contrast so it stays ash, not rock face.
-            buildFacets(facetA, facetB, geo)
-            scope.drawPath(facetA, Color(0x0DFFFFFF))
-            scope.drawPath(facetB, Color(0x1A000000))
-        }
-        // Ash rim: a cool grey highlight, not a stone outline.
-        scope.drawPath(ash, Color(0x24B3A99A), style = emberStroke)
-
-        // Coal: charred rim, warm body, hotter centre. No white.
-        scope.drawCircle(color = Color(0xFF17120F), alpha = 0.92f, radius = emberR * 1.12f,
-            center = Offset(emberX, emberY))
-        scope.drawCircle(color = Color(0xFFD45E1D), alpha = 0.95f, radius = emberR,
-            center = Offset(emberX, emberY))
-        scope.drawCircle(color = Color(0xFFFFB066), alpha = 0.85f + flash * 0.15f,
-            radius = emberR * 0.58f, center = Offset(emberX, emberY))
-        scope.drawCircle(color = Color(0xFFFFD9A0), alpha = 0.55f + flash * 0.2f,
-            radius = emberR * 0.28f, center = Offset(emberX, emberY))
-        if (!compact) {
-            buildCrack(crack, geo, emberX, emberY)
-            scope.drawPath(crack, Color(0x995A2C12), style = emberStroke)
-        }
     }
 }
 
 private fun twoPi(): Float = 2f * PI.toFloat()
 
+/** Iconic fire silhouette: broad base, two side lobes, upward-pointing tip (reads as 🔥 at 40dp). */
 private fun buildOuter(
     path: Path,
     geo: FlameGeometry,
@@ -535,28 +434,17 @@ private fun buildOuter(
 
     path.reset()
     path.moveTo(x(0f, 0f), y(0f))
-    path.cubicTo(x(-0.24f, 0f), y(0f), x(-0.40f, 0.02f), y(0.02f), x(-0.40f, 0.10f), y(0.10f))
-    path.cubicTo(x(-0.42f, 0.16f), y(0.16f), x(-0.45f, 0.21f), y(0.21f), x(-0.44f, 0.24f), y(0.24f))
-    path.cubicTo(x(-0.40f, 0.29f), y(0.29f), x(-0.33f, 0.33f), y(0.33f), x(-0.30f, 0.36f), y(0.36f))
-    path.cubicTo(x(-0.31f, 0.42f), y(0.42f), x(-0.34f, 0.47f), y(0.47f), x(-0.34f, 0.52f), y(0.52f))
-    path.cubicTo(
-        x(-0.33f, 0.55f), y(0.55f),
-        x(-0.27f, 0.58f) + lickL, y(0.58f),
-        x(-0.24f, 0.60f) + lickL * 0.6f, y(0.60f),
-    )
-    path.cubicTo(x(-0.15f, 0.74f), y(0.74f), x(-0.01f, 0.90f), y(0.90f), x(0.05f, 1.00f), y(1.00f))
-    path.cubicTo(x(0.08f, 0.88f), y(0.88f), x(0.18f, 0.74f), y(0.74f), x(0.30f, 0.66f), y(0.66f))
-    path.cubicTo(
-        x(0.29f, 0.62f), y(0.62f),
-        x(0.26f, 0.60f) + lickR, y(0.60f),
-        x(0.24f, 0.58f) + lickR * 0.6f, y(0.58f),
-    )
-    path.cubicTo(x(0.33f, 0.50f), y(0.50f), x(0.42f, 0.44f), y(0.44f), x(0.44f, 0.38f), y(0.38f))
-    path.cubicTo(x(0.45f, 0.30f), y(0.30f), x(0.42f, 0.28f), y(0.28f), x(0.38f, 0.12f), y(0.12f))
-    path.cubicTo(x(0.33f, 0.04f), y(0.04f), x(0.18f, 0f), y(0f), x(0f, 0f), y(0f))
+    path.cubicTo(x(-0.22f, 0f), y(0f), x(-0.44f, 0.06f), y(0.06f), x(-0.46f, 0.20f), y(0.20f))
+    path.cubicTo(x(-0.48f, 0.32f), y(0.32f), x(-0.38f, 0.42f), y(0.42f), x(-0.28f, 0.50f), y(0.50f))
+    path.cubicTo(x(-0.22f, 0.58f) + lickL * 0.5f, y(0.58f), x(-0.14f, 0.76f) + lickL, y(0.76f), x(-0.02f, 0.92f), y(0.92f))
+    path.cubicTo(x(0.00f, 0.97f), y(0.97f), x(0.01f, 0.99f), y(0.99f), x(0.02f, 1.00f), y(1.00f))
+    path.cubicTo(x(0.06f, 0.94f), y(0.94f), x(0.14f, 0.78f) + lickR, y(0.78f), x(0.22f, 0.64f) + lickR * 0.5f, y(0.64f))
+    path.cubicTo(x(0.34f, 0.54f), y(0.54f), x(0.48f, 0.40f), y(0.40f), x(0.46f, 0.24f), y(0.24f))
+    path.cubicTo(x(0.44f, 0.10f), y(0.10f), x(0.30f, 0.02f), y(0.02f), x(0f, 0f), y(0f))
     path.close()
 }
 
+/** Inner flame: orange-to-yellow core rising from base center. */
 private fun buildCore(
     path: Path,
     geo: FlameGeometry,
@@ -570,56 +458,26 @@ private fun buildCore(
     val h = geo.h
     val cx = geo.cx
     val baseY = geo.baseY
-    fun x(fx: Float, ft: Float) = cx + fx * w * widen * 0.92f + sway * ft * ft + tipDx * ft * ft * 0.8f
+    fun x(fx: Float, ft: Float) = cx + fx * w * widen * 0.92f + sway * ft * ft + tipDx * ft * ft * 0.75f
     fun y(ft: Float) = baseY - ft * h * heightScale
-    val mid = top * 0.80f
+    val mid = top * 0.78f
+
     path.reset()
     path.moveTo(x(0f, 0.02f), y(0.02f))
-    path.cubicTo(x(-0.07f, 0.03f), y(0.03f), x(-0.13f, 0.10f), y(0.10f), x(-0.13f, 0.20f), y(0.20f))
-    path.cubicTo(x(-0.13f, 0.34f), y(0.34f), x(-0.11f, mid - 0.06f), y(mid - 0.06f), x(-0.055f, mid), y(mid))
-    path.cubicTo(
-        x(-0.025f, top - 0.02f), y(top - 0.02f),
-        x(-0.012f, top), y(top),
-        x(0f, top), y(top),
-    )
-    path.cubicTo(
-        x(0.012f, top), y(top),
-        x(0.025f, top - 0.02f), y(top - 0.02f),
-        x(0.055f, mid), y(mid),
-    )
-    path.cubicTo(x(0.11f, mid - 0.06f), y(mid - 0.06f), x(0.13f, 0.34f), y(0.34f), x(0.13f, 0.20f), y(0.20f))
-    path.cubicTo(x(0.13f, 0.10f), y(0.10f), x(0.07f, 0.03f), y(0.03f), x(0f, 0.02f), y(0.02f))
+    path.cubicTo(x(-0.10f, 0.03f), y(0.03f), x(-0.18f, 0.12f), y(0.12f), x(-0.16f, 0.26f), y(0.26f))
+    path.cubicTo(x(-0.14f, 0.38f), y(0.38f), x(-0.08f, mid), y(mid), x(-0.03f, top - 0.04f), y(top - 0.04f))
+    path.cubicTo(x(-0.01f, top - 0.01f), y(top - 0.01f), x(0f, top), y(top), x(0.01f, top - 0.01f), y(top - 0.01f))
+    path.cubicTo(x(0.03f, top - 0.04f), y(top - 0.04f), x(0.08f, mid), y(mid), x(0.16f, 0.26f), y(0.26f))
+    path.cubicTo(x(0.18f, 0.12f), y(0.12f), x(0.10f, 0.03f), y(0.03f), x(0f, 0.02f), y(0.02f))
     path.close()
 }
 
+/** Retained for API/test compatibility: dormant flame silhouette path. */
 private fun buildAsh(path: Path, geo: FlameGeometry) {
-    val w = geo.w
-    val h = geo.h
-    val cx = geo.cx
-    val baseY = geo.baseY
-    fun x(fx: Float, ft: Float) = cx + fx * w
-    fun y(ft: Float) = baseY - ft * h
-    // Deliberately jagged crown: broken peaks and notches. A smooth dome reads as a
-    // pebble at badge sizes; chipped edges read as burnt debris at every size.
-    path.reset()
-    path.moveTo(x(0f, 0f), y(0f))
-    path.cubicTo(x(-0.24f, 0f), y(0f), x(-0.38f, 0.01f), y(0.01f), x(-0.42f, 0.06f), y(0.06f))
-    path.lineTo(x(-0.36f, 0.17f), y(0.17f))
-    path.lineTo(x(-0.32f, 0.145f), y(0.145f))
-    path.lineTo(x(-0.26f, 0.29f), y(0.29f))
-    path.lineTo(x(-0.20f, 0.215f), y(0.215f))
-    path.lineTo(x(-0.12f, 0.245f), y(0.245f))
-    path.lineTo(x(-0.04f, 0.20f), y(0.20f))
-    path.lineTo(x(0.02f, 0.315f), y(0.315f))
-    path.lineTo(x(0.09f, 0.30f), y(0.30f))
-    path.lineTo(x(0.15f, 0.225f), y(0.225f))
-    path.lineTo(x(0.25f, 0.285f), y(0.285f))
-    path.lineTo(x(0.33f, 0.175f), y(0.175f))
-    path.cubicTo(x(0.40f, 0.12f), y(0.12f), x(0.44f, 0.06f), y(0.06f), x(0.40f, 0.03f), y(0.03f))
-    path.cubicTo(x(0.32f, 0.01f), y(0.01f), x(0.14f, 0f), y(0f), x(0f, 0f), y(0f))
-    path.close()
+    buildOuter(path, geo, 0f, 0f, 1f, 1f, 0f, 0f)
 }
 
+/** Retained for API compatibility. */
 private fun buildFacets(a: Path, b: Path, geo: FlameGeometry) {
     val w = geo.w
     val h = geo.h
@@ -627,21 +485,11 @@ private fun buildFacets(a: Path, b: Path, geo: FlameGeometry) {
     val baseY = geo.baseY
     fun x(fx: Float) = cx + fx * w
     fun y(ft: Float) = baseY - ft * h
-    a.reset()
-    a.moveTo(x(-0.30f), y(0.05f))
-    a.lineTo(x(-0.12f), y(0.21f))
-    a.lineTo(x(0.00f), y(0.20f))
-    a.lineTo(x(-0.10f), y(0.07f))
-    a.close()
-    b.reset()
-    b.moveTo(x(0.10f), y(0.20f))
-    b.lineTo(x(0.30f), y(0.16f))
-    b.lineTo(x(0.36f), y(0.06f))
-    b.lineTo(x(0.14f), y(0.03f))
-    b.close()
+    a.reset(); a.moveTo(x(-0.12f), y(0.08f)); a.lineTo(x(-0.04f), y(0.18f)); a.lineTo(x(0.02f), y(0.14f)); a.lineTo(x(-0.06f), y(0.06f)); a.close()
+    b.reset(); b.moveTo(x(0.06f), y(0.14f)); b.lineTo(x(0.12f), y(0.18f)); b.lineTo(x(0.14f), y(0.08f)); b.lineTo(x(0.06f), y(0.06f)); b.close()
 }
 
-/** A chipped charcoal shard resting on the mound; left is -1, right is +1. */
+/** Retained for API compatibility. */
 private fun buildShard(path: Path, geo: FlameGeometry, side: Int) {
     val w = geo.w
     val h = geo.h
@@ -650,37 +498,11 @@ private fun buildShard(path: Path, geo: FlameGeometry, side: Int) {
     fun x(fx: Float) = cx + fx * w
     fun y(ft: Float) = baseY - ft * h
     path.reset()
-    if (side < 0) {
-        path.moveTo(x(-0.40f), y(0.04f))
-        path.lineTo(x(-0.30f), y(0.21f))
-        path.lineTo(x(-0.16f), y(0.09f))
-        path.lineTo(x(-0.24f), y(0.03f))
-    } else {
-        path.moveTo(x(0.14f), y(0.06f))
-        path.lineTo(x(0.24f), y(0.20f))
-        path.lineTo(x(0.36f), y(0.08f))
-        path.lineTo(x(0.28f), y(0.03f))
-    }
+    if (side < 0) { path.moveTo(x(-0.18f), y(0.06f)); path.lineTo(x(-0.10f), y(0.16f)); path.lineTo(x(-0.06f), y(0.08f)) }
+    else { path.moveTo(x(0.06f), y(0.08f)); path.lineTo(x(0.10f), y(0.16f)); path.lineTo(x(0.18f), y(0.06f)) }
     path.close()
 }
 
-private fun buildCrack(path: Path, geo: FlameGeometry, emberX: Float, emberY: Float) {
-    val w = geo.w
-    val h = geo.h
-    path.reset()
-    path.moveTo(emberX - w * 0.02f, emberY - w * 0.015f)
-    path.lineTo(emberX - w * 0.10f, emberY + h * 0.045f)
-    path.lineTo(emberX - w * 0.16f, emberY + h * 0.035f)
-}
-
-/**
- * The single Flint streak flame renderer.
- *
- * Canvas paths only; no bitmap, no blur effect. One 30 fps `withFrameNanos` source drives
- * every layer. Contours deform laterally (upper points move more than the base), the core
- * breathes, embers rise, and the pose stops cleanly when the surface is off-screen,
- * unfocused, inactive, or Reduce Motion is on.
- */
 @Composable
 fun StreakFlame(
     state: StreakFlameState,
@@ -710,20 +532,10 @@ fun StreakFlame(
 
     var onScreen by remember { mutableStateOf(true) }
     var elapsed by remember { mutableDoubleStateOf(STATIC_FLAME_SECONDS) }
-    // Keyed on animation eligibility, never on the state itself: an Active -> AtRisk
-    // change must not restart the clock or jump the phase.
     val animate = !reduced && state != StreakFlameState.Inactive && windowFocused && onScreen
 
     LaunchedEffect(animate) {
-        if (!animate) {
-            // Reduce Motion lands on the deterministic neutral pose. An off-screen or
-            // dormant pause keeps the last phase, so returning does not jump.
-            if (reduced) elapsed = STATIC_FLAME_SECONDS
-            return@LaunchedEffect
-        }
-        // Resume from the phase the flame paused at: the loop is a pure function of
-        // elapsed, so continuing the anchor (instead of snapping back to the static
-        // pose) is what keeps a re-entry from jumping.
+        if (!animate) { if (reduced) elapsed = STATIC_FLAME_SECONDS; return@LaunchedEffect }
         val anchor = elapsed
         val start = withFrameNanos { it }
         var lastTick = -1L
@@ -731,28 +543,16 @@ fun StreakFlame(
             withFrameNanos { now ->
                 val t = frameElapsed(anchor, start, now)
                 val tick = flameTick(t, 30.0)
-                if (tick != lastTick) {
-                    lastTick = tick
-                    elapsed = t
-                }
+                if (tick != lastTick) { lastTick = tick; elapsed = t }
             }
         }
     }
 
-    // One-shot dissolve between states. It reuses the single phase above and is
-    // skipped entirely under Reduce Motion.
     var shown by remember { mutableStateOf(state) }
     var outgoing by remember { mutableStateOf<StreakFlameState?>(null) }
     val fade = remember { Animatable(1f) }
     LaunchedEffect(state, reduced) {
-        if (reduced) {
-            // Reduce Motion swaps instantly, including when it is switched on in the
-            // middle of a dissolve, so a half-faded pair can never be left on screen.
-            shown = state
-            outgoing = null
-            fade.snapTo(1f)
-            return@LaunchedEffect
-        }
+        if (reduced) { shown = state; outgoing = null; fade.snapTo(1f); return@LaunchedEffect }
         if (state == shown) return@LaunchedEffect
         val from = shown
         shown = state
@@ -763,20 +563,11 @@ fun StreakFlame(
     }
 
     val painter = remember(px, compact, emberCount, fringeInner, fringeOuter) {
-        StreakFlamePainter(
-            geometry = FlameGeometry(px),
-            compact = compact,
-            emberCount = emberCount,
-            fringeInner = Stroke(fringeInner),
-            fringeOuter = Stroke(fringeOuter),
-        )
+        StreakFlamePainter(FlameGeometry(px), compact, emberCount, Stroke(fringeInner), Stroke(fringeOuter))
     }
     val label = contentDescription
-    val semanticsMod = if (label == null) {
-        Modifier.clearAndSetSemantics { }
-    } else {
+    val semanticsMod = if (label == null) Modifier.clearAndSetSemantics { } else
         Modifier.semantics(mergeDescendants = true) { this.contentDescription = label }
-    }
 
     Box(
         modifier
@@ -787,8 +578,7 @@ fun StreakFlame(
                 if (hostView.width <= 0 || hostView.height <= 0) return@onGloballyPositioned
                 val win = Rect(0f, 0f, hostView.width.toFloat(), hostView.height.toFloat())
                 val visible = b.intersect(win)
-                val fraction = if (visible.width <= 0f || visible.height <= 0f) 0f
-                else (visible.width * visible.height) / (b.width * b.height)
+                val fraction = if (visible.width <= 0f || visible.height <= 0f) 0f else (visible.width * visible.height) / (b.width * b.height)
                 onScreen = fraction > 0.05f
             }
             .then(semanticsMod),
@@ -796,16 +586,12 @@ fun StreakFlame(
         Canvas(Modifier.fillMaxSize()) {
             val from = outgoing
             val progress = fade.value
-            if (from == null || progress >= 1f) {
-                painter.draw(this, shown, elapsed, milestoneFlash)
-            } else {
-                painter.drawCrossFade(this, from, shown, elapsed, milestoneFlash, progress)
-            }
+            if (from == null || progress >= 1f) painter.draw(this, shown, elapsed, milestoneFlash)
+            else painter.drawCrossFade(this, from, shown, elapsed, milestoneFlash, progress)
         }
     }
 }
 
-/** Maps the flame state back onto the lifecycle mood for the shared palette. */
 internal fun StreakFlameState.toEmberMood(): StreakEmberMood = when (this) {
     StreakFlameState.Active -> StreakEmberMood.Active
     StreakFlameState.AtRisk -> StreakEmberMood.Warning
@@ -814,18 +600,12 @@ internal fun StreakFlameState.toEmberMood(): StreakEmberMood = when (this) {
 
 @Preview(name = "Streak flame — active", showBackground = true, backgroundColor = 0xFF0C0E13)
 @Composable
-private fun StreakFlameActivePreview() {
-    StreakFlame(state = StreakFlameState.Active, streakCount = 1, size = 148.dp)
-}
+private fun StreakFlameActivePreview() { StreakFlame(state = StreakFlameState.Active, streakCount = 1, size = 148.dp) }
 
 @Preview(name = "Streak flame — at risk", showBackground = true, backgroundColor = 0xFF0C0E13)
 @Composable
-private fun StreakFlameAtRiskPreview() {
-    StreakFlame(state = StreakFlameState.AtRisk, streakCount = 1, size = 148.dp)
-}
+private fun StreakFlameAtRiskPreview() { StreakFlame(state = StreakFlameState.AtRisk, streakCount = 1, size = 148.dp) }
 
-@Preview(name = "Streak flame — dormant ash", showBackground = true, backgroundColor = 0xFF0C0E13)
+@Preview(name = "Streak flame — dormant", showBackground = true, backgroundColor = 0xFF0C0E13)
 @Composable
-private fun StreakFlameInactivePreview() {
-    StreakFlame(state = StreakFlameState.Inactive, streakCount = 0, size = 148.dp)
-}
+private fun StreakFlameInactivePreview() { StreakFlame(state = StreakFlameState.Inactive, streakCount = 0, size = 148.dp) }
