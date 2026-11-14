@@ -83,7 +83,7 @@ overlay granted (Path B).
 
 - [ ] 5a. With a blocked app in front, turn Accessibility off in Settings: within a few seconds
       Path B shields the app again without opening Flint. Turn it back on: exactly one shield.
-- [ ] 5b. `adb shell am kill com.flint.peakfocus` (process death, not force-stop) while a break is
+- [ ] 5b. `adb shell am kill <package>` (process death, not force-stop) while a break is
       active: after recovery the remaining break time is preserved and no extra credit is spent.
 - [ ] 5c. Force-stop Flint from Settings: record what happens (Android disables the services
       until the next launch — this is expected and must be documented, not hidden).
