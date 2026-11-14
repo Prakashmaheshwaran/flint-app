@@ -12,8 +12,24 @@ serial=${AVD:-}
 variant=${FLINT_E2E_VARIANT:-debug}
 [[ $variant == debug || $variant == release ]] || { echo 'FLINT_E2E_VARIANT must be debug or release.' >&2; exit 2; }
 [[ $serial =~ ^emulator-[0-9]+$ ]] || { echo 'AVD must be an exact booted emulator serial (emulator-N).' >&2; exit 2; }
-[[ $(adb -s "$serial" shell getprop ro.kernel.qemu | tr -d '\r') == 1 ]] || exit 2
-[[ $(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r') == 1 ]] || exit 2
+
+# CI runners can report the emulator as offline briefly after boot; wait for a usable device.
+adb -s "$serial" wait-for-device >/dev/null 2>&1 || true
+boot_deadline=$((SECONDS + 300))
+while :; do
+  boot_completed=$(adb -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+  qemu=$(adb -s "$serial" shell getprop ro.kernel.qemu 2>/dev/null | tr -d '\r' || true)
+  if [[ $boot_completed == 1 && $qemu == 1 ]]; then
+    break
+  fi
+  if (( SECONDS >= boot_deadline )); then
+    echo "Emulator $serial not ready: sys.boot_completed=${boot_completed:-<unset>} ro.kernel.qemu=${qemu:-<unset>}" >&2
+    adb -s "$serial" devices -l >&2 || true
+    exit 2
+  fi
+  adb start-server >/dev/null 2>&1 || true
+  sleep 5
+done
 enabled=$(adb -s "$serial" shell settings get secure enabled_accessibility_services | tr -d '\r')
 [[ -z $enabled || $enabled == null ]] || {
   echo 'Refusing to overwrite existing accessibility services; use a fresh disposable emulator.' >&2
