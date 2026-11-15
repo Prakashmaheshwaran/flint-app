@@ -72,6 +72,15 @@ class AppPinTest : FlintE2EFixture() {
 
         // Leaving Flint without killing it re-locks it on return (the common resume path).
         device.pressHome()
+        // onStop() is what re-locks: wait until Flint has actually left the foreground before
+        // returning, otherwise the same activity is merely resumed and the gate is (correctly)
+        // never shown — a launch that races the HOME transition would fail this assertion.
+        val leftAt = SystemClock.uptimeMillis()
+        while (device.hasObject(By.pkg(app)) && SystemClock.uptimeMillis() - leftAt < timeout) {
+            SystemClock.sleep(200)
+        }
+        assertFalse("Flint had to leave the foreground first", device.hasObject(By.pkg(app)))
+        SystemClock.sleep(500)
         launchFlint()
         visible(By.text("Enter PIN"))
         assertFalse("Tab bar must be unreachable on resume", device.hasObject(By.text("Today")))
