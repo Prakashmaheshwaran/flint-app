@@ -576,7 +576,7 @@ class DataStoreEditorCommitmentStore(
         if (ledger.pending?.operation == operation) prefs.putHarderWait(harder.cancel(ledger))
     }
 
-    private fun floor(safety: EditorSafety) = SafetyFloor.STATIC_PACKAGES + "com.flint.peakfocus" + safety.excludedPackages
+    private fun floor(safety: EditorSafety) = SafetyFloor.STATIC_PACKAGES + FlintIdentity.APPLICATION_ID + safety.excludedPackages
 }
 
 internal fun Preferences.editorRules() = StrictPrefsCodec.rules(StrictPrefsCodec.string(this, PrefsKeys.BLOCK_RULES).orEmpty())

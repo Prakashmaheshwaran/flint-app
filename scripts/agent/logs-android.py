@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 
-PACKAGE = "com.flint.peakfocus"
+PACKAGE = "app.flint.focus"
 
 
 def capture(args):

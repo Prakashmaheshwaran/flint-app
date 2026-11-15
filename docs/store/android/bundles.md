@@ -36,6 +36,14 @@ record source SHA/AAB SHA-256 and use the owner's Play testing process to valida
 generated splits, install/update and retained local data. Signing a bundle does
 not establish Play policy eligibility or authorization to upload it.
 
+**Package identity (2026-11-11).** Builds from this change install as
+`app.flint.focus`. The public v0.1.0 debug APK and earlier previews used
+`com.flint.peakfocus`, so they cannot update in place: the new app installs
+alongside the old one, and local rules/history in the old package do not carry
+over (uninstall the old app after recreating its rules). The owner must confirm
+no Google Play Console app record exists under `com.flint.peakfocus`: a Play
+package name cannot change after the first upload.
+
 APK and AAB share the literal `versionCode`/`versionName` in app Gradle; keep the
 existing `scripts/check-release-version.sh` policy: versionName equals tag without
 `v`, versionCode strictly increases over the previous reachable release, iOS
