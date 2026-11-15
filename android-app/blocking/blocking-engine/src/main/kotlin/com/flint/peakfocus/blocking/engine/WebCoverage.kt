@@ -27,9 +27,11 @@ object WebsiteRulePolicy {
         val local = Instant.ofEpochMilli(nowMs).atZone(zone)
         return rules.any {
             it.enabled && !it.isExpired(nowMs) && !it.targets.allowListMode &&
-                it.targets.domains.isNotEmpty() && engine.scheduleActive(
-                    it.schedule, local.hour * 60 + local.minute, local.dayOfWeek.value,
-                )
+                it.targets.domains.isNotEmpty() && it.schedule.let { schedule ->
+                    // A dated window is a single instant-defined occurrence, never a weekly one.
+                    if (schedule?.date != null) ScheduleOccurrences.containing(schedule, zone, nowMs) != null
+                    else engine.scheduleActive(schedule, local.hour * 60 + local.minute, local.dayOfWeek.value)
+                }
         }
     }
 }

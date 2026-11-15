@@ -438,13 +438,20 @@ public struct FlintSessionStartParameters: Codable, Equatable, Sendable {
     /// a different request (PC-03). nil is omitted from the encoded fingerprint, so ordinary
     /// (and pre-F01) request identities are unchanged.
     public var pomodoro: FlintPomodoroPlan?
+    /// `FlintSessionStartParameters.allowListMode` for an Allow List session, nil for a block
+    /// list. Optional so every block-list fingerprint encodes exactly as it did before allow
+    /// lists existed — persisted accepted starts still match after an upgrade.
+    public var mode: String?
+
+    public static let allowListMode = "allow_list"
 
     public init(duration: TimeInterval, tier: BreakLevel, selection: String, name: String,
                 source: FlintSessionSource, origin: String, ownerID: String?, replacing: Bool,
-                pomodoro: FlintPomodoroPlan? = nil) {
+                pomodoro: FlintPomodoroPlan? = nil, mode: String? = nil) {
         self.duration = duration; self.tier = tier; self.selection = selection; self.name = name
         self.source = source; self.origin = origin; self.ownerID = ownerID; self.replacing = replacing
         self.pomodoro = pomodoro
+        self.mode = mode
     }
 
     public var fingerprint: String {

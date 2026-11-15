@@ -64,6 +64,10 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
     /// Persisted on the record so duplicate callbacks from the host and the monitor, or a replayed
     /// callback, emit each rest's events once. An observation, not a commitment.
     public let pomodoroObservedPhase: Int?
+    /// True when this session keeps only its selection's applications available and blocks
+    /// everything else Screen Time can shield (an Allow List session). Missing/absent means a
+    /// block list, so every record saved before allow lists decodes unchanged.
+    public let allowListMode: Bool?
 
     public static let currentContractVersion = 1
 
@@ -91,7 +95,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         naturalEndObservedAt: Date? = nil,
         removalGuard: Bool? = nil,
         pomodoro: FlintPomodoroPlan? = nil,
-        pomodoroObservedPhase: Int? = nil
+        pomodoroObservedPhase: Int? = nil,
+        allowListMode: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -117,7 +122,11 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
         self.removalGuard = removalGuard
         self.pomodoro = pomodoro
         self.pomodoroObservedPhase = pomodoroObservedPhase
+        self.allowListMode = allowListMode
     }
+
+    /// True only for a positively recorded Allow List session. A missing field is a block list.
+    public var isAllowList: Bool { allowListMode == true }
 
     /// Time left on the commitment, by the clock ADR-012 §9 trusts: within the boot that started
     /// the latest checkpoint, monotonic elapsed time governs. At the first observation after a
@@ -189,7 +198,7 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             clockRearmCount: clockRearmCount, remainingCheckpoint: checkpoint,
             naturalEndObservedAt: naturalEndObservedAt ?? self.naturalEndObservedAt,
             removalGuard: removalGuard, pomodoro: pomodoro,
-            pomodoroObservedPhase: pomodoroObservedPhase)
+            pomodoroObservedPhase: pomodoroObservedPhase, allowListMode: allowListMode)
     }
 
     /// Whether the commitment is over by `logicalRemaining` (allowing `slack` for the whole-second
@@ -266,7 +275,8 @@ public struct FlintActiveSession: Codable, Equatable, Sendable, Identifiable {
             naturalEndObservedAt: naturalEndObservedAt,
             removalGuard: removalGuard,
             pomodoro: pomodoro,
-            pomodoroObservedPhase: pomodoroObservedPhase
+            pomodoroObservedPhase: pomodoroObservedPhase,
+            allowListMode: allowListMode
         )
     }
 

@@ -40,6 +40,12 @@ internal data class TimerDraft(
     val durationMinutes: Int = 30,
     val presetId: String? = null,
     val breakLevel: BreakLevel = BreakLevel.EASY,
+    /**
+     * Inverted selection: the picked apps stay available and everything else is blocked for the
+     * duration. Same durations, tiers, exit paths and history as a block-list Timer; the app set
+     * is never empty (an empty allow list would block the whole phone).
+     */
+    val allowListMode: Boolean = false,
 )
 
 internal data class TimerUiState(
@@ -68,6 +74,7 @@ internal data class TimerUiState(
 internal fun timerStartFailureText(reason: String): String = if (reason == "Resume protection first.")
     "Protection recovery is active. Try again after recovery ends." else reason
 
+/** Apps only: an allow-list Timer has no website targets (allow-list domains are unsupported). */
 internal fun validTimerDraft(draft: TimerDraft): Boolean =
     draft.apps.isNotEmpty() && draft.apps.all { it.packageName.isNotBlank() } &&
         isValidNewSessionDuration(draft.durationMinutes * 60_000L) &&
@@ -86,7 +93,10 @@ internal fun timerRule(draft: TimerDraft, nowEpochMs: Long, uniqueId: String): B
         // The ID's start and deadline use the same instant; the UUID supplies no clock.
         id = CONTRACT_TIMER_ID_PREFIX + "$nowEpochMs-$uniqueId",
         name = preset?.name ?: "Focus timer",
-        targets = BlockTargets(apps = draft.apps.distinctBy { it.packageName }.toSet()),
+        targets = BlockTargets(
+            apps = draft.apps.distinctBy { it.packageName }.toSet(),
+            allowListMode = draft.allowListMode,
+        ),
         breakLevel = draft.breakLevel,
         expiresAtEpochMs = nowEpochMs + draft.durationMinutes * 60_000L,
     )

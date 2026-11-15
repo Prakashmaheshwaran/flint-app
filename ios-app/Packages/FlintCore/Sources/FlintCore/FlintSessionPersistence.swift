@@ -218,11 +218,16 @@ final class FlintSessionPersistence {
         store.saveActiveSession(session)
         guard store.loadActiveSession() == session else { return false }
         if !session.isLogicallyExpired(clock: env.clock) {
-            // A Pomodoro parent replays its phase, never a stale focus claim (design §4).
+            // A Pomodoro parent replays its phase, never a stale focus claim (design §4), and
+            // applyShield picks the block-list or allow-list write for the session's mode (F02).
             if session.isInPomodoroRest(clock: env.clock), selection != nil {
                 env.shield.clear()
             } else if !session.isInPomodoroRest(clock: env.clock) {
-                do { if let selection { try env.shield.applyBlockList(selection) } } catch { return false }
+                do {
+                    if let selection {
+                        try FlintSessionController.applyShield(selection, for: session, shield: env.shield)
+                    }
+                } catch { return false }
                 env.webRestrictions.reconcile(session, clock: env.clock)
             }
         }

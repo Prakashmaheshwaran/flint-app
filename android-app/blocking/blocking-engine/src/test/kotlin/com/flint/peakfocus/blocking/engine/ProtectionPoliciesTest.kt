@@ -504,6 +504,20 @@ class CommitmentPolicyTest {
         assertEquals(EditKind.WEAKEN, policy.classifyEdit(sleep, sleep.copy(window = Window(9 * 60, 23 * 60, emptySet(), "Europe/Berlin"))))
     }
 
+    @Test fun `PC-14 moving a one-time date weakens but the same date can extend`() {
+        val date = java.time.LocalDate.parse("2026-11-20")
+        val once = base.copy(window = Window(9 * 60, 17 * 60, emptySet(), "Europe/Berlin", date))
+        // Same date, same span, later end: provably covering.
+        assertEquals(EditKind.STRENGTHEN, policy.classifyEdit(once, once.copy(window = once.window!!.copy(endMinute = 18 * 60))))
+        assertEquals(EditKind.STRENGTHEN, policy.classifyEdit(once, once.copy(window = once.window!!.copy(startMinute = 8 * 60))))
+        // Moving the date protects a different day: the old commitment is gone.
+        assertEquals(EditKind.WEAKEN, policy.classifyEdit(once, once.copy(window = once.window!!.copy(date = date.plusDays(1)))))
+        assertEquals(EditKind.WEAKEN, policy.classifyEdit(once, once.copy(window = once.window!!.copy(endMinute = 16 * 60))))
+        // Converting a recurring window into a one-time one is never provable coverage.
+        assertEquals(EditKind.WEAKEN, policy.classifyEdit(base, once))
+        assertEquals(EditKind.WEAKEN, policy.classifyEdit(once, base))
+    }
+
     @Test fun `session and occurrence bounds`() {
         assertTrue(isValidNewSessionDuration(24 * 3_600_000L))
         assertTrue(!isValidNewSessionDuration(24 * 3_600_000L + 1))

@@ -4,6 +4,7 @@ import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.SafetyFloor
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.Verdict
+import java.time.ZoneId
 
 /**
  * The pure decision core of Flint's blocker.
@@ -56,7 +57,14 @@ class BlockDecisionEngine {
                 if (!occurrence.active) continue
             } else {
                 if (rule.isExpired(nowEpochMs)) continue
-                if (!scheduleActive(rule.schedule, nowMinutesOfDay, weekday)) continue
+                val schedule = rule.schedule
+                // A dated one-time window is evaluated at its instant: minutes-of-day and weekday
+                // cannot describe it, and reading it as a weekly pattern would make it repeat.
+                // An unknown clock cannot prove it inactive, so it is skipped fail-closed there.
+                if (schedule?.date != null) {
+                    if (nowEpochMs < 0 ||
+                        ScheduleOccurrences.containing(schedule, ZoneId.systemDefault(), nowEpochMs) == null) continue
+                } else if (!scheduleActive(schedule, nowMinutesOfDay, weekday)) continue
             }
             val targets = rule.targets
 
@@ -126,9 +134,15 @@ class BlockDecisionEngine {
      * blocks Tue 00:30, not Mon 00:30). [weekday] uses ISO numbering (1=Mon…7=Sun) — the same
      * contract as `Schedule.daysOfWeek` in core-model; callers holding a `Calendar.DAY_OF_WEEK`
      * (1=Sun…7=Sat) must convert via [IsoWeekday.fromCalendar]. Empty daysOfWeek = every day.
+     *
+     * A **dated** one-time window is never active here: its single occurrence is defined by an
+     * instant, not by a repeating minute range, and returning `true` for a matching clock time
+     * would make it repeat weekly. Callers that hold the current instant must evaluate it with
+     * [ScheduleOccurrences.containing] in the rule's saved zone (as [decide] does).
      */
     internal fun scheduleActive(schedule: Schedule?, nowMinutesOfDay: Int, weekday: Int): Boolean {
         schedule ?: return true
+        if (schedule.date != null) return false
         if (nowMinutesOfDay < 0) return true
         val start = schedule.startMinuteOfDay
         val end = schedule.endMinuteOfDay

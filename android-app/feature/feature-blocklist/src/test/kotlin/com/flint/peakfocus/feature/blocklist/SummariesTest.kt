@@ -7,7 +7,10 @@ import com.flint.peakfocus.core.model.DomainRef
 import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.TimeLimit
+import java.time.LocalDate
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -88,6 +91,41 @@ class SummariesTest {
     @Test
     fun `equal endpoints are flagged as never active - engine treats the window as empty`() {
         assertTrue(scheduleSummary(Schedule(emptySet(), 600, 600)).contains("never active"))
+    }
+
+    @Test
+    fun `a dated window names its date instead of weekdays`() {
+        val summary = scheduleSummary(Schedule(emptySet(), 540, 1020, LocalDate.parse("2026-11-20")))
+        assertEquals("One time · ${oneTimeDateLabel(LocalDate.parse("2026-11-20"))} · 09:00–17:00", summary)
+        assertTrue(summary.startsWith("One time · "))
+        assertTrue("no weekday claim: $summary", "Every day" !in summary)
+        assertTrue("no weekday claim: $summary", "Weekdays" !in summary)
+    }
+
+    @Test
+    fun `a dated overnight window says it ends the next day`() {
+        val summary = scheduleSummary(Schedule(emptySet(), 1320, 360, LocalDate.parse("2026-11-20")))
+        assertTrue(summary, summary.endsWith("22:00–06:00 (next day)"))
+    }
+
+    @Test
+    fun `a one time window is pending active then finished and never weekly`() {
+        val zone = ZoneId.of("UTC")
+        val date = LocalDate.parse("2026-11-20")
+        val schedule = Schedule(emptySet(), 540, 1020, date)
+        val start = date.atStartOfDay(zone).plusMinutes(540).toInstant().toEpochMilli()
+        val end = date.atStartOfDay(zone).plusMinutes(1020).toInstant().toEpochMilli()
+        assertEquals(OneTimePhase.PENDING, oneTimePhase(schedule, start - 1, zone))
+        assertEquals(OneTimePhase.ACTIVE, oneTimePhase(schedule, start, zone))
+        assertEquals(OneTimePhase.ACTIVE, oneTimePhase(schedule, end - 1, zone))
+        assertEquals(OneTimePhase.FINISHED, oneTimePhase(schedule, end, zone))
+        // A week later it is still finished: never a repeating Friday window.
+        assertEquals(OneTimePhase.FINISHED, oneTimePhase(schedule, end + 7 * 86_400_000L, zone))
+        assertNull(oneTimePhase(Schedule(emptySet(), 540, 1020), end, zone))
+        assertEquals("Finished", oneTimeStatusLabel(schedule, OneTimePhase.FINISHED))
+        assertEquals("Active now", oneTimeStatusLabel(schedule, OneTimePhase.ACTIVE))
+        assertTrue(oneTimeStatusLabel(schedule, OneTimePhase.PENDING).startsWith("Starts "))
+        assertTrue(oneTimeStatusLabel(schedule, OneTimePhase.PENDING).endsWith("09:00"))
     }
 
     // ---- Targets ----

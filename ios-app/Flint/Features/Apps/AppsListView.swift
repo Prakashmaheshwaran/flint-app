@@ -108,8 +108,12 @@ struct AppsListView: View {
             readable = false
             return
         }
-        // The running session's frozen selection, so apps it blocks appear too.
-        let session = store.loadActiveSession().flatMap { store.loadSessionSelection(sessionID: $0.id) }
+        // The running session's frozen selection, so apps it blocks appear too. An Allow List
+        // session names the apps it keeps *available*, so its selection is not a blocked target
+        // set and must not be listed as one.
+        let active = store.loadActiveSession()
+        let session = active?.isAllowList == true
+            ? nil : active.flatMap { store.loadSessionSelection(sessionID: $0.id) }
         let selections = rules.map(\.selection) + limits.map(\.selection) + opens.map(\.selection)
             + (session.map { [$0] } ?? [])
         var seen = Set<String>()

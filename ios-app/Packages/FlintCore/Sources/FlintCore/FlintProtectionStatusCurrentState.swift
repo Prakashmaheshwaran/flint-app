@@ -10,11 +10,23 @@ extension FlintProtectionStatusBuilder.RuleInput {
                                 armed: Bool, observed: Bool, now: Date, calendar: Calendar,
                                 clock: FlintClock? = nil) -> Self {
         guard rule.protection != nil else {
+            // A one-shot is never a weekly window, even without versioned metadata: its mirror
+            // weekday would otherwise publish a next occurrence every week.
+            if let oneShot = rule.oneShot {
+                let window = DateInterval(start: oneShot.start, end: oneShot.end)
+                return .init(id: rule.id, kind: .oneShotSchedule, displayName: rule.name, tier: rule.breakLevel,
+                    enabled: rule.enabled && now < oneShot.end, armed: armed, observed: observed,
+                    currentWindow: oneShot.contains(now) ? window : nil,
+                    nextWindow: oneShot.start > now ? window : nil)
+            }
             return .schedule(id: rule.id, kind: kind, displayName: rule.name, tier: rule.breakLevel,
                 schedule: rule.schedule, enabled: rule.enabled, armed: armed, observed: observed, now: now, calendar: calendar)
         }
         var resolved = clock ?? .system; resolved.now = { now }
         let timeline = FlintRuleOccurrenceClock.date(for: rule, clock: resolved)
+        // A finished one-shot is history, not a cause: it is deliberately unregistered, so it must
+        // not publish registration_unobserved/failed or degrade every other surface's status.
+        let finishedOneShot = rule.oneShot.map { timeline >= $0.end && rule.occurrence(at: now, clock: resolved) == nil } ?? false
         func displayed(_ window: FlintRuleWindow) -> DateInterval {
             let display = FlintRuleOccurrenceClock.display(window, for: rule, clock: resolved)
             return .init(start: display.start, end: display.end)
@@ -29,7 +41,7 @@ extension FlintProtectionStatusBuilder.RuleInput {
             }
         }
         return .init(id: rule.id, kind: rule.oneShot == nil ? kind : .oneShotSchedule,
-            displayName: rule.name, tier: rule.breakLevel, enabled: rule.enabled,
+            displayName: rule.name, tier: rule.breakLevel, enabled: rule.enabled && !finishedOneShot,
             armed: armed, observed: observed, available: rule.validationIssue == nil,
             currentWindow: current, nextWindow: next)
     }

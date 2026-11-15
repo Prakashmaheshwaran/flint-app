@@ -23,6 +23,12 @@ final class SessionViewModel: ObservableObject {
     }
 
     @Published var selection = FamilyActivitySelection()
+    /// The Start sheet's mode for the *next* immediate session. Shortcuts and the Focus filter
+    /// stay block-list only (they use Today's default selection), so this is UI state only.
+    @Published var allowListMode = false
+    /// The apps an Allow List session keeps available. Kept apart from `selection` so an allow
+    /// list never becomes Today's block-list default (ADR-012 §7).
+    @Published var allowListSelection = FamilyActivitySelection()
     @Published var durationMinutes: Int = 45
     @Published var breakLevel: BreakLevel = .harder
     /// Pomodoro mode: the whole focus/rest chain is one commitment (F01).
@@ -209,6 +215,24 @@ final class SessionViewModel: ObservableObject {
     /// "7 apps · 2 sites" — what the selection blocks, in the design's words.
     var selectionSummary: String { Self.summary(of: selection) }
 
+    /// The targets the next start uses: the allow list's kept apps, or the block list. An allow
+    /// list's exceptions are individually picked apps only (as the controller enforces), so its
+    /// category and website picks are never counted, shown or sent as kept apps.
+    var startSelection: FamilyActivitySelection {
+        guard allowListMode else { return selection }
+        var apps = FamilyActivitySelection()
+        apps.applicationTokens = allowListSelection.applicationTokens
+        return apps
+    }
+
+    /// What would stop the next start, using the same validation the controller enforces. An
+    /// allow list with no app is refused (it would shield everything Screen Time can shield).
+    var startSelectionIssue: FlintSelectionIssue? {
+        FlintSelectionValidation.issue(for: startSelection, context: allowListMode ? .allowList : .blockList)
+    }
+
+    var startSelectionCount: Int { Self.count(of: startSelection) }
+
     /// The running session's own frozen targets — never the picker's draft, which a Shortcut-
     /// or schedule-started session doesn't use. Nil when there is no session or it can't be read.
     var activeSelection: FamilyActivitySelection? {
@@ -262,6 +286,7 @@ final class SessionViewModel: ObservableObject {
         let duration: TimeInterval
         let level: BreakLevel
         let source: FlintSessionSource
+        let allowList: Bool
         let token: FlintSessionStartToken
         let pomodoro: FlintPomodoroPlan?
     }
@@ -293,15 +318,16 @@ final class SessionViewModel: ObservableObject {
             }
             if startAttempt == nil || !confirmed {
                 // A chain is a Pomodoro cause (policy kind and history source), whatever selection
-                // it blocks.
+                // it blocks. A preset is a block-list selection; an allow list is never one.
                 let source: FlintSessionSource = plan != nil ? .pomodoro
-                    : appliedGroupSelection == selection ? .preset : .manual
+                    : (!allowListMode && appliedGroupSelection == startSelection ? .preset : .manual)
                 let duration = plan?.totalDuration ?? TimeInterval(durationMinutes * 60)
-                let token = try controller.prepareStartToken(selection: selection, duration: duration,
+                let token = try controller.prepareStartToken(selection: startSelection, duration: duration,
                     breakLevel: breakLevel, source: source, origin: .appUI,
-                    route: "app-ui.session", operationID: startRequestID, pomodoro: plan)
-                startAttempt = StartAttempt(selection: selection, duration: duration, level: breakLevel,
-                    source: source, token: token, pomodoro: plan)
+                    route: "app-ui.session", operationID: startRequestID,
+                    pomodoro: plan, allowList: allowListMode)
+                startAttempt = StartAttempt(selection: startSelection, duration: duration, level: breakLevel,
+                    source: source, allowList: allowListMode, token: token, pomodoro: plan)
             }
             guard let attempt = startAttempt else { return }
             active = try controller.startBlockNow(
@@ -314,7 +340,8 @@ final class SessionViewModel: ObservableObject {
                 requestID: attempt.token.operationID,
                 expectedRevision: attempt.token.expectedRevision,
                 confirmed: confirmed,
-                pomodoro: attempt.pomodoro
+                pomodoro: attempt.pomodoro,
+                allowList: attempt.allowList
             )
             if let plan = attempt.pomodoro { savePomodoroCadence(plan) }
             startRequestID = UUID().uuidString
@@ -329,6 +356,16 @@ final class SessionViewModel: ObservableObject {
         } catch FlintSessionError.resumeProtectionFirst {
             needsProtectionResume = true
             errorText = "Resume protection first"
+        } catch let error as FlintSessionError where allowListMode {
+            // The block-list copy for a cap ("use a category instead") is wrong for a kept-apps
+            // list: say to choose fewer apps instead.
+            if case let .tooManyTokens(count, cap) = error {
+                errorText = FlintSelectionIssue.tooManyTokens(count: count, cap: cap).message(for: .allowList)
+            } else if error == .emptyAllowList {
+                errorText = FlintSelectionIssue.emptyAllowList.message
+            } else {
+                errorText = error.localizedDescription
+            }
         } catch {
             errorText = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }

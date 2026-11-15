@@ -4,6 +4,7 @@ import com.flint.peakfocus.blocking.engine.*
 import com.flint.peakfocus.core.datastore.*
 import com.flint.peakfocus.core.model.*
 import java.security.MessageDigest
+import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
 import java.util.UUID
@@ -219,6 +220,8 @@ internal object GlobalRecoveryPolicy {
         val logicalWall = timeline?.let { t -> trustedElapsedMs(t, now)?.let { t.wallEpochMs + it } } ?: now.wallEpochMs
         if (rule.expiresAtEpochMs?.let { it <= logicalWall } == true) return false
         val schedule = rule.schedule ?: return true
+        // A dated window has one occurrence and must never read as a weekly pattern here.
+        if (schedule.date != null) return ScheduleOccurrences.containing(schedule, ZoneId.systemDefault(), logicalWall) != null
         val cal = Calendar.getInstance(TimeZone.getDefault()).apply { timeInMillis = logicalWall }
         val minute = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         var day = ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
