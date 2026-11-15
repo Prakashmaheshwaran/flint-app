@@ -23,10 +23,15 @@ internal object TimeLimitDomainReadiness {
         requireMeasurement: Boolean,
         now: AccessClockStamp,
     ): Boolean {
-        val configured = (metadata as? StorageState.Ready)?.value?.any { it.packageName == packageName } == true
+        val committed = (metadata as? StorageState.Ready)?.value?.filter { it.packageName == packageName }.orEmpty()
+        val configured = committed.isNotEmpty()
         if (!configured && budget == null) return true
         if (time !is StorageState.Ready) return false
         if (budget == null) return !requireMeasurement
+        // R2p2-N01: the last observation can predate a strengthening edit. Evidence measured
+        // against a looser cap than the committed one cannot prove the committed limit unspent;
+        // wait for the detector to re-measure. Equal or stricter (legacy minimum) evidence can.
+        if (committed.any { budget.dailyMinutes > it.dailyMinutes }) return false
         return budget.remainingMs != null && budget.resetRemainingMs(now)?.let { it > 0 } == true &&
             (budget.measurement == TrustedTimeLimitBudget.Measurement.OBSERVED ||
                 budget.measurement == TrustedTimeLimitBudget.Measurement.NOT_NEEDED)
