@@ -16,6 +16,7 @@ enum FlintRuleInitialization {
     private static let empty = Data("[]".utf8)
     private static let marker = Data("{\"schema\":1}".utf8)
     private static let ownership = Data("{\"schema\":1,\"owned\":true}".utf8)
+    static let neverUsedProof = Data("{\"schema\":1,\"neverUsed\":true}".utf8)
 
     static func receipt(in defaults: UserDefaults) -> Receipt {
         guard let object = defaults.object(forKey: receiptKey) else { return .absent }
@@ -132,7 +133,14 @@ enum FlintRuleInitialization {
             switch key {
             case .schedules: saved = FlintDesiredRules.save([FlintScheduleRule](), key: key, to: defaults)
             case .limits: saved = FlintDesiredRules.save([FlintLimitRule](), key: key, to: defaults)
-            case .openLimits: saved = FlintDesiredRules.save([FlintOpenLimitRule](), key: key, to: defaults)
+            case .openLimits:
+                // R2p2-N03: record the positive never-used proof before the empty array, so
+                // the Open-credit import can tell this array from a user's deleted rules (a
+                // shipped install keeps its own saved `[]`, which takes the ownership branch
+                // above). A lost array write leaves only the closed established reading.
+                defaults.set(neverUsedProof, forKey: key.neverUsed)
+                guard defaults.synchronize(), defaults.data(forKey: key.neverUsed) == neverUsedProof else { return false }
+                saved = FlintDesiredRules.save([FlintOpenLimitRule](), key: key, to: defaults)
             }
             guard saved else { return false }
         }
