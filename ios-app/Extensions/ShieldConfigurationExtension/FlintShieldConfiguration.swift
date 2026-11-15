@@ -71,10 +71,11 @@ final class FlintShieldConfiguration: ShieldConfigurationDataSource {
         -> [String: FlintProtectionStatus.TargetScope] {
         guard let group = FlintGroupStore() else { return [:] }
         let selection = inputs.activeSession.flatMap { group.loadSessionSelection(sessionID: $0.session.id) }
-        // FlintSessionController currently applies block lists only. Read its frozen selection,
-        // never the mutable picker; schedules carry their own allow-list mode into the adapter.
+        // Read the session's own frozen selection and its recorded mode — never the mutable
+        // picker — so an Allow List session's kept apps never read as blocked by it.
         return FlintProtectionStatus.coverageScopes(for: .init(
-            protection: inputs, sessionSelection: selection, sessionAllowListMode: false,
+            protection: inputs, sessionSelection: selection,
+            sessionAllowListMode: inputs.activeSession?.session.isAllowList ?? false,
             schedules: group.loadRules(), timeLimits: group.loadLimits(),
             openLimits: FlintOpenLimitRule.loadAll()
         ))
