@@ -345,7 +345,7 @@ wait_badge_text() { wait_text "$(uc "$1")" "${2:-12}"; }
 
 # The Path B overlay window's title is the bare package name; MainActivity /
 # BlockActivity windows carry a "/Class" suffix and never match this.
-has_bare_flint_overlay() { grep -Eq 'Window\{[^ ]+ u0 com\.flint\.peakfocus\}' "$1"; }
+has_bare_flint_overlay() { grep -Eq 'Window\{[^ ]+ u0 app\.flint\.focus\}' "$1"; }
 
 assert_overlay() {
   windows_dump "$1"

@@ -45,8 +45,8 @@ Run `make doctor` to see what you're missing.
 
 The source is MIT — fork and ship freely. But the *shipping identity* is not transferable:
 
-- Change the bundle IDs / application ID (iOS `app.flint.focus`, Android `com.flint.peakfocus`)
-  to identifiers you control.
+- Change the bundle IDs / application ID (iOS `app.flint.focus`, Android `app.flint.focus`;
+  the Gradle namespace and Kotlin packages stay `com.flint.peakfocus`) to identifiers you control.
 - **iOS:** request your own `com.apple.developer.family-controls` **distribution** entitlement
   (Apple's form is account-level), then enable it on each App ID (app + 4 Screen Time extensions).
   Free to develop without it; required to ship to the App Store.

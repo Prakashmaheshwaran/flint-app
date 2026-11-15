@@ -80,6 +80,9 @@ listed in the ledger.
   The workflow can produce `flint-*-android-development-preview.apk` release-code files
   with development signing; this integration has not published them. Different certificates
   cannot update one another, and uninstalling can erase local rules/history.
+  The v0.1.0 debug APK uses the old package `com.flint.peakfocus`; newer Android builds use
+  `app.flint.focus`, install as a separate app, cannot update it in place, and do not inherit
+  its local rules/history.
   See [APK/AAB and signing](docs/store/android/bundles.md).
 - **Google Play and App Store:** submission and published availability are not established
   by this integration branch. Signing, hardware acceptance, uploads and review remain
