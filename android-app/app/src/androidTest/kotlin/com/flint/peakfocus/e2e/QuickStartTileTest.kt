@@ -36,7 +36,16 @@ class QuickStartTileTest : FlintE2EFixture() {
 
         shell("cmd statusbar add-tile $tile")
         try {
-            shell("cmd statusbar click-tile $tile")
+            // `add-tile` is asynchronous: SystemUI publishes the tile afterwards, and a click
+            // issued before that is silently ignored (the logcat shows
+            // notifyQuickSettingsTilesChanged with an empty list right after the click). Retry
+            // until the sheet is actually on screen instead of assuming one click lands.
+            var attempts = 0
+            while (attempts < 10 && !device.hasObject(By.text("Break level"))) {
+                shell("cmd statusbar click-tile $tile")
+                device.wait(Until.hasObject(By.text("Break level")), 2_000)
+                attempts++
+            }
             visible(By.text("Break level"))
             visible(By.text("Choose what rests first."))
             visible(By.text("Turn on Accessibility or grant Usage Access."))
