@@ -2,13 +2,18 @@ package com.flint.peakfocus.feature.blocklist
 
 import com.flint.peakfocus.blocking.engine.trustedElapsedMs
 import com.flint.peakfocus.blocking.overlay.ProtectionStatus
-import com.flint.peakfocus.blocking.overlay.SafetyFloorGate
 import com.flint.peakfocus.core.model.AccessClockStamp
 
 /** Permission bits are prerequisites, never evidence that a detector is serving. */
 internal data class TimerPermissions(
     val accessibilityEnabled: Boolean = false,
     val usageAccess: Boolean = false,
+    /**
+     * SYSTEM_ALERT_WINDOW grant. Path B's only reliable block surface is the overlay
+     * window; without it the Activity fallback is denied by background-activity-launch
+     * limits whenever the user is in another app, so Path B alone proves nothing.
+     */
+    val overlayGranted: Boolean = false,
 )
 
 internal sealed interface TimerArmingState {
@@ -36,20 +41,37 @@ internal fun timerPrerequisiteFailure(status: ProtectionStatus, permissions: Tim
                                      livePathA: Boolean, now: AccessClockStamp): String? =
     timerInfrastructureFailure(status, permissions, livePathA, now) ?: timerSnapshotFailure(status, now)
 
+/**
+ * How old a safety-floor resolution the *display* gate accepts. Enforcement mounts still
+ * use their own zero-age/5s checks; this only stops the planner's readiness indicator
+ * flapping when no evaluation has re-resolved the floor within the hot 5s window.
+ */
+internal const val TIMER_FLOOR_FRESH_MS: Long = 60_000L
+
 private fun timerInfrastructureFailure(status: ProtectionStatus, permissions: TimerPermissions,
                                        livePathA: Boolean, now: AccessClockStamp): String? {
     val canUseA = permissions.accessibilityEnabled && livePathA && status.detectors.accessibilityConnected
-    // Path B has a full-screen Activity fallback when overlay access is absent.
-    val canUseB = permissions.usageAccess && status.detectors.pathB == ProtectionStatus.PathBState.ENFORCING
-    if (!canUseA && !canUseB) return if (!permissions.accessibilityEnabled && !permissions.usageAccess)
-        "Turn on Accessibility or grant Usage Access."
-    else "Protection service is not connected. Retry or check setup."
+    // Path B qualifies only with a real block surface: the overlay window. A running
+    // poll loop alone is detection, not enforcement - its Activity fallback is denied
+    // by background-activity-launch limits whenever the user is in another app.
+    val canUseB = permissions.usageAccess && status.detectors.pathB == ProtectionStatus.PathBState.ENFORCING &&
+        permissions.overlayGranted
+    if (!canUseA && !canUseB) {
+        if (!permissions.accessibilityEnabled && !permissions.usageAccess)
+            return "Turn on Accessibility or grant Usage Access."
+        if (permissions.usageAccess && status.detectors.pathB == ProtectionStatus.PathBState.ENFORCING &&
+            !permissions.overlayGranted)
+            return "Flint can see app opens but cannot block yet. Allow Display over other apps, or turn on the Flint Accessibility service."
+        return "Protection service is not connected. Retry or check setup."
+    }
     if (status.readiness != ProtectionStatus.Readiness.READY) return "Protection state is unavailable. Retry or check setup."
     val floor = status.safetyFloor
     val checked = floor?.checkedAtElapsedRealtimeMs
+    // Enforcement mounts do their own zero-age checks; the planner only needs a
+    // recently resolved floor, not one refreshed inside the 5s enforcement window.
     if (!status.safetyFloorResolved || floor == null || floor.degraded || floor.failedSources.isNotEmpty() ||
         floor.requiredSources.isEmpty() || !floor.resolvedSources.containsAll(floor.requiredSources) ||
-        checked == null || now.elapsedRealtimeMs < checked || now.elapsedRealtimeMs - checked >= SafetyFloorGate.DEFAULT_REFRESH_INTERVAL_MS)
+        checked == null || now.elapsedRealtimeMs < checked || now.elapsedRealtimeMs - checked >= TIMER_FLOOR_FRESH_MS)
         return "Calling or Home safety could not be checked. Retry before starting protection."
     if ((status.pass as? ProtectionStatus.PassStatus.RecoveryActive)?.let { it.logicalEndElapsedRealtimeMs > now.elapsedRealtimeMs } == true)
         return "Resume protection first."

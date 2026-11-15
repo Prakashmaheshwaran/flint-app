@@ -113,6 +113,9 @@ class FlintAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         releaseDetection()
+        // Boot/recovery marker: proves the OS rebound the service. Info level so it
+        // survives default logcat filters; no PII, just the in-memory rule count.
+        android.util.Log.i("FlintBoot", "accessibility connected rules=${ActiveRulesHolder.rules.size}")
         BlocklistStore(this).load()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         serviceScope = scope
@@ -530,6 +533,10 @@ class FlintAccessibilityService : AccessibilityService() {
     }
 
     private fun releaseDetection() {
+        // Signal first: Path B must take over even if local teardown below throws.
+        // The disconnect used to run last, so a throwing teardown could leave a ghost
+        // "connected" Path A that parked Path B in standby with zero enforcement.
+        EnforcementSignals.detectors.disconnected(this)
         timeForeground?.close()
         timeForeground = null
         clearBrowserWindow()
@@ -555,8 +562,6 @@ class FlintAccessibilityService : AccessibilityService() {
         lastForegroundUrl = null
         lastNonFloorPackage = null
         lastBudgetDeadlineMs = null
-        // Hide Path A before the synchronous wake allows Path B to enforce.
-        EnforcementSignals.detectors.disconnected(this)
     }
 
     private companion object {
