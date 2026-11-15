@@ -105,6 +105,9 @@ struct FlintGlanceWidgetView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(model.title).font(family == .systemSmall ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
                 .lineLimit(2).minimumScaleFactor(0.8)
+            if let phase = model.phaseSummary {
+                Text(phase).font(.caption2.weight(.medium)).lineLimit(1).minimumScaleFactor(0.7)
+            }
             if let cause = model.causeSummary {
                 Text(cause).font(.caption2).lineLimit(1).minimumScaleFactor(0.7).privacySensitive()
             }

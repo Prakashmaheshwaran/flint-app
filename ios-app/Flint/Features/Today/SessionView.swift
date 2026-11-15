@@ -35,6 +35,13 @@ struct SessionView: View {
 
                     if active.endsAt != nil {
                         VStack(spacing: 8) {
+                            if let phase = vm.phaseLine {
+                                Text(phase)
+                                    .font(FlintFont.text(14, weight: .semibold))
+                                    .foregroundStyle(FlintBrand.emberText)
+                                    .multilineTextAlignment(.center)
+                                    .accessibilityIdentifier("session.pomodoro.phase")
+                            }
                             Text(Self.clock(vm.remaining))
                                 .flintNumber(84)
                                 .accessibilityLabel("\(Self.spoken(vm.remaining)) left")
@@ -106,11 +113,13 @@ struct SessionView: View {
     private func controlBar(_ active: FlintActiveSession) -> some View {
             VStack(alignment: .leading, spacing: 12) {
                 // What is resting: real icons for the running session's own frozen selection.
+                // An Allow List session names the apps it keeps *available* instead, so they are
+                // shown without the resting treatment and the line says which mode is running.
                 if let resting = vm.activeSelection, SessionViewModel.count(of: resting) > 0 {
                     let restingCount = SessionViewModel.count(of: resting)
                     HStack(spacing: 8) {
                         FlintAppIconStack(targets: resting.flintPickedTargets, size: 32,
-                                          border: Color(hex: 0x161518), limit: 5, resting: true)
+                                          border: Color(hex: 0x161518), limit: 5, resting: !active.isAllowList)
                         if restingCount > 5 {
                             Text("+\(restingCount - 5)")
                                 .font(FlintFont.text(11, weight: .semibold))
@@ -119,7 +128,9 @@ struct SessionView: View {
                                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(FlintBrand.bone(0.07)))
                         }
                         Spacer(minLength: 8)
-                        Text("\(SessionViewModel.summary(of: resting)) resting")
+                        Text(active.isAllowList
+                             ? "Allow List · \(SessionViewModel.summary(of: resting)) available"
+                             : "\(SessionViewModel.summary(of: resting)) resting")
                             .font(FlintFont.text(12))
                             .foregroundStyle(FlintBrand.mist)
                     }
@@ -475,6 +486,12 @@ struct SessionCompleteView: View {
                 Text(completeLine)
                     .flintSecondary(15)
                     .padding(.top, 10)
+                if let rounds = finished.roundsText {
+                    Text(rounds)
+                        .flintSecondary(13)
+                        .padding(.top, 4)
+                        .accessibilityIdentifier("session.complete.rounds")
+                }
                 if finished.isPreview { Text("DEBUG · Seeded preview events").flintSecondary(12).padding(.top, 8) }
                 if finished.historyDegraded { Text(FocusHistoryText.degraded).flintSecondary(13).padding(.top, 8) }
 

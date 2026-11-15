@@ -32,7 +32,9 @@ struct FlintGlanceReader: FlintGlanceReading {
             case .pomodoro: cause = .pomodoro
             }
             return .init(id: source.id, cause: cause, tier: source.tier.rawValue.capitalized,
-                         isArmed: source.armed, startedAt: source.startedAt, endsAt: end, name: source.name)
+                         isArmed: source.armed, startedAt: source.startedAt, endsAt: end, name: source.name,
+                         phase: source.phase.map { $0 == .rest ? .rest : .focus },
+                         round: source.round, rounds: source.rounds, phaseEndsAt: source.phaseEndsAt)
         }
         let headline = status.headline.map {
             FlintGlanceInput.Cause(name: $0.displayName, kind: $0.kind.rawValue,

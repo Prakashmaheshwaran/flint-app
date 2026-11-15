@@ -453,6 +453,54 @@ The consumer never reads the private protection ledger or treats a missing event
 of uninterrupted focus. Exact production emission and status-publication coverage remain
 C-owned verification requirements.
 
+### iOS — durable break and pass projection
+
+The App Group protection ledger (exclusive `flock`, atomic replace) is the outbox. Each
+ordinary grant carries one `FlintOrdinaryGrantState.EventIntent` per boundary, written in the
+same ledger transaction that accepts or ends the grant. An intent holds the grant ID, the
+frozen focus-session IDs of its session causes (rule causes are never focus sessions), the
+logical time, the observation time, time confidence and per-session acknowledgements.
+`FlintProtectionHistoryProjection` delivers them:
+
+- **Who drains.** After every ordinary-break reconcile in **any** process, including request,
+  confirm, Resume now and the monitor's carrier callbacks while the host is dead. The host also
+  drains on every history refresh (launch, foreground, Today), before compaction and its read.
+  A projection failure never changes the break's enforcement result.
+- **Receipt and acknowledgement.** The history inbox append (atomic, fsynced, lock-free) is
+  the receipt. It runs outside the ledger lock. Delivered rows are then acknowledged by stable ID
+  in one ledger transaction. A crash between the two replays into the same row, and history
+  keeps the first copy of an ID. Concurrent drainers converge the same way. A refused append
+  (no App Group, full inbox, I/O error) stays pending and writes the usual ingress diagnostic.
+  Undecodable retained outbox bytes are neither emitted nor discarded.
+- **Rows.** The ID is `<grantID>.<break_started|break_ended>.<sessionID>`. `break_started`
+  uses the acceptance time, `breakEnd` = the grant deadline's wall estimate, `kind: ordinary`,
+  `grant`, and certain confidence. `break_ended` uses the owner's logical end: the deadline for
+  natural expiry, otherwise acceptance plus trusted elapsed time. After a reboot or unknown
+  boot, it uses the observation time with `uncertain(reboot_or_unknown_boot)`.
+  `observedAt` is kept when it differs. A reboot end, or a deadline observed more than 2 s
+  late, is `inferred`. `reason` maps deadline → `expired`, Resume now → `resumed`,
+  supersession/new commitment → `superseded` and pass → `recovery` (Android's values). Reboot
+  → `reboot` and carrier failure → `carrier_failed` are iOS-only codes. No target scope,
+  token, store or rule name leaves the ledger.
+- **Emergency Pass.** The pass owner acknowledges its own `eventPending` flag whether or not
+  history accepted the live `pass_used` row, so a history failure can never make the next pass
+  unavailable. Instead, the host refresh re-publishes the last committed `emergencyRecovery` as
+  `pass_used` (ID = operation ID, same payload as the live row, plus `inferred`) when history
+  lacks it. `ended_early(route: emergency_pass)` is replayed with its lifecycle ID only when the
+  session authority's accepted-start record durably shows that exact terminal. The pass
+  scope alone never creates a terminal. A pass from before `historyStart` (cleared or
+  predating the store), or older than retention, is not replayed.
+- **Pass end.** Every focus session in a pass scope ends at the pass, so `[at, recoveryEnd)`
+  cannot reduce later focus. Resume now shortens recovery without a separate history event
+  (schema v1 has no pass-end type). A break the pass ended records `break_ended(recovery)`
+  at the pass time.
+- **Limits.** The archived outbox keeps at most 256 intents. An intent evicted before
+  delivery is counted in `evictedEventCount` but not surfaced in history. Append failures that
+  precede eviction already mark history degraded through ingress diagnostics. Intents left by
+  builds before this projection are delivered on the first refresh; the store's clear and
+  retention rules still filter them. Host-dead delivery still depends on the OS delivering
+  monitor callbacks; this is a fixture/unit-tested design, not physical-device proof.
+
 ## Notifications (local only)
 
 - Copy (ADR-012 §11): a pre-scheduled alert says only that the **planned focus time has
@@ -506,3 +554,10 @@ C-owned verification requirements.
   overlapping windows, independent-session union and midnight lower bounds remain honest.
   The F3 correction supersedes #202's uncertain-backdated-cut-only preservation assertions;
   its malformed legacy/plan, restoration, terminal and certain-path controls remain.
+- **F05 iOS break/pass outbox** (`FlintBreakHistoryProjectionTests`, fixtures): break rows are
+  typed and target-free. A monitor drain writes history while the host is dead. A crash before
+  projection or before acknowledgement yields one row per stable ID on the next host refresh,
+  and concurrent drainers converge. Delivery order doesn't change pairing. Refused receipts
+  keep intents. A reboot end stays uncertain. A missing end never becomes completion or
+  streak credit. A lost pass row is replayed once, without an unproven terminal or a cleared
+  operation.

@@ -93,16 +93,19 @@ whole chain, so its tier still governs stopping, replacing and editing during a 
   a rest is in progress and rewritten when focus resumes. Shield writes derive the phase
   under the session transition lock.
 - **Carriers:** each planned rest gets its own DeviceActivity carrier, named
-  `flint.pomo.<parentToken>.<restIndex>`. `parentToken` is the parent's `monitorName`
-  token. The `flint.pomo.` prefix is deliberately outside `isSessionActivity`.
+  `flint.pomo.<chainToken>.<restIndex>`. `chainToken` is derived from the parent's
+  immutable session id, not from its `monitorName`. A re-armed parent end (time zone
+  change, premature end, dropped registration) gets a new `monitorName`, but its rest
+  carriers keep reconciling the same chain. The `flint.pomo.` prefix is deliberately
+  outside `isSessionActivity`.
   - Interval: from the rest's start to `max(rest end, rest start + 15 min)`.
   - A rest shorter than 15 minutes gets `warningTime = 15 − restMinutes`, using the §4
     deadline adapter, so the warning lands on the logical rest end.
 - **Callbacks:** `intervalDidStart`, `intervalWillEndWarning` and `intervalDidEnd` only
   trigger a phase reconcile. The monitor checks that the carrier's token matches the
-  current parent; a carrier that does not match is stale and is stopped. The monitor then
-  derives the logical phase and writes the shield to match. A callback never acts on its
-  own name:
+  current parent's chain token; a carrier that does not match is stale and is stopped, and
+  its wake-up still reconciles the current parent's phase. The monitor derives the logical
+  phase and writes the shield to match. A callback never acts on its own name:
   - An early `intervalDidStart` during focus leaves the shield on.
   - A late or missed callback can only delay a rest (fail-closed). The exception is the
     clock-back case below.
@@ -115,12 +118,34 @@ whole chain, so its tier still governs stopping, replacing and editing during a 
     This keeps room for break, credit and recovery carriers.
 - **Teardown:** every terminal transition (`completed`, `ended_early`, pass, `superseded`,
   failed apply) stops all of the parent's rest carriers.
-- **Clock changes:** after a discontinuity or a time zone change, the host reconcile
-  re-registers the remaining future rest carriers from logical times, within the existing
-  clock-rearm budget.
+- **Clock changes:** after a time zone change or a same-boot wall-clock drift of more than
+  5 seconds, the host reconcile re-registers the remaining rest carriers from logical times,
+  within the existing clock-rearm budget. A future rest gets its full carrier. The rest in
+  progress gets a carrier that starts now. Its whole-minute warning lands at the logical end or
+  less than a minute after it, never before. A carrier that iOS
+  dropped is re-registered the same way.
 - **Known limit (device gate):** if the wall clock moves backward during a rest while the
   host is not running, the rest-end callback can arrive late. The shield returns at the next
-  callback or host reconcile. Ordinary-break carriers have the same limitation.
+  callback or host reconcile. Ordinary-break carriers have the same limitation. A rest-end
+  callback that finds the session transition lock busy past the monitor timeout changes
+  nothing. A rest shorter than 15 minutes then gets a second chance at its padded carrier's
+  `intervalDidEnd`. A rest of 15 minutes or more has a single end callback, so recovery falls
+  to the next rest's carrier, the chain end or a host reconcile.
+- **Focus resume restores Safari:** a rest clears the session store, including its Safari
+  keys. When focus resumes and the parent's end registration is missing, the parent end is
+  re-armed first, so Safari's restrictions return with a dependable end. A rest is not started
+  when the frozen targets needed to restore focus are unavailable.
+- **Recovery restores carriers:** recovering an interrupted install re-registers missing rest
+  carriers. A time-zone change or wall drift re-times the remaining rests even after the
+  dropped-registration budget is spent.
+- **Pre-registration is observed:** after registering, the start reads back the registered
+  activities. If iOS does not hold the parent end and every rest carrier, the chain is
+  refused (`registration_not_observed`).
+- **Rest carriers always use the deadline adapter** (`.endWarning`), whatever strategy ordinary
+  sessions use, so a short rest is never padded into a longer, undisclosed one.
+- **Late end through a rest carrier:** a carrier callback after the chain's logical end is
+  classified exactly like the parent's own end callback. A late observation is recorded as
+  unconfirmed with a latency anomaly, never as an on-time completion.
 
 ### Android
 
@@ -202,6 +227,17 @@ Readers show "Focus · round 2 of 4" or "Rest · focus resumes 10:25". A reader 
 past `phaseEndsAt` without a newer publication shows the phase as unavailable, never a
 stale focus or rest claim. A surface that cannot show phases truthfully shows only the
 parent ("Pomodoro", chain end) and makes no claim about the phase.
+
+- On iOS, `phaseEndsAt` is not a snapshot validity boundary. The protection claim changes only
+  when a carrier callback or reconcile rewrites the store, and that path republishes. Shortening
+  the whole snapshot to the phase end would turn a single missed publication into "State
+  unavailable" for a device that is still protecting.
+- On Android, enforcement flips at the boundary through the projection alone, without a store
+  write, so the phase end does bound the snapshot's validity there. The glance reports
+  "needs a new check" rather than a stale phase.
+- On iOS, the Live Activity cannot re-render at a phase boundary while the app is closed, so
+  it shows only the parent and its chain end, never a phase. The widget has timeline entries
+  at `phaseEndsAt`, so it shows the phase and drops it at the boundary.
 
 ## 9. Verification scope
 

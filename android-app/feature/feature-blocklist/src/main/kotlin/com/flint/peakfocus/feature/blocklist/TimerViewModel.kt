@@ -351,6 +351,15 @@ internal class TimerViewModel(
         state.update { it.copy(draft = it.draft.copy(longRestEvery = every)) }
     }
 
+    /**
+     * Flip the selection's meaning without dropping it: the picked apps become the ones kept
+     * available. Same rule as the rule editor, and only while the draft is editable.
+     */
+    fun selectAllowListMode(allowListMode: Boolean) {
+        if (!state.value.canEdit) return
+        state.update { it.copy(draft = it.draft.copy(allowListMode = allowListMode)) }
+    }
+
     fun start() {
         if (!clockReady || !state.value.canStart) return
         val draft = state.value.draft.copy(apps = state.value.draft.apps.toSet())

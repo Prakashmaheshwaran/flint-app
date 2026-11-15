@@ -51,6 +51,12 @@ internal data class TimerDraft(
     val rounds: Int = 4,
     val longRestMinutes: Int? = null,
     val longRestEvery: Int? = null,
+    /**
+     * Inverted selection: the picked apps stay available and everything else is blocked for the
+     * duration. Same durations, tiers, exit paths and history as a block-list Timer; the app set
+     * is never empty (an empty allow list would block the whole phone).
+     */
+    val allowListMode: Boolean = false,
 )
 
 /** The draft's plan, or null when the draft is a plain Timer or the plan is not valid. */
@@ -112,6 +118,7 @@ internal data class TimerUiState(
 internal fun timerStartFailureText(reason: String): String = if (reason == "Resume protection first.")
     "Protection recovery is active. Try again after recovery ends." else reason
 
+/** Apps only: an allow-list Timer has no website targets (allow-list domains are unsupported). */
 internal fun validTimerDraft(draft: TimerDraft): Boolean {
     if (draft.apps.isEmpty() || draft.apps.any { it.packageName.isBlank() }) return false
     if (draft.pomodoro) {
@@ -138,7 +145,10 @@ internal fun timerRule(draft: TimerDraft, nowEpochMs: Long, uniqueId: String): B
         // The ID's start and deadline use the same instant; the UUID supplies no clock.
         id = CONTRACT_TIMER_ID_PREFIX + "$nowEpochMs-$uniqueId",
         name = if (plan != null) pomodoroTimerName(plan) else preset?.name ?: "Focus timer",
-        targets = BlockTargets(apps = draft.apps.distinctBy { it.packageName }.toSet()),
+        targets = BlockTargets(
+            apps = draft.apps.distinctBy { it.packageName }.toSet(),
+            allowListMode = draft.allowListMode,
+        ),
         breakLevel = draft.breakLevel,
         // A Pomodoro parent's deadline covers the whole chain, from the first focus round.
         expiresAtEpochMs = nowEpochMs + durationMs,
