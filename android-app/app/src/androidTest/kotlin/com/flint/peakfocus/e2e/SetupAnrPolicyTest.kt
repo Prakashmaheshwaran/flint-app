@@ -11,7 +11,7 @@ class SetupAnrPolicyTest {
         assertEquals(SetupAnrPolicy.Action.WAIT, action("\u2068System UI\u2069 isn’t responding"))
         assertEquals(SetupAnrPolicy.Action.CLOSE, action("Pixel Launcher isn't responding", wait = false))
         assertEquals(SetupAnrPolicy.Action.FAIL, action("Flint isn't responding"))
-        assertEquals(SetupAnrPolicy.Action.FAIL, action("com.flint.peakfocus isn't responding"))
+        assertEquals(SetupAnrPolicy.Action.FAIL, action("app.flint.focus isn't responding"))
         assertEquals(SetupAnrPolicy.Action.FAIL, action("Unknown isn't responding"))
         assertEquals(SetupAnrPolicy.Action.FAIL, action("System UI keeps stopping"))
         assertEquals(SetupAnrPolicy.Action.FAIL, action("System UI isn't responding", wait = false, close = false))

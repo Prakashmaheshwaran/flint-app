@@ -15,6 +15,8 @@ android {
     targetProjectPath = ":app"
     experimentalProperties["android.experimental.self-instrumenting"] = true
     defaultConfig {
+        // Installed test package (ADR-008); the fixture asserts "<applicationId>.test".
+        testApplicationId = "${targetApp.defaultConfig.applicationId}.test"
         minSdk = targetApp.defaultConfig.minSdk
         targetSdk = targetApp.defaultConfig.targetSdk
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
