@@ -11,6 +11,8 @@ import FlintCore
 ///  - `flint.session.<token>` — the manual Block Now session's one-shot auto-clear (older
 ///                         builds used plain `flint.session`). `FlintSessionController` decides:
 ///                         only the registration recorded on the active session can end it.
+///  - `flint.pomo.<token>.<restIndex>` — a planned Pomodoro rest carrier (F01). Its callback only
+///                         wakes a phase reconcile: the logical phase decides the shield.
 ///  - `flint.rule.<id>.i<incarnation>.r<revision>` — a schedule/Sleep rule.
 ///  - `flint.limit.<id>.i<incarnation>.r<revision>` — a daily Time Limit and matching event.
 ///  - `flint.openLimit.<id>.i<incarnation>.r<revision>` — a daily Open Limit.
@@ -26,6 +28,10 @@ final class FlintMonitor: DeviceActivityMonitor {
         super.intervalDidStart(for: activity)
         defer { FlintRemovalGuardReconciler.reconcile() }
         guard FlintEmergencyPassController.prepareForMonitorCallback(activity: activity.rawValue) else { return }
+        if FlintSessionController.isPomodoroCarrier(activity.rawValue) {
+            FlintSessionController().handlePomodoroCarrier(.intervalDidStart, activity: activity.rawValue)
+            return // the session controller publishes its own changes
+        }
         if FlintOrdinaryBreaks.isCarrier(activity.rawValue) {
             FlintOrdinaryBreaks.reconcile(activity: activity.rawValue, callback: .start)
             publishStatus(); return
@@ -55,6 +61,10 @@ final class FlintMonitor: DeviceActivityMonitor {
                 FlintSessionController().handleMonitorEvent(.intervalDidEnd, activity: activity.rawValue)
             }
             return
+        }
+        if FlintSessionController.isPomodoroCarrier(activity.rawValue) {
+            FlintSessionController().handlePomodoroCarrier(.intervalDidEnd, activity: activity.rawValue)
+            return // the session controller publishes its own changes
         }
         if FlintOrdinaryBreaks.isCarrier(activity.rawValue) {
             FlintOrdinaryBreaks.reconcile(activity: activity.rawValue, callback: .end)
@@ -88,6 +98,10 @@ final class FlintMonitor: DeviceActivityMonitor {
                 FlintSessionController().handleMonitorEvent(.intervalWillEndWarning, activity: activity.rawValue)
             }
             return
+        }
+        if FlintSessionController.isPomodoroCarrier(activity.rawValue) {
+            FlintSessionController().handlePomodoroCarrier(.intervalWillEndWarning, activity: activity.rawValue)
+            return // the session controller publishes its own changes
         }
         if FlintOrdinaryBreaks.isCarrier(activity.rawValue) {
             FlintOrdinaryBreaks.reconcile(activity: activity.rawValue, callback: .warning)

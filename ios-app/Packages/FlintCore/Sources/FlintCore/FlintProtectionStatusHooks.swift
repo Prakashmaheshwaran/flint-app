@@ -54,7 +54,8 @@ extension FlintProtectionStatus {
         let inputs = currentInputs(now: now, defaults: defaults, ledgerPass: state?.pass,
                                    thresholdReached: FlintLimitThresholds.reachedToday(now: now, in: defaults),
                                    sessionArmed: armed,
-                                   sessionKind: active?.name == pomodoroSessionName ? .pomodoro : .session,
+                                   sessionKind: active?.pomodoro != nil || active?.name == pomodoroSessionName
+                                       ? .pomodoro : .session,
                                    environment: observation, recoveryApplying: recoveryApplying)
         let snapshot = FlintProtectionStatusBuilder.make(inputs).withWriter(writer.rawValue)
         // Compare with whatever is stored, valid or not: an unchanged unavailable projection

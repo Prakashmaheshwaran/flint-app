@@ -19,6 +19,9 @@ public struct FlintProtectionStatusSnapshot: Codable, Equatable, Sendable {
         public enum Origin: String, Codable, Sendable {
             case appUI = "app_ui", shortcut, focusFilter = "focus_filter", automation
         }
+        /// A Pomodoro chain's current phase (F01). Readers past `phaseEndsAt` without a newer
+        /// publication must show the phase as unavailable, never a stale claim.
+        public enum Phase: String, Codable, Equatable, Sendable { case focus, rest }
 
         public let id: String
         public let kind: Kind
@@ -28,9 +31,14 @@ public struct FlintProtectionStatusSnapshot: Codable, Equatable, Sendable {
         public let logicalEnd: Date?
         public let origin: Origin
         public let armed: Bool
+        public let phase: Phase?
+        public let round: Int?
+        public let rounds: Int?
+        public let phaseEndsAt: Date?
 
         public init(id: String, kind: Kind, name: String, tier: BreakLevel, startedAt: Date,
-                    logicalEnd: Date?, origin: Origin, armed: Bool) {
+                    logicalEnd: Date?, origin: Origin, armed: Bool, phase: Phase? = nil,
+                    round: Int? = nil, rounds: Int? = nil, phaseEndsAt: Date? = nil) {
             self.id = id
             self.kind = kind
             self.name = name
@@ -39,6 +47,10 @@ public struct FlintProtectionStatusSnapshot: Codable, Equatable, Sendable {
             self.logicalEnd = logicalEnd
             self.origin = origin
             self.armed = armed
+            self.phase = phase
+            self.round = round
+            self.rounds = rounds
+            self.phaseEndsAt = phaseEndsAt
         }
     }
 
