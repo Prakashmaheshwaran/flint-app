@@ -29,7 +29,7 @@ args = sys.argv[3:]
 with (root / "adb.jsonl").open("a") as f: f.write(json.dumps(args) + "\n")
 mode = os.environ["FIXTURE_MODE"]
 ran = (root / "ran").exists()
-service = "com.flint.peakfocus/com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService"
+service = "app.flint.focus/com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService"
 if args == ["wait-for-device"]: pass
 elif args == ["emu", "avd", "name"]: print("disposable-avd")
 elif args[:2] == ["shell", "getprop"]: print("1")
@@ -42,7 +42,7 @@ elif args == ["shell", "cat", "/proc/sys/kernel/random/boot_id"]:
     changed = (ran and mode in ("reboot", "success-reboot")) or (mode == "cleanup-reboot" and (root / "collected").exists())
     print("22222222-2222-2222-2222-222222222222" if changed else "11111111-1111-1111-1111-111111111111")
 elif args[:2] == ["exec-out", "screencap"]: (root / "collected").touch()
-elif args[:3] == ["shell", "cat", "/sdcard/Android/data/com.flint.peakfocus.test/files/owned-service.txt"]:
+elif args[:3] == ["shell", "cat", "/sdcard/Android/data/app.flint.focus.test/files/owned-service.txt"]:
     if ran and mode in ("owned", "other-service", "reconnect", "cleanup-reboot"):
         print(next(x.split("=", 1)[1] for x in (root / "artifacts/android-e2e/device.txt").read_text().splitlines() if x.startswith("run_token=")))
     else: sys.exit(1)
@@ -51,7 +51,7 @@ elif args[:4] == ["shell", "settings", "get", "secure"]:
     elif not ran: print("other.app/.Service" if mode == "preexisting" else "null")
     elif mode == "other-service": print(service + ":other.app/.Service")
     else: print(service)
-elif args[:2] == ["pull", "/sdcard/Android/data/com.flint.peakfocus.test/files/smoke"] and mode.startswith("summary"):
+elif args[:2] == ["pull", "/sdcard/Android/data/app.flint.focus.test/files/smoke"] and mode.startswith("summary"):
     token = next(x.split("=", 1)[1] for x in (root / "artifacts/android-e2e/device.txt").read_text().splitlines() if x.startswith("run_token="))
     smoke = root / "artifacts/android-e2e/smoke"
     smoke.mkdir()

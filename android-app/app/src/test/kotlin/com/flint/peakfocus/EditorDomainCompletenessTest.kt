@@ -60,7 +60,7 @@ class EditorDomainCompletenessTest {
     }
 
     private fun verdict(): Verdict = BlockDecisionEngine().decide(target, null, ActiveRulesHolder.rules,
-        "com.flint.peakfocus", 600, 3, now.wallEpochMs)
+        "app.flint.focus", 600, 3, now.wallEpochMs)
 
     private suspend fun assertUnavailableWithoutWrite(disk: Disk, editor: EditorCommitmentStore) {
         val raw = disk.values.value.asMap().toMap()

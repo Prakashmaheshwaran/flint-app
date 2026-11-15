@@ -12,8 +12,24 @@ serial=${AVD:-}
 variant=${FLINT_E2E_VARIANT:-debug}
 [[ $variant == debug || $variant == release ]] || { echo 'FLINT_E2E_VARIANT must be debug or release.' >&2; exit 2; }
 [[ $serial =~ ^emulator-[0-9]+$ ]] || { echo 'AVD must be an exact booted emulator serial (emulator-N).' >&2; exit 2; }
-[[ $(adb -s "$serial" shell getprop ro.kernel.qemu | tr -d '\r') == 1 ]] || exit 2
-[[ $(adb -s "$serial" shell getprop sys.boot_completed | tr -d '\r') == 1 ]] || exit 2
+
+# CI runners can report the emulator as offline briefly after boot; wait for a usable device.
+adb -s "$serial" wait-for-device >/dev/null 2>&1 || true
+boot_deadline=$((SECONDS + 300))
+while :; do
+  boot_completed=$(adb -s "$serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' || true)
+  qemu=$(adb -s "$serial" shell getprop ro.kernel.qemu 2>/dev/null | tr -d '\r' || true)
+  if [[ $boot_completed == 1 && $qemu == 1 ]]; then
+    break
+  fi
+  if (( SECONDS >= boot_deadline )); then
+    echo "Emulator $serial not ready: sys.boot_completed=${boot_completed:-<unset>} ro.kernel.qemu=${qemu:-<unset>}" >&2
+    adb -s "$serial" devices -l >&2 || true
+    exit 2
+  fi
+  adb start-server >/dev/null 2>&1 || true
+  sleep 5
+done
 enabled=$(adb -s "$serial" shell settings get secure enabled_accessibility_services | tr -d '\r')
 [[ -z $enabled || $enabled == null ]] || {
   echo 'Refusing to overwrite existing accessibility services; use a fresh disposable emulator.' >&2
@@ -28,9 +44,9 @@ mkdir -p artifacts/android-e2e
 boot_log="$ROOT/artifacts/android-e2e/boot-incarnation.jsonl"
 boot_id=$(python3 "$ROOT/scripts/android_boot_id.py" "$serial" --context initial --log "$boot_log")
 run_token=$(python3 -c 'import uuid; print(uuid.uuid4())')
-service=com.flint.peakfocus/com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService
+service=app.flint.focus/com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService
 prior_global=$(adb -s "$serial" shell settings get secure accessibility_enabled | tr -d '\r')
-marker=/sdcard/Android/data/com.flint.peakfocus.test/files/owned-service.txt
+marker=/sdcard/Android/data/app.flint.focus.test/files/owned-service.txt
 printf '%s\n' "serial=$serial" "boot_id=$boot_id" "run_token=$run_token" > artifacts/android-e2e/device.txt
 refuse_cleanup() {
   local boot_status=$1
@@ -49,7 +65,7 @@ collect() {
   if python3 "$ROOT/scripts/android_boot_id.py" "$serial" --expected "$boot_id" \
       --context collection --log "$boot_log" > /dev/null; then
     adb -s "$serial" logcat -d > artifacts/android-e2e/logcat.txt 2>&1 || true
-    adb -s "$serial" pull /sdcard/Android/data/com.flint.peakfocus.test/files/smoke artifacts/android-e2e/ || true
+    adb -s "$serial" pull /sdcard/Android/data/app.flint.focus.test/files/smoke artifacts/android-e2e/ || true
     python3 - "$run_token" <<'PY' || true
 import json, os, pathlib, sys
 root = pathlib.Path('artifacts/android-e2e')

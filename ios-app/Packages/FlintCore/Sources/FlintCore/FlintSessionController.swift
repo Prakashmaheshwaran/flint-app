@@ -206,6 +206,9 @@ public protocol FlintSessionStateStoring: AnyObject {
     func saveSessionSelection(_ selection: FamilyActivitySelection, sessionID: String)
     func loadSessionSelection(sessionID: String) -> FamilyActivitySelection?
     func clearSessionSelection()
+    /// The session ID the stored target snapshot belongs to; nil when none is stored or it
+    /// doesn't decode.
+    func sessionSelectionOwner() -> String?
     /// Positive evidence the shared state was read, not an empty locked or unavailable
     /// container. A readable suite still needs the latest generation's tombstone to prove idle.
     func isProtectionStateReadable() -> Bool
@@ -213,6 +216,7 @@ public protocol FlintSessionStateStoring: AnyObject {
 
 public extension FlintSessionStateStoring {
     func isProtectionStateReadable() -> Bool { true }
+    func sessionSelectionOwner() -> String? { nil }
 }
 
 extension FlintGroupStore: FlintSessionStateStoring {
@@ -241,6 +245,12 @@ extension FlintGroupStore: FlintSessionStateStoring {
               let saved = try? JSONDecoder().decode(SessionSelection.self, from: data),
               saved.sessionID == sessionID else { return nil }
         return saved.selection
+    }
+
+    public func sessionSelectionOwner() -> String? {
+        guard let data = UserDefaults.flintGroup?.data(forKey: Self.sessionSelectionKey),
+              let saved = try? JSONDecoder().decode(SessionSelection.self, from: data) else { return nil }
+        return saved.sessionID
     }
 }
 
@@ -1328,13 +1338,19 @@ public final class FlintSessionController {
     public static let repairInterval: TimeInterval = 60
 
     /// The session's own frozen targets; sessions saved by older builds have no snapshot and
-    /// fall back to the picker selection they were started from. An Allow List session never
-    /// falls back: the picker is the block-list default, and re-applying it would replace its
-    /// allow list with a different shield. No snapshot means no re-apply — never a clear, never
-    /// a block-list write.
+    /// fall back to the picker selection they were started from. Two cases never fall back,
+    /// because the picker no longer describes this session:
+    ///  - an Allow List session: the picker is the block-list default, and re-applying it would
+    ///    replace its allow list with a different shield. No snapshot means no re-apply — never
+    ///    a clear, never a block-list write;
+    ///  - a snapshot saved for another session: that later start already rewrote the picker
+    ///    (snapshot, record, then picker), so nothing is re-applied and this session's last-good
+    ///    native targets stay as they are (R-04).
     private func sessionSelection(for session: FlintActiveSession, in store: FlintSessionStateStoring) -> FamilyActivitySelection? {
         if let frozen = store.loadSessionSelection(sessionID: session.id) { return frozen }
-        return session.isAllowList ? nil : store.loadSelection()
+        if session.isAllowList { return nil }
+        if let owner = store.sessionSelectionOwner(), owner != session.id { return nil }
+        return store.loadSelection()
     }
 
     /// Re-register `session`'s auto-clear for its remaining time under a fresh name: register

@@ -35,6 +35,7 @@ import com.flint.peakfocus.core.data.UsageQuery
 import com.flint.peakfocus.core.model.ActiveRulesHolder
 import com.flint.peakfocus.core.model.Verdict
 import com.flint.peakfocus.core.model.EnforcementSignals
+import com.flint.peakfocus.core.model.FlintIdentity
 import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
@@ -113,6 +114,9 @@ class FlintAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         releaseDetection()
+        // Boot/recovery marker: proves the OS rebound the service. Info level so it
+        // survives default logcat filters; no PII, just the in-memory rule count.
+        android.util.Log.i("FlintBoot", "accessibility connected rules=${ActiveRulesHolder.rules.size}")
         BlocklistStore(this).load()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         serviceScope = scope
@@ -178,7 +182,8 @@ class FlintAccessibilityService : AccessibilityService() {
             // Attaching our overlay must not replace its underlying foreground target. A real
             // MainActivity visit is different: stand the shield down, retaining a bounded
             // recovery check in case the underlying app returns without a fresh window event.
-            if (className == "$packageName.MainActivity") {
+            // The class follows the Kotlin namespace, not the applicationId (ADR-008).
+            if (className == FlintIdentity.MAIN_ACTIVITY_CLASS) {
                 timeForeground?.checkpoint(null)
                 lastForegroundPackage = pkg
                 lastForegroundUrl = null
@@ -530,6 +535,10 @@ class FlintAccessibilityService : AccessibilityService() {
     }
 
     private fun releaseDetection() {
+        // Signal first: Path B must take over even if local teardown below throws.
+        // The disconnect used to run last, so a throwing teardown could leave a ghost
+        // "connected" Path A that parked Path B in standby with zero enforcement.
+        EnforcementSignals.detectors.disconnected(this)
         timeForeground?.close()
         timeForeground = null
         clearBrowserWindow()
@@ -555,8 +564,6 @@ class FlintAccessibilityService : AccessibilityService() {
         lastForegroundUrl = null
         lastNonFloorPackage = null
         lastBudgetDeadlineMs = null
-        // Hide Path A before the synchronous wake allows Path B to enforce.
-        EnforcementSignals.detectors.disconnected(this)
     }
 
     private companion object {
