@@ -81,6 +81,22 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings.clearFocusHistory")
                     if let historyFeedback { Text(historyFeedback).flintSecondary(13) }
 
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Legal").flintEyebrow()
+                            .accessibilityAddTraits(.isHeader)
+                            .padding(.top, 28)
+                        VStack(spacing: 0) {
+                            ForEach(FlintLegalDocumentKind.allCases) { kind in
+                                NavigationLink { LegalDocumentView(kind: kind) } label: {
+                                    FlintRow(title: kind.title, chevron: true)
+                                }
+                                .accessibilityIdentifier(kind.accessibilityIdentifier)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                    }
+
                     FlintPrivacyNote(text: "No account. No analytics. Your lists and history stay on this phone.",
                                      color: FlintBrand.stone)
                         .padding(.top, 22)

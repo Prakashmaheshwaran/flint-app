@@ -119,7 +119,8 @@ class StorageReadinessTest {
 
     @Test fun futureEnumsAndFieldsAreUnavailableRatherThanEasyOrDropped() = runBlocking {
         for (payload in listOf("r|Work|true|FUTURE|false|app~|||-1|-1|-1",
-            "r|Work|true|EASY|false|app~|||-1|-1|-1|future")) {
+            // 14 fields: beyond the date (11) and plan (12) extensions, so a LATER schema.
+            "r|Work|true|EASY|false|app~|||480|600|-1|2026-11-20||extra")) {
             val disk = Disk(mutablePreferencesOf(PrefsKeys.BLOCK_RULES to payload))
             assertEquals(StorageState.Unavailable(StorageFailure.UNSUPPORTED_VERSION), DataStoreBlockRulesStore(disk).rulesState.drop(1).first())
             try { DataStoreBlockRulesStore(disk).upsert(rule); fail("Future record overwritten") }

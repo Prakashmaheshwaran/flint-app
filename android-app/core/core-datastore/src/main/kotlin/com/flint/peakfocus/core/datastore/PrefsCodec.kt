@@ -12,6 +12,7 @@ import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.PomodoroPlan
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.TimeLimit
+import java.time.LocalDate
 
 /**
  * String codec for the typed models kept in Preferences DataStore.
@@ -56,12 +57,14 @@ internal object PrefsCodec {
         .replace("%7C", FIELD)
         .replace("%25", "%")
 
-    // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end[|expiresAt[|pomodoro]]
-    // (expiresAt appended for one-shot sessions; pomodoro appended for F01 Pomodoro parents.
-    // Decode accepts 10-field legacy lines and 11-field lines without a plan. A 12-field line
-    // with a plan is a future shape for an older build: `decodeRule` there returns null for any
-    // other size and the old strict codec reports the whole rules value as unavailable, so that
-    // build fails closed rather than treating the chain as a plain Timer (ADR-012 §12).)
+    // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end
+    //        [|expiresAt[|date[|pomodoro]]]
+    // (expiresAt appended for one-shot sessions; `date` appended for a dated one-time schedule
+    //  — and only for one, so every existing 10- and 11-field record round-trips byte-identically;
+    //  `pomodoro` appended for an F01 Pomodoro parent, which forces an empty `date` placeholder so
+    //  the two extensions can never be confused. Older builds see 12+ fields, `decodeRule` there
+    //  returns null and the strict codec reports the value unavailable, so they fail closed rather
+    //  than reading a chain as a plain Timer or dropping a one-time date into a weekly rule.)
 
     fun encodeRules(rules: List<BlockRule>): String =
         rules.joinToString(RECORD) { encodeRule(it) }
@@ -100,7 +103,7 @@ internal object PrefsCodec {
         }
         val domains = rule.targets.domains.joinToString(ITEM) { escape(it.domain) }
         val days = (rule.schedule?.daysOfWeek ?: emptySet()).joinToString(ITEM)
-        return listOf(
+        val fields = mutableListOf(
             escape(rule.id),
             escape(rule.name),
             rule.enabled.toString(),
@@ -112,14 +115,19 @@ internal object PrefsCodec {
             (rule.schedule?.startMinuteOfDay ?: NO_SCHEDULE).toString(),
             (rule.schedule?.endMinuteOfDay ?: NO_SCHEDULE).toString(),
             (rule.expiresAtEpochMs ?: NO_EXPIRY).toString(),
-            // Trailing and optional: a 10/11-field line stays valid, and an empty field is
-            // written only for a plan-less rule so older builds keep reading today's format.
-        ).joinToString(FIELD) + (rule.pomodoro?.let { FIELD + encodePomodoro(it) } ?: "")
+        )
+        // Extensions are positional: the date owns field 11 and a plan owns field 12. A plan
+        // without a date writes an empty placeholder so a 13-field line is unambiguous; a dated
+        // rule stays at 12 fields and a plain/recurring rule at 10 or 11.
+        val date = rule.schedule?.date
+        if (date != null) fields += date.toString() else if (rule.pomodoro != null) fields += ""
+        rule.pomodoro?.let { fields += encodePomodoro(it) }
+        return fields.joinToString(FIELD)
     }
 
     private fun decodeRule(line: String): BlockRule? {
         val f = line.split(FIELD)
-        if (f.size !in 10..12) return null
+        if (f.size !in 10..13) return null
         val id = unescape(f[0])
         if (id.isEmpty()) return null
 
@@ -135,6 +143,15 @@ internal object PrefsCodec {
 
         val start = f[8].toIntOrNull() ?: NO_SCHEDULE
         val end = f[9].toIntOrNull() ?: NO_SCHEDULE
+        // A 12th field is a one-time date. If it is damaged, or there is no window to date, drop
+        // the record: falling back to an undated window would invent a weekly rule. Field 11 is
+        // empty only when a 13th field carries a plan, i.e. a Pomodoro parent without a date.
+        val date = when {
+            f.size < 12 -> null
+            f[11].isEmpty() -> if (f.size == 13) null else return null
+            else -> runCatching { LocalDate.parse(f[11]) }.getOrNull() ?: return null
+        }
+        if (date != null && start == NO_SCHEDULE) return null
         val schedule = if (start == NO_SCHEDULE) {
             null
         } else {
@@ -142,6 +159,7 @@ internal object PrefsCodec {
                 daysOfWeek = f[7].split(ITEM).mapNotNull { it.toIntOrNull() }.toSet(),
                 startMinuteOfDay = start,
                 endMinuteOfDay = end,
+                date = date,
             )
         }
 
@@ -157,7 +175,7 @@ internal object PrefsCodec {
             breakLevel = decodeBreakLevel(f[3]),
             enabled = f[2].toBooleanStrictOrNull() ?: true,
             expiresAtEpochMs = f.getOrNull(10)?.toLongOrNull()?.takeIf { it != NO_EXPIRY },
-            pomodoro = f.getOrNull(11)?.let(::decodePomodoro),
+            pomodoro = f.getOrNull(12)?.let(::decodePomodoro),
         )
     }
 

@@ -148,4 +148,43 @@ class RuleClockProjectionTest {
         assertFalse(projected.runtime!!.evaluation!!.active)
         assertEquals(Verdict.Allow, verdict(projected, anchor))
     }
+
+    @Test fun `R_18 dated one time window arms its start any distance ahead and never replays`() {
+        val date = LocalDate.parse("2026-12-20") // 53 days after the anchor: far beyond 24 h
+        val dated = Schedule(emptySet(), 9 * 60, 17 * 60, date)
+        val startsAt = date.atStartOfDay(zone).plusMinutes(9 * 60).toInstant().toEpochMilli()
+        val endsAt = date.atStartOfDay(zone).plusMinutes(17 * 60).toInstant().toEpochMilli()
+        val pending = BlockRule("one", "One time", BlockTargets(apps = setOf(AppRef("com.target"))), dated,
+            BreakLevel.HARDCORE, runtime = RuleRuntime("inactive", anchor, 0, anchor.wallEpochMs, "UTC", anchor))
+        val armed = RuleClockProjection.project(pending, anchor)
+        assertFalse(armed.runtime!!.evaluation!!.active)
+        // The editor reconciler arms this exact instant (EditorRulePublication reads it directly).
+        assertEquals(startsAt, armed.runtime!!.evaluation!!.nextBoundaryEpochMs)
+        // A detector wake may be earlier (its daily midnight recheck) but never later than start.
+        assertEquals(anchor.wallEpochMs + 14 * hour,
+            NextEvaluationBoundary.next(anchor.wallEpochMs, zone, "com.target", listOf(armed)))
+        // Inside its own occurrence it is active, with its own dated end — never a weekly window.
+        val occurrenceAnchor = AccessClockStamp(startsAt, 1_000, "boot-c")
+        val running = pending.copy(runtime = RuleRuntime(startsAt.toString(), occurrenceAnchor,
+            8 * hour, endsAt, "UTC", occurrenceAnchor))
+        val inside = occurrenceAnchor.copy(wallEpochMs = startsAt + hour, elapsedRealtimeMs = 1_000 + hour)
+        val live = RuleClockProjection.project(running, inside)
+        assertTrue(live.runtime!!.evaluation!!.active)
+        assertEquals(endsAt, live.runtime!!.evaluation!!.endsAtEpochMs)
+        // Trusted elapsed end: same boot, elapsed past the end, wall unchanged or rolled back.
+        val elapsedEnd = occurrenceAnchor.copy(elapsedRealtimeMs = 1_000 + 8 * hour + 1, wallEpochMs = startsAt)
+        val done = RuleClockProjection.project(running, elapsedEnd)
+        assertFalse(done.runtime!!.evaluation!!.active)
+        assertNull(done.runtime!!.evaluation!!.nextBoundaryEpochMs)
+        val rolledBack = occurrenceAnchor.copy(elapsedRealtimeMs = 1_000 + 8 * hour + 1, wallEpochMs = startsAt + hour)
+        assertFalse(RuleClockProjection.project(running, rolledBack).runtime!!.evaluation!!.active)
+        // A reboot after the trusted end cannot revive or re-arm it, not even a week later.
+        for (wall in listOf(endsAt + 1_000, endsAt + 7 * 24 * hour)) {
+            val later = AccessClockStamp(wall, 500, "boot-b")
+            val projected = RuleClockProjection.project(running, later)
+            assertFalse(projected.runtime!!.evaluation!!.active)
+            assertNull(projected.runtime!!.evaluation!!.nextBoundaryEpochMs)
+            assertEquals(Verdict.Allow, verdict(projected, later))
+        }
+    }
 }

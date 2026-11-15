@@ -1,10 +1,15 @@
 package com.flint.peakfocus.feature.blocklist
 
+import com.flint.peakfocus.blocking.engine.ScheduleOccurrences
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.OpenLimit
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.TimeLimit
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * Pure formatting for the overview cards: one honest line each for a rule's schedule, its
@@ -62,17 +67,60 @@ private fun collapseDayRuns(sortedDays: List<Int>): String {
  * One line describing when a rule bites. Mirrors `BlockDecisionEngine.scheduleActive`:
  * null schedule = active whenever the rule is enabled; end at/before start wraps overnight;
  * equal endpoints never match (flagged rather than hidden — such a rule silently does nothing).
+ * A dated one-time window is never described by weekdays: it names its date instead, so the
+ * list can never suggest the rule repeats.
  */
 internal fun scheduleSummary(schedule: Schedule?): String {
     schedule ?: return "Always on while enabled"
     val start = formatMinuteOfDay(schedule.startMinuteOfDay)
     val end = formatMinuteOfDay(schedule.endMinuteOfDay)
+    schedule.date?.let { date ->
+        val window = when {
+            schedule.startMinuteOfDay == schedule.endMinuteOfDay -> "$start–$end (never active)"
+            schedule.startMinuteOfDay > schedule.endMinuteOfDay -> "$start–$end (next day)"
+            else -> "$start–$end"
+        }
+        return "One time · ${oneTimeDateLabel(date)} · $window"
+    }
     val window = when {
         schedule.startMinuteOfDay == schedule.endMinuteOfDay -> "$start–$end (never active)"
         schedule.startMinuteOfDay > schedule.endMinuteOfDay -> "$start–$end (overnight)"
         else -> "$start–$end"
     }
     return "${daysSummary(schedule.daysOfWeek)} · $window"
+}
+
+/** "Thu, Nov 20" — the date a one-time window starts on, in the device's display locale. */
+internal fun oneTimeDateLabel(date: LocalDate): String =
+    date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()))
+
+/**
+ * Where a dated window's single occurrence stands now, for the list pill and the switch:
+ * before its start = pending, inside = active, at/after its end = finished (never removed).
+ * Mirrors `ScheduleOccurrences.containing`/`nextStart`, read in [zone]. A null date (or an
+ * invalid window) has no phase: recurring rules are described by their weekday window instead.
+ */
+internal fun oneTimePhase(schedule: Schedule, nowEpochMs: Long, zone: ZoneId = ZoneId.systemDefault()): OneTimePhase? {
+    val date = schedule.date ?: return null
+    val occurrence = ScheduleOccurrences.onDate(schedule, zone, date) ?: return null
+    return when {
+        nowEpochMs < occurrence.startsAtEpochMs -> OneTimePhase.PENDING
+        nowEpochMs < occurrence.endsAtEpochMs -> OneTimePhase.ACTIVE
+        else -> OneTimePhase.FINISHED
+    }
+}
+
+/** The three phases of a one-time window, in the order they happen. */
+internal enum class OneTimePhase { PENDING, ACTIVE, FINISHED }
+
+/** Pill label for a dated window; finished rules can no longer be turned on or off. */
+internal fun oneTimeStatusLabel(schedule: Schedule, phase: OneTimePhase): String = when (phase) {
+    OneTimePhase.PENDING -> {
+        val date = requireNotNull(schedule.date) { "A one-time status needs its date" }
+        "Starts ${oneTimeDateLabel(date)} ${formatMinuteOfDay(schedule.startMinuteOfDay)}"
+    }
+    OneTimePhase.ACTIVE -> "Active now"
+    OneTimePhase.FINISHED -> "Finished"
 }
 
 /** One line describing what a rule targets, including the allow-list inversion. */

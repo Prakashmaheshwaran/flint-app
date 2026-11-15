@@ -81,7 +81,9 @@ class PomodoroCommitmentTest {
         val rule = parent()
         val planless = PrefsCodec.encodeRules(listOf(rule.copy(pomodoro = null)))
         listOf("25~5~9", "0~5~4", "25~5", "x~y~z", "25~5~4~15~1", "25~5~4~15~x", "").forEach { raw ->
-            val line = planless + "|" + raw
+            // A plan owns field 12, so a plan-less rule (11 fields) needs the empty date
+            // placeholder at field 11 to keep the two extensions unambiguous.
+            val line = planless + "||" + raw
             val decoded = PrefsCodec.decodeRules(line).singleOrNull()
             assertEquals("field '$raw'", rule.id, decoded?.id)
             assertNull("field '$raw'", decoded!!.pomodoro)
@@ -92,7 +94,9 @@ class PomodoroCommitmentTest {
         val rule = parent(plan = PomodoroPlan(120, 60, 8))
         val encoded = PrefsCodec.encodeRules(listOf(rule))
         assertEquals(listOf(rule), StrictPrefsCodec.rules(encoded))
-        assertEquals(12, encoded.split('|').size)
+        // 10 base fields + expiresAt + the empty date placeholder + the plan.
+        assertEquals(13, encoded.split('|').size)
+        assertEquals("", encoded.split('|')[11])
     }
 
     // MARK: start and rights

@@ -1,5 +1,7 @@
 package com.flint.peakfocus.core.model
 
+import java.time.LocalDate
+
 /**
  * Difficulty of breaking or stopping a block early.
  *
@@ -51,11 +53,19 @@ data class AppGroup(
 /**
  * A schedule window. [daysOfWeek] uses ISO numbering (1 = Monday … 7 = Sunday);
  * empty means every day.
+ *
+ * [date] makes this a **one-time** window: exactly one occurrence, starting on that calendar
+ * date at [startMinuteOfDay] in the rule's saved zone ([BlockRule] `runtime.zoneId`), ending at
+ * [endMinuteOfDay] — the next day when the end is at or before the start (overnight). A dated
+ * schedule never repeats and is never gated weekly, so [daysOfWeek] is empty for it. The date is
+ * any distance ahead; it is resolved through `ScheduleOccurrences`, so the DST endpoint policy
+ * and the once-per-start-date replay guard are the same ones recurring schedules use.
  */
 data class Schedule(
     val daysOfWeek: Set<Int> = emptySet(),
     val startMinuteOfDay: Int,
     val endMinuteOfDay: Int,
+    val date: LocalDate? = null,
 )
 
 /**

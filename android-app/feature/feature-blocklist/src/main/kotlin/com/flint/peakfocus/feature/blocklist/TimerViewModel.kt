@@ -28,6 +28,7 @@ import com.flint.peakfocus.core.model.PomodoroPlan
 import com.flint.peakfocus.blocking.overlay.ProtectionStatus
 import com.flint.peakfocus.blocking.overlay.ProtectionStatusHub
 import com.flint.peakfocus.permissions.AccessibilityPermission
+import com.flint.peakfocus.permissions.OverlayPermission
 import com.flint.peakfocus.permissions.UsageAccess
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -214,6 +215,7 @@ internal class TimerViewModel(
         }
         val statusDiagnostic = "readiness=${status.readiness} pathA=${livePathA()} " +
             "accessibility=${permissions.accessibilityEnabled} usageAccess=${permissions.usageAccess} " +
+            "overlay=${permissions.overlayGranted} " +
             "pathB=${status.detectors.pathB} startReady=${prerequisite == null} " +
             "reason=${prerequisite ?: "none"} arming=${arming.javaClass.simpleName}"
         if (statusDiagnostic != lastDiagnostic) {
@@ -580,7 +582,8 @@ internal class TimerViewModel(
                     loadPermissions = {
                         TimerPermissions(AccessibilityPermission.isEnabled(appContext,
                             "com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService"),
-                            UsageAccess.isGranted(appContext))
+                            UsageAccess.isGranted(appContext),
+                            OverlayPermission.isGranted(appContext))
                     },
                     livePathA = { EnforcementSignals.detectors.pathAConnected },
                     requestEvaluation = { EnforcementSignals.detectors.requestEvaluation() },

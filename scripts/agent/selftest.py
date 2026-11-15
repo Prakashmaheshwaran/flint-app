@@ -346,6 +346,7 @@ class AgentCommands(unittest.TestCase):
         self.init_repo()
         scenarios = [
             (["ios-app/Foo.swift"], ["verify-ios"]),
+            (["docs/privacy-policy.md"], ["verify-ios"]),
             (["android-app/Foo.kt"], ["verify-android"]),
             (["scripts/new.sh"], ["selftest"]),
             (["Makefile"], ["selftest"]),
@@ -465,7 +466,7 @@ class AgentCommands(unittest.TestCase):
             ["emulator", "devices", "--json"],
             ["emulator", "attach", serial, "--worktree", f"path:{self.root}", "--json"],
             ["emulator", "install", str(self.root / "android-app/app/build/outputs/apk/debug/app-debug.apk"), "--reinstall", *scope],
-            ["emulator", "launch", "com.flint.peakfocus", "--activity", ".MainActivity", *scope],
+            ["emulator", "launch", "app.flint.focus", "--activity", "com.flint.peakfocus.MainActivity", *scope],
         ])
         self.assertEqual(self.calls("fake-make"), [["android"]])
         claim, = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']
