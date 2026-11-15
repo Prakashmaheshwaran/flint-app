@@ -48,7 +48,7 @@ fixture() {
 android {
     namespace = "com.flint.peakfocus"
     defaultConfig {
-        applicationId = "com.flint.peakfocus"
+        applicationId = "app.flint.focus"
         minSdk = 23
         versionCode = $code
         versionName = "$name"

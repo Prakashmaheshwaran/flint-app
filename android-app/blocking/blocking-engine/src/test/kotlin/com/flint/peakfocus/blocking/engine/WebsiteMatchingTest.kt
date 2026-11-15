@@ -25,7 +25,7 @@ import org.junit.Test
 class WebsiteMatchingTest {
 
     private val engine = BlockDecisionEngine()
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
     private val chrome = "com.android.chrome"
 
     private fun rules(vararg domains: String) = listOf(

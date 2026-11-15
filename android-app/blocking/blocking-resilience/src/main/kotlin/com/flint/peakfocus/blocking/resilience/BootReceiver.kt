@@ -35,16 +35,29 @@ class BootReceiver : BroadcastReceiver() {
         if (!shouldHandle(intent.action)) return
         val appContext = context.applicationContext
 
+        // Boot marker: proves the receiver ran. Info level so it survives default
+        // logcat filters on user builds; no PII, just action + hook fan-out counts.
+        android.util.Log.i(FLINT_BOOT_TAG, "boot re-arm received action=${intent.action} hooks=${rearmActions.size}")
+
         // 1. Warm the in-memory rules cache from persisted state. Synchronous SharedPreferences
         //    read of a tiny file — well inside a receiver's time budget.
-        runCatching { BlocklistStore(appContext).load() }
+        val warmed = runCatching { BlocklistStore(appContext).load() }.isSuccess
 
         // 2. App-registered re-arm hooks. Failures are isolated so one bad hook cannot
         //    break the rest of re-arm.
-        rearmDetectors(rearmActions.map { action -> { action(appContext) } })
+        var completed = 0
+        rearmDetectors(rearmActions.map { action ->
+            {
+                action(appContext)
+                completed++
+            }
+        })
+        android.util.Log.i(FLINT_BOOT_TAG, "boot re-arm finished warmed=$warmed hooksCompleted=$completed")
     }
 
     companion object {
+        /** Log tag for boot-recovery markers. Info level, no PII. */
+        const val FLINT_BOOT_TAG = "FlintBoot"
         /**
          * The standard boot broadcast plus the OEM "fast boot" variants that replace it on some
          * devices (HTC Fast Boot and lookalikes). Kept in sync with this module's manifest.

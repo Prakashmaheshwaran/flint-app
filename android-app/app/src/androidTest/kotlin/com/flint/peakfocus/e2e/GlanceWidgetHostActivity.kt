@@ -22,7 +22,7 @@ class GlanceWidgetHostActivity : Activity() {
         layout.addView(TextView(this).apply { text = "TEST HOST · Installed Flint widget"; textSize = 18f })
         setContentView(layout)
         widgetId = host.allocateAppWidgetId()
-        val provider = ComponentName("com.flint.peakfocus", "com.flint.peakfocus.glance.FlintGlanceWidgetReceiver")
+        val provider = ComponentName("app.flint.focus", "com.flint.peakfocus.glance.FlintGlanceWidgetReceiver")
         if (AppWidgetManager.getInstance(this).bindAppWidgetIdIfAllowed(widgetId, provider)) showWidget()
         else @Suppress("DEPRECATION") startActivityForResult(Intent(AppWidgetManager.ACTION_APPWIDGET_BIND)
             .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
