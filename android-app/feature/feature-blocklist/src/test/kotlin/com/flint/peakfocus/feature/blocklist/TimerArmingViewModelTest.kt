@@ -187,14 +187,27 @@ class TimerArmingViewModelTest {
         assertEquals(listOf(saved), rules.rules.first())
     }
 
-    @Test fun `PC-61 Path B alone saves and arms without Accessibility or overlay permission`() = runTest(dispatcher) {
-        permissions = TimerPermissions(usageAccess = true); liveA = false
+    @Test fun `P0-1 Path B with overlay saves and arms without Accessibility`() = runTest(dispatcher) {
+        permissions = TimerPermissions(usageAccess = true, overlayGranted = true); liveA = false
         health.value = readyTimerStatus(clock()).copy(detectors = ProtectionStatus.DetectorHealth(false, ProtectionStatus.PathBState.ENFORCING, emptySet()))
         val vm = model(); runCurrent(); vm.selectApps(listOf(app)); vm.start(); runCurrent()
         val saved = rules.rules.first().single()
         health.value = readyTimerStatus(clock(), listOf(saved.id)).copy(detectors = health.value.detectors)
         runCurrent()
         assertTrue(vm.uiState.value.arming is TimerArmingState.Armed)
+    }
+
+    @Test fun `P0-1 Path B without overlay refuses the start before any Timer write`() = runTest(dispatcher) {
+        permissions = TimerPermissions(usageAccess = true); liveA = false
+        health.value = readyTimerStatus(clock()).copy(detectors = ProtectionStatus.DetectorHealth(false, ProtectionStatus.PathBState.ENFORCING, emptySet()))
+        val vm = model(); runCurrent(); vm.selectApps(listOf(app)); vm.selectDuration(5)
+        val draft = vm.uiState.value.draft
+        vm.start(); runCurrent()
+        assertEquals(0, disk.writes); assertTrue(rules.rules.first().isEmpty())
+        assertEquals(draft, vm.uiState.value.draft)
+        assertEquals("Flint can see app opens but cannot block yet. Allow Display over other apps, or turn on the Flint Accessibility service.", vm.uiState.value.error)
+        assertTrue(vm.uiState.value.startErrorIsPrerequisite)
+        assertFalse((vm.uiState.value.arming as TimerArmingState.Degraded).committed)
     }
 
     @Test fun `PC-65 storage failure leaves the draft and old rules while retry creates only one Timer`() = runTest(dispatcher) {
@@ -255,6 +268,15 @@ class TimerArmingViewModelTest {
         assertTrue(vm.uiState.value.arming is TimerArmingState.Degraded)
         assertFalse(vm.uiState.value.canStart)
         assertEquals(listOf(rule), rules.rules.first())
+    }
+
+    @Test fun `P0-1 process restart never restores Armed without a fresh exact-ID observation`() = runTest(dispatcher) {
+        // Force-stop relaunch: the status may still name an active cause, but with no
+        // arm attempt in this process the timer must stay Idle, never Armed.
+        health.value = readyTimerStatus(clock(), listOf("some-persisted-id"))
+        val vm = model(); runCurrent()
+        assertTrue(vm.uiState.value.sessions.isEmpty())
+        assertEquals(TimerArmingState.Idle, vm.uiState.value.arming)
     }
 
     @Test fun `PC-77 Armed health lookups slow to ten seconds and an explicit resume refreshes immediately`() = runTest(dispatcher) {

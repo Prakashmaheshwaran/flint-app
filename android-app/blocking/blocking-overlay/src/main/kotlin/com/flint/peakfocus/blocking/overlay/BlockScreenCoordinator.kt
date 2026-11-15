@@ -56,6 +56,15 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
+ * BAL gate for the full-screen Activity fallback: a background-activity-launch denial is
+ * silent to the caller, so only one attempt per window per package. The first block of a
+ * package always goes; the engine keeps reporting the same cause, so the next window
+ * retries and a genuinely available surface still arrives via window attach.
+ */
+internal fun fallbackLaunchDue(lastAttemptMs: Long?, nowMs: Long): Boolean =
+    lastAttemptMs == null || nowMs - lastAttemptMs >= BlockScreenCoordinator.FALLBACK_ACTIVITY_RETRY_WINDOW_MS
+
+/**
  * The host-side brain that turns pure engine decisions into actual enforcement. One instance
  * per detection path (the AccessibilityService owns one; `PathBBlockHandoff` owns the Path B
  * one), both funneling through the same policies, the same persisted state and the same
@@ -149,6 +158,8 @@ class BlockScreenCoordinator(
     /** Package whose current block was already reported as an intercepted open (cleared on hide). Main thread only. */
     private var interceptedPackage: String? = null
     private var mountedPackage: String? = null
+    /** Last Activity-fallback launch per package (ms): BAL denials are silent, so gate retries. Main thread only. */
+    private var fallbackLastAttemptMs = mutableMapOf<String, Long>()
     private var pendingSurfacePackage: String? = null
     private var pendingSurface: Job? = null
     private var cancelRecoveryHandoff: (() -> Unit)? = null
@@ -908,15 +919,29 @@ class BlockScreenCoordinator(
         // A throwing host (e.g. WindowManager.addView BadTokenException) is an unavailable
         // surface, not a Main-thread crash: fall through to the fallback and retry next tick.
         val attached = runCatching { surfaceHost.attach(view) }.getOrDefault(false)
+        var fallbackSuppressed = false
         val mounted = if (attached) {
             shownView = view
             visiblePackage = packageName
             startTicker()
             true
         } else {
-            onBlockSurfaceUnavailable?.let { fallback ->
+            val fallback = onBlockSurfaceUnavailable
+            if (fallback == null) {
+                false
+            } else if (!fallbackLaunchDue(fallbackLastAttemptMs[packageName], now)) {
+                // A BAL denial is silent and the previous launch is still inside the retry
+                // window. Nothing was delivered and nothing was attempted this tick, so it is
+                // not a new mount outcome: leave R-30 health on the last real attempt instead
+                // of downgrading FALLBACK_ONLY to FAILED.
+                fallbackSuppressed = true
+                false
+            } else {
+                // Record before invoking: a failed launch also consumes the window, so a
+                // silently denied request cannot storm every poll tick.
+                fallbackLastAttemptMs[packageName] = now
                 runCatching { fallback(appContext, packageName, appLabel, cause) }.getOrDefault(false)
-            } ?: false
+            }
         }
         // R-30: health/Armed must not claim a shield the user never received. Recording is
         // observe-only; the block cause, its retries and the fallback are unchanged.
@@ -925,9 +950,9 @@ class BlockScreenCoordinator(
             mounted -> BlockSurfaceMountPublisher.Outcome.FALLBACK_ONLY
             else -> BlockSurfaceMountPublisher.Outcome.FAILED
         }
-        if (BlockSurfaceMountHealth.publisher.record(outcome)) invalidateProtectionStatus()
-        // Once per new block of this package that actually reached the user (Path B's fallback
-        // re-launches every poll tick while the overlay is unavailable; those are not new
+        if (!fallbackSuppressed && BlockSurfaceMountHealth.publisher.record(outcome)) invalidateProtectionStatus()
+        // Once per new block of this package that actually reached the user (the retry gate
+        // suppresses repeated launches while the overlay is unavailable; those are not new
         // interceptions, and a failed attach with no fallback blocked nothing).
         if (mounted) {
             mountedPackage = packageName
@@ -1138,6 +1163,7 @@ class BlockScreenCoordinator(
         if (recoveryHandoffTarget != null && recoveryHandoffTarget == (visiblePackage ?: mountedPackage ?: pendingSurfacePackage))
             clearRecoveryHandoff(restoreFocus = false) // This view is about to be detached.
         (visiblePackage ?: mountedPackage ?: pendingSurfacePackage)?.let { failures.remove(it) }
+        (visiblePackage ?: mountedPackage ?: pendingSurfacePackage)?.let { fallbackLastAttemptMs.remove(it) }
         pendingSurface?.cancel()
         pendingSurface = null
         pendingSurfacePackage = null
@@ -1229,5 +1255,13 @@ class BlockScreenCoordinator(
         internal const val STATUS_COALESCE_MS: Long = 25L
         internal const val RECOVERY_SURFACE_TIMEOUT_MS: Long = 2_000L
         internal const val MAX_RECOVERY_FOCUS_ATTEMPTS = 3
+        /**
+         * Minimum gap between full-screen Activity fallback launches for the same package.
+         * A BAL denial is silent to the caller, so without a gate every poll tick fires a
+         * launch the OS drops - a log/battery storm that blocks nothing. The engine keeps
+         * reporting the same cause, so the next window retries and a genuinely available
+         * surface still arrives via window attach.
+         */
+        internal const val FALLBACK_ACTIVITY_RETRY_WINDOW_MS: Long = 30_000L
     }
 }

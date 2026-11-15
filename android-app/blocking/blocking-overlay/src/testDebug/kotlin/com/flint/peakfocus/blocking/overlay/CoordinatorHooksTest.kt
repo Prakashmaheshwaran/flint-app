@@ -27,6 +27,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -48,6 +49,7 @@ class CoordinatorHooksTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     private var attachOk = true
     private var fallbackLaunches = 0
+    private var fallbackResult = true
     private val enforcementChanges = AtomicInteger()
     private val events = mutableListOf<String>()
     private val listener = object : BlockEventHooks.Listener {
@@ -83,7 +85,7 @@ class CoordinatorHooksTest {
             override fun detach(view: View) = Unit
             override fun goHome() = Unit
         },
-        onBlockSurfaceUnavailable = if (withFallback) { _, _, _, _ -> fallbackLaunches++; true } else null,
+        onBlockSurfaceUnavailable = if (withFallback) { _, _, _, _ -> fallbackLaunches++; fallbackResult } else null,
         onEnforcementChanged = { enforcementChanges.incrementAndGet() },
         safetyFloorGate = SafetyFloorGate(app.packageName, { emptyMap() }, { 0L }, requiredRuntimeSources = emptySet()),
         focusStateStore = focus, configuredLimitsStore = limits, blockRulesStore = rules,
@@ -110,15 +112,55 @@ class CoordinatorHooksTest {
         assertEquals(listOf("open:session-timer-7", "open:null", "open:null"), events)
     }
 
-    @Test fun `the Path B fallback re-launch on every tick is one interception`() {
-        attachOk = false // overlay unavailable → BlockActivity fallback each tick
+    @Test fun `the Path B fallback launches at most once per window while BAL keeps denying`() {
+        attachOk = false // overlay unavailable -> BlockActivity fallback, silently denied by BAL
         val cause = ruleBlockCause(rule, System.currentTimeMillis(), 0L)
         repeat(4) { show(APP_A, cause) }
-        assertEquals(4, fallbackLaunches)
+        assertEquals(1, fallbackLaunches)
         assertEquals(listOf("open:session-timer-7"), events)
-        coordinator.hideIfShown(); idle() // the user left the app
+        // The delivered launch is reported once; suppressed ticks add no new outcome.
+        assertEquals(BlockSurfaceMountPublisher.Outcome.FALLBACK_ONLY, BlockSurfaceMountHealth.publisher.latest)
+        coordinator.hideIfShown(); idle() // the user left the app: the gate resets
         show(APP_A, cause)
+        assertEquals(2, fallbackLaunches)
         assertEquals(2, events.size)
+    }
+
+    @Test fun `suppressed retries do not mutate R-30 mount health`() {
+        attachOk = false
+        fallbackResult = true
+        val cause = ruleBlockCause(rule, System.currentTimeMillis(), 0L)
+        show(APP_A, cause)
+        assertEquals(BlockSurfaceMountPublisher.Outcome.FALLBACK_ONLY, BlockSurfaceMountHealth.publisher.latest)
+        // The retry window is still open and the launch now fails. A suppressed tick neither
+        // launches nor observes a mount, so health keeps the last real outcome instead of
+        // downgrading FALLBACK_ONLY to FAILED (REASON_BLOCK_SURFACE_MOUNT_FAILED).
+        fallbackResult = false
+        repeat(3) { show(APP_A, cause) }
+        assertEquals(1, fallbackLaunches)
+        assertEquals(BlockSurfaceMountPublisher.Outcome.FALLBACK_ONLY, BlockSurfaceMountHealth.publisher.latest)
+    }
+
+    @Test fun `failed fallback records FAILED consumes the window and suppressed retries do not overwrite it`() {
+        attachOk = false // block surface attachment fails
+        fallbackResult = false // fallback callback invoked and returns false
+        val cause = ruleBlockCause(rule, System.currentTimeMillis(), 0L)
+
+        // 1-4: first eligible attempt runs once and records a failed mount.
+        show(APP_A, cause)
+        assertEquals(1, fallbackLaunches)
+        assertEquals(BlockSurfaceMountPublisher.Outcome.FAILED, BlockSurfaceMountHealth.publisher.latest)
+        assertEquals(ProtectionStatus.REASON_BLOCK_SURFACE_MOUNT_FAILED, BlockSurfaceMountPublisher.Outcome.FAILED.reason)
+
+        // 5-7: repeated ticks inside the 30s window are suppressed; no callback, no health overwrite.
+        repeat(4) { show(APP_A, cause) }
+        assertEquals(1, fallbackLaunches)
+        assertEquals(BlockSurfaceMountPublisher.Outcome.FAILED, BlockSurfaceMountHealth.publisher.latest)
+
+        // 8: retry eligibility returns after the 30-second window.
+        val attemptAt = 1_000L
+        assertFalse(fallbackLaunchDue(attemptAt, attemptAt + BlockScreenCoordinator.FALLBACK_ACTIVITY_RETRY_WINDOW_MS - 1))
+        assertTrue(fallbackLaunchDue(attemptAt, attemptAt + BlockScreenCoordinator.FALLBACK_ACTIVITY_RETRY_WINDOW_MS))
     }
 
     @Test fun `a failed attach with no fallback blocked nothing and reports nothing`() {
