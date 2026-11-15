@@ -41,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,6 +82,9 @@ import com.flint.peakfocus.core.common.ui.FlintStatusDot
 import com.flint.peakfocus.core.common.ui.FlintStatusPill
 import com.flint.peakfocus.core.common.ui.FlintTopGlow
 import com.flint.peakfocus.core.common.ui.rememberReducedMotion
+import com.flint.peakfocus.feature.settings.applock.AppLock
+import com.flint.peakfocus.feature.settings.applock.AppLockSettingsSection
+import com.flint.peakfocus.feature.settings.applock.AppLockSettingsUi
 import com.flint.peakfocus.permissions.BatteryOptimization
 import com.flint.peakfocus.permissions.NotificationPermission
 import com.flint.peakfocus.permissions.OverlayPermission
@@ -105,6 +109,9 @@ fun SettingsScreen(
     val context = LocalContext.current
     var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     var exits by remember { mutableStateOf(ExitReasonReporter.lastExits(context)) }
+    // One process-wide controller: the gate in MainActivity and this section share it.
+    val appLockController = remember { AppLock.controller(context) }
+    val appLockState by appLockController.state.collectAsState()
 
     // Re-check on every resume: the user returns here from Settings hand-offs, and grants can
     // be revoked behind Flint's back at any time (same pattern as StatsScreen / MainActivity).
@@ -114,6 +121,8 @@ fun SettingsScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 health = PermissionHealthChecker.check(context)
                 exits = ExitReasonReporter.lastExits(context)
+                // The PIN record can change outside this screen; never show stale lock state.
+                appLockController.refresh()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -138,6 +147,7 @@ fun SettingsScreen(
                     health = PermissionHealthChecker.check(context)
                     openHelp()
                 },
+                appLock = AppLockSettingsUi.from(appLockController, appLockState),
                 onFix = { kind ->
                     routePermissionFix(kind, discloseAccessibility = onEnableAccessibility) { otherKind ->
                         val intent = when (otherKind) {
@@ -169,6 +179,7 @@ internal fun SettingsContent(
     onAccount: (() -> Unit)? = null,
     onOpenLegal: (LegalDocument) -> Unit = {},
     onOpenHelp: () -> Unit = {},
+    appLock: AppLockSettingsUi? = null,
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize()) {
@@ -199,6 +210,12 @@ internal fun SettingsContent(
                 Spacer(Modifier.height(FlintSpacing.md))
                 ClearFocusHistoryRow()
                 Spacer(Modifier.height(FlintSpacing.md))
+                if (appLock != null) {
+                    FlintSectionTitle("App lock")
+                    Spacer(Modifier.height(FlintSpacing.sm))
+                    AppLockSettingsSection(appLock)
+                    Spacer(Modifier.height(FlintSpacing.md))
+                }
                 FlintSectionTitle("Permissions")
                 Spacer(Modifier.height(FlintSpacing.sm))
                 BlockingHealthUi.rows(health).forEach { row ->

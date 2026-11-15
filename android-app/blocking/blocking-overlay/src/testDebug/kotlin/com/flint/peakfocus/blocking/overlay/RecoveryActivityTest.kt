@@ -85,6 +85,29 @@ class RecoveryActivityTest {
         finally { activity.destroy() }
     }
 
+    @Test fun PC_50_recoveryFromThePinGateIsRedactedAndBlockScreenRecoveryIsNot() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        assertTrue(BlockActivity.launchRecovery(app, redacted = true))
+        val intent = shadowOf(app).nextStartedActivity
+        assertTrue(intent.getBooleanExtra(BlockActivity.EXTRA_RECOVERY_REDACTED, false))
+        val activity = Robolectric.buildActivity(BlockActivity::class.java, intent).create()
+        try {
+            assertFalse("Redacted recovery stays reachable without a PIN", activity.get().isFinishing)
+            assertTrue(activity.get().isRedactedRecovery)
+            // A later block-screen recovery launch reuses the singleTask instance unredacted.
+            assertTrue(BlockActivity.launchRecovery(app))
+            activity.newIntent(shadowOf(app).nextStartedActivity)
+            assertFalse(activity.get().isRedactedRecovery)
+            assertTrue(activity.get().isRecoverySurface)
+        } finally { activity.destroy() }
+    }
+
+    @Test fun PC_50_redactedPassConfirmationNamesNoCommitment() {
+        assertEquals("Active session · ends now", BlockActivity.recoveryAffectedLabel("Deep work", transient = true, redacted = true))
+        assertEquals("Rule commitment · suspended", BlockActivity.recoveryAffectedLabel("Instagram limit", transient = false, redacted = true))
+        assertEquals("Instagram limit · suspended", BlockActivity.recoveryAffectedLabel("Instagram limit", transient = false, redacted = false))
+    }
+
     @Test fun PC_41_PC_76_pathAHandoffPreservesRecoveryOnStartResumeAndDetectorChanges() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
         val handoff = PathBFallbackActivityHandoff(app)
