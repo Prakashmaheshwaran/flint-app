@@ -106,8 +106,8 @@ public struct FlintOrdinaryGrantState: Codable, Equatable, Sendable {
         now.wall.timeIntervalSince1970.isFinite && now.monotonic.isFinite && now.monotonic >= 0
     }
 
-    /// Lane F's sink currently returns Void, which cannot acknowledge durable append. These
-    /// intents survive until the separate typed history adapter supplies a positive receipt.
+    /// Durable break lifecycle intents. Each survives, per frozen focus session, until the
+    /// typed history projection (`FlintProtectionHistoryProjection`) returns a positive receipt.
     public struct EventIntent: Codable, Equatable, Sendable {
         public enum Kind: String, Codable, Sendable { case started = "break_started", ended = "break_ended" }
         public let kind: Kind

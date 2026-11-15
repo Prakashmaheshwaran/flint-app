@@ -178,7 +178,9 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
     private static func commitmentData(_ session: FlintActiveSession) -> Data? {
         guard let data = try? JSONEncoder().encode(session),
               var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
-        for key in ["remainingCheckpoint", "naturalEndObservedAt"] { object.removeValue(forKey: key) }
+        for key in ["remainingCheckpoint", "naturalEndObservedAt", "pomodoroObservedPhase"] {
+            object.removeValue(forKey: key)
+        }
         return try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
@@ -193,7 +195,9 @@ public struct FlintSessionAuthority: Codable, Equatable, Sendable {
         guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw FlintSessionAuthorityError.generationMismatch
         }
-        for key in ["remainingCheckpoint", "naturalEndObservedAt"] { object.removeValue(forKey: key) }
+        for key in ["remainingCheckpoint", "naturalEndObservedAt", "pomodoroObservedPhase"] {
+            object.removeValue(forKey: key)
+        }
         return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
@@ -430,6 +434,10 @@ public struct FlintSessionStartParameters: Codable, Equatable, Sendable {
     public var origin: String
     public var ownerID: String?
     public var replacing: Bool
+    /// The frozen Pomodoro plan, when the request carries one. A retry with a different plan is
+    /// a different request (PC-03). nil is omitted from the encoded fingerprint, so ordinary
+    /// (and pre-F01) request identities are unchanged.
+    public var pomodoro: FlintPomodoroPlan?
     /// `FlintSessionStartParameters.allowListMode` for an Allow List session, nil for a block
     /// list. Optional so every block-list fingerprint encodes exactly as it did before allow
     /// lists existed — persisted accepted starts still match after an upgrade.
@@ -439,9 +447,10 @@ public struct FlintSessionStartParameters: Codable, Equatable, Sendable {
 
     public init(duration: TimeInterval, tier: BreakLevel, selection: String, name: String,
                 source: FlintSessionSource, origin: String, ownerID: String?, replacing: Bool,
-                mode: String? = nil) {
+                pomodoro: FlintPomodoroPlan? = nil, mode: String? = nil) {
         self.duration = duration; self.tier = tier; self.selection = selection; self.name = name
         self.source = source; self.origin = origin; self.ownerID = ownerID; self.replacing = replacing
+        self.pomodoro = pomodoro
         self.mode = mode
     }
 

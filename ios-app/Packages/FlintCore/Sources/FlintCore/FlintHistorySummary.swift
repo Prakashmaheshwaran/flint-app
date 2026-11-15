@@ -15,14 +15,29 @@ public struct FlintHistorySessionSummary: Identifiable, Equatable, Sendable {
     public let intervals: [DateInterval]
     /// intervals retain possible coverage; focusedSeconds also discounts these placement budgets.
     public let uncertainGaps: [FlintUncertainFocusGap]
+    /// A Pomodoro chain's planned round count, from its `started` event (F01). nil for other sessions.
+    public let plannedRounds: Int?
+    /// Rounds proven ended: an observed planned rest `k` proves rounds 1…k, and `completed`
+    /// proves all of them. A deadline alone never credits a round.
+    public let observedRounds: Int
     public var focusedSeconds: TimeInterval { FlintHistoryBounds.lowerBound([self]) }
     public var isInProgress: Bool { outcome == .running }
 
+    /// "2 of 4 rounds", or nil when the session is not a chain.
+    public var roundsText: String? {
+        guard let plannedRounds, plannedRounds > 1 else { return nil }
+        return "\(observedRounds) of \(plannedRounds) rounds"
+    }
+
     public init(id: String, name: String, startedAt: Date, endedAt: Date, outcome: FlintHistoryOutcome,
-                inferred: Bool, route: String?, intervals: [DateInterval], uncertainGaps: [FlintUncertainFocusGap] = []) {
+                inferred: Bool, route: String?, intervals: [DateInterval],
+                uncertainGaps: [FlintUncertainFocusGap] = [], plannedRounds: Int? = nil,
+                observedRounds: Int = 0) {
         self.id = id; self.name = name; self.startedAt = startedAt; self.endedAt = endedAt
         self.outcome = outcome; self.inferred = inferred; self.route = route; self.intervals = intervals
         self.uncertainGaps = uncertainGaps
+        self.plannedRounds = plannedRounds
+        self.observedRounds = observedRounds
     }
 }
 
@@ -334,8 +349,23 @@ public enum FlintHistoryAggregator {
             for pass in relatedPasses where pass.uncertainTime {
                 uncertainGaps.append(uncertainGap(maximum: 3600))
             }
+            let plannedRounds = start.rounds
+            let lastObservedRest = events.compactMap { event -> Int? in
+                guard event.type == .breakStarted, event.kind == "planned", let grant = event.grant,
+                      let range = grant.range(of: ".rest", options: .backwards) else { return nil }
+                return Int(grant[range.upperBound...])
+            }.max() ?? 0
+            // An observed planned rest k proves rounds 1…k ended; `completed` proves them all.
+            let observedRounds: Int
+            if outcome == .completed {
+                observedRounds = plannedRounds ?? max(0, lastObservedRest)
+            } else {
+                observedRounds = min(lastObservedRest, plannedRounds ?? lastObservedRest)
+            }
             return .init(id: id, name: start.name ?? "Focus", startedAt: start.date, endedAt: end,
-                         outcome: outcome, inferred: inferred, route: route, intervals: intervals, uncertainGaps: uncertainGaps)
+                         outcome: outcome, inferred: inferred, route: route, intervals: intervals,
+                         uncertainGaps: uncertainGaps, plannedRounds: plannedRounds,
+                         observedRounds: observedRounds)
         }.sorted { $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt < $1.startedAt }
     }
 
@@ -364,10 +394,14 @@ private extension FlintHistoryEvent {
 public enum FlintHistoryReconciler {
     /// Drain committed outbox records and maintain retention. History is a projection:
     /// only the lifecycle owner may commit an end, including during cold-start recovery.
+    /// `project` publishes owner-committed intents left in other outboxes (the protection
+    /// ledger's breaks and pass) to the inbox; the reads below drain them.
     public static func reconcile(store: FlintHistoryStore, activeSession: FlintActiveSession?, now: Date,
-                                 calendar: Calendar = .current) -> FlintHistorySnapshot {
+                                 calendar: Calendar = .current,
+                                 project: ((FlintHistoryStore, FlintHistorySnapshot) -> Void)? = nil) -> FlintHistorySnapshot {
         let snapshot = store.read()
         guard snapshot.availability != .unavailable else { return snapshot }
+        project?(store, snapshot)
         store.compactIfNeeded()
         return store.read()
     }
