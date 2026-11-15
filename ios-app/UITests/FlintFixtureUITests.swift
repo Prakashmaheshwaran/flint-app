@@ -27,6 +27,8 @@ final class FlintFixtureUITests: XCTestCase {
     func testScheduleValidationAtAccessibilitySize() throws { try scheduleValidation(accessibility: true) }
     func testInsightsUnavailableAtDefaultSize() throws { try insights(accessibility: false) }
     func testInsightsUnavailableAtAccessibilitySize() throws { try insights(accessibility: true) }
+    func testLegalDocumentsAtDefaultSize() throws { try legalDocuments(accessibility: false) }
+    func testLegalDocumentsAtAccessibilitySize() throws { try legalDocuments(accessibility: true) }
 
     private func launch(accessibility: Bool, approved: Bool = true, onboarded: Bool = true) {
         app = XCUIApplication()
@@ -209,6 +211,59 @@ final class FlintFixtureUITests: XCTestCase {
         try tap(app.buttons["Insights"])
         try reveal(app.staticTexts["Screen Time access needed"])
         XCTAssertFalse(app.staticTexts["No screen time recorded"].exists)
+    }
+
+    /// Both bundled legal documents open from You → Legal and render offline, with no WebView,
+    /// link opening or network path. This is fixture UI evidence, not legal review or device proof.
+    private func legalDocuments(accessibility: Bool) throws {
+        launch(accessibility: accessibility)
+        try tap(app.buttons["You"])
+        let privacy = app.buttons["settings.legal.privacy"]
+        try revealAboveTabBar(privacy)
+        try tap(privacy)
+        // Both screens use the "legal.title" identifier; match each one by its label so a
+        // screen still animating out can never satisfy the next screen's assertion.
+        let privacyTitle = legalTitle("Flint privacy policy")
+        XCTAssertTrue(privacyTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Bundled with this version of Flint. Available offline."].exists)
+        try reveal(app.staticTexts["Retention and deletion"])
+        capture("legal-privacy-policy")
+
+        try tap(app.navigationBars.buttons.element(boundBy: 0))
+        XCTAssertTrue(privacyTitle.waitForNonExistence(timeout: 5), "Back must leave the policy screen")
+        let licenses = app.buttons["settings.legal.licenses"]
+        try revealAboveTabBar(licenses)
+        try tap(licenses)
+        XCTAssertTrue(legalTitle("Open-source licenses").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Hanken Grotesk"].exists, "The notices must name each bundled font family")
+        XCTAssertTrue(app.staticTexts["Bundled with this version of Flint. Available offline."].exists)
+        try reveal(app.staticTexts["Shippori Mincho"])
+        capture("legal-open-source-licenses")
+    }
+
+    /// The floating tab bar overlays the bottom of the scroll view, so a row can report
+    /// hittable while its center sits behind the bar (a default-size run tapped Insights).
+    /// After `reveal`, drag a bounded number of times until the row clears the bar.
+    private func revealAboveTabBar(_ element: XCUIElement, file: StaticString = #filePath,
+                                   line: UInt = #line) throws {
+        try reveal(element, file: file, line: line)
+        // "Rules" sits in the bar's top row at every size (AX sizes use two rows).
+        let barTop = app.buttons["Rules"].frame.minY - 12
+        let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        var drags = 0
+        while element.frame.maxY > barTop, drags < 6 {
+            let start = origin.withOffset(CGVector(dx: 12 - app.frame.minX, dy: barTop - 20 - app.frame.minY))
+            let distance = element.frame.maxY - barTop + 60
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -distance)))
+            drags += 1
+        }
+        XCTAssertLessThanOrEqual(element.frame.maxY, barTop, "Row must clear the tab bar before a tap",
+                                 file: file, line: line)
+    }
+
+    private func legalTitle(_ label: String) -> XCUIElement {
+        app.staticTexts.matching(identifier: "legal.title")
+            .matching(NSPredicate(format: "label == %@", label)).firstMatch
     }
 
     private enum ScrollDirection { case up, down }

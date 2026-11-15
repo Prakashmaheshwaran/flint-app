@@ -4,6 +4,8 @@ import com.flint.peakfocus.core.datastore.EditorCommitmentState
 import com.flint.peakfocus.core.datastore.editorPublicationFailure
 import com.flint.peakfocus.core.model.*
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
@@ -60,5 +62,29 @@ class EditorRulePublicationTest {
             runtime = RuleRuntime("inactive", anchor, 0, at, "UTC", anchor))
         val jumped = anchor.copy(wallEpochMs = at + 12 * 3_600_000, elapsedRealtimeMs = 60_000)
         assertEquals(4 * 60_000L, nextEditorReconciliationDelay(listOf(rule), EditorCommitmentState(), jumped))
+    }
+
+    @Test fun `a one time start a month ahead keeps the exact reconciliation boundary`() {
+        val at = Instant.parse("2026-11-20T08:00:00Z").toEpochMilli()
+        val anchor = AccessClockStamp(at, 0, "boot")
+        val date = LocalDate.parse("2026-12-20")
+        val start = date.atStartOfDay(ZoneId.of("UTC")).plusMinutes(9 * 60).toInstant().toEpochMilli()
+        val rule = BlockRule("one", "One time", BlockTargets(apps = setOf(AppRef("a"))),
+            Schedule(startMinuteOfDay = 9 * 60, endMinuteOfDay = 17 * 60, date = date),
+            runtime = RuleRuntime("inactive", anchor, 0, at, "UTC", anchor))
+        assertEquals(start - at, nextEditorReconciliationDelay(listOf(rule), EditorCommitmentState(), anchor))
+    }
+
+    @Test fun `a finished one time rule arms nothing at all`() {
+        val at = Instant.parse("2026-11-20T08:00:00Z").toEpochMilli()
+        val anchor = AccessClockStamp(at, 0, "boot")
+        val date = LocalDate.parse("2026-11-20")
+        val startsAt = date.atStartOfDay(ZoneId.of("UTC")).plusMinutes(9 * 60).toInstant().toEpochMilli()
+        val endsAt = date.atStartOfDay(ZoneId.of("UTC")).plusMinutes(17 * 60).toInstant().toEpochMilli()
+        val rule = BlockRule("one", "One time", BlockTargets(apps = setOf(AppRef("a"))),
+            Schedule(startMinuteOfDay = 9 * 60, endMinuteOfDay = 17 * 60, date = date),
+            runtime = RuleRuntime("$startsAt", anchor, endsAt - startsAt, endsAt, "UTC", anchor))
+        val afterEnd = AccessClockStamp(endsAt + 1_000, 0, "boot-b")
+        assertNull(nextEditorReconciliationDelay(listOf(rule), EditorCommitmentState(), afterEnd))
     }
 }

@@ -189,6 +189,9 @@ public protocol FlintSessionStateStoring: AnyObject {
     func saveSessionSelection(_ selection: FamilyActivitySelection, sessionID: String)
     func loadSessionSelection(sessionID: String) -> FamilyActivitySelection?
     func clearSessionSelection()
+    /// The session ID the stored target snapshot belongs to; nil when none is stored or it
+    /// doesn't decode.
+    func sessionSelectionOwner() -> String?
     /// Positive evidence the shared state was read, not an empty locked or unavailable
     /// container. A readable suite still needs the latest generation's tombstone to prove idle.
     func isProtectionStateReadable() -> Bool
@@ -196,6 +199,7 @@ public protocol FlintSessionStateStoring: AnyObject {
 
 public extension FlintSessionStateStoring {
     func isProtectionStateReadable() -> Bool { true }
+    func sessionSelectionOwner() -> String? { nil }
 }
 
 extension FlintGroupStore: FlintSessionStateStoring {
@@ -224,6 +228,12 @@ extension FlintGroupStore: FlintSessionStateStoring {
               let saved = try? JSONDecoder().decode(SessionSelection.self, from: data),
               saved.sessionID == sessionID else { return nil }
         return saved.selection
+    }
+
+    public func sessionSelectionOwner() -> String? {
+        guard let data = UserDefaults.flintGroup?.data(forKey: Self.sessionSelectionKey),
+              let saved = try? JSONDecoder().decode(SessionSelection.self, from: data) else { return nil }
+        return saved.sessionID
     }
 }
 
@@ -1252,9 +1262,14 @@ public final class FlintSessionController {
     public static let repairInterval: TimeInterval = 60
 
     /// The session's own frozen targets; sessions saved by older builds have no snapshot and
-    /// fall back to the picker selection they were started from.
+    /// fall back to the picker selection they were started from. A snapshot saved for another
+    /// session means that later start already rewrote the picker (snapshot, record, then
+    /// picker), so the picker no longer describes this session: nothing is re-applied and its
+    /// last-good native targets stay as they are (R-04).
     private func sessionSelection(for session: FlintActiveSession, in store: FlintSessionStateStoring) -> FamilyActivitySelection? {
-        store.loadSessionSelection(sessionID: session.id) ?? store.loadSelection()
+        if let frozen = store.loadSessionSelection(sessionID: session.id) { return frozen }
+        if let owner = store.sessionSelectionOwner(), owner != session.id { return nil }
+        return store.loadSelection()
     }
 
     /// Re-register `session`'s auto-clear for its remaining time under a fresh name: register

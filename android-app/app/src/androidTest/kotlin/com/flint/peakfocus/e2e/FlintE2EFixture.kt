@@ -32,9 +32,11 @@ abstract class FlintE2EFixture {
     private var ownsGrant = false
     private var previousGlobal = "0"
     protected val instrumentation get() = InstrumentationRegistry.getInstrumentation()
-    protected val app = "com.flint.peakfocus"
+    // Installed package (ADR-008) vs the Kotlin namespace that owns every component class.
+    protected val app = "app.flint.focus"
+    protected val ns = "com.flint.peakfocus"
     protected val target = "$app.test"
-    protected val service = "$app/com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService"
+    protected val service = "$app/$ns.blocking.accessibility.FlintAccessibilityService"
     protected val timeout = 15_000L
     private val runToken get() = InstrumentationRegistry.getArguments().getString("flintRunToken")!!
     private val bootId get() = InstrumentationRegistry.getArguments().getString("flintBootId")!!
@@ -222,7 +224,7 @@ abstract class FlintE2EFixture {
     }
 
     protected fun launchFlint() {
-        shell("am start -W -n $app/.MainActivity")
+        shell("am start -W -n $app/$ns.MainActivity")
     }
 
     protected fun launchTarget() {

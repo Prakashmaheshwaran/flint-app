@@ -64,7 +64,7 @@ class IsoWeekdayTest {
         // a Mon–Fri rule would block Sunday (Calendar 1) and skip Friday (Calendar 6). Reverting
         // either service to pass the raw Calendar value flips both assertions.
         val engine = BlockDecisionEngine()
-        val self = "com.flint.peakfocus"
+        val self = "app.flint.focus"
         val weekdays = Schedule(
             daysOfWeek = setOf(1, 2, 3, 4, 5), // ISO Mon–Fri
             startMinuteOfDay = 540,

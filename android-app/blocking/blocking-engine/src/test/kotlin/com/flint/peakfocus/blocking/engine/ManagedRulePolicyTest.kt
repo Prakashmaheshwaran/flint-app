@@ -11,7 +11,7 @@ class ManagedRulePolicyTest {
     private val identity = ManagedIdentity("project", "member", 4)
     private val member = ManagedMembership("group", "membership-one", ManagedRole.MEMBER)
     private val app = "com.example.social"
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
     private val now = epoch("2026-10-12T13:30:00Z") // Monday 09:30 in New York
 
     private fun epoch(value: String) = Instant.parse(value).toEpochMilli()
