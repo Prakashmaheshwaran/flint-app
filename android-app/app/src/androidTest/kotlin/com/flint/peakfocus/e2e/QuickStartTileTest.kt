@@ -29,14 +29,15 @@ class QuickStartTileTest : FlintE2EFixture() {
             .getActivityInfo(ComponentName(app, entryClass), 0)
         assertFalse("The quick-start entry must not be exported", info.exported)
 
-        // Nothing starts a session or opens the sheet by itself.
+        // Nothing starts a session or opens the sheet by itself. "Break level" only exists in the
+        // Start focus sheet, so the check does not depend on the remembered duration label.
         SystemClock.sleep(500)
-        assertNull("No start focus sheet without a user gesture", device.findObject(By.text("Begin 30m")))
+        assertNull("No start focus sheet without a user gesture", device.findObject(By.text("Break level")))
 
         shell("cmd statusbar add-tile $tile")
         try {
             shell("cmd statusbar click-tile $tile")
-            visible(By.text("Begin 30m"))
+            visible(By.text("Break level"))
             visible(By.text("Choose what rests first."))
             visible(By.text("Turn on Accessibility or grant Usage Access."))
             screenshot("tile-start-focus")
