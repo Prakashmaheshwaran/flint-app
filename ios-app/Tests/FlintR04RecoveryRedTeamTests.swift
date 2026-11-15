@@ -695,6 +695,7 @@ private final class R04Events: FlintSessionEventSink {
             case .passUsed: return "passUsed"
             case .failedToArm: return "failedToArm"
             case .globalPassUsed: return "globalPassUsed"
+            case .plannedRest(_, let index, let kind, _, _, _): return "plannedRest.\(index).\(kind.rawValue)"
             case .annotated: return "annotated"
             }
         }
