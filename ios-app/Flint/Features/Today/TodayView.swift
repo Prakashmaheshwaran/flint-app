@@ -511,7 +511,17 @@ struct TodayView: View {
 
     private func ruleLine(_ rule: FlintScheduleRule) -> String {
         var parts = [levelName(rule.breakLevel)]
-        if FlintTodaySchedule.current(in: rules, at: now)?.id == rule.id {
+        if let phase = rule.oneShotPhase(at: now) {
+            let zone = FlintOneShotCopy.zone(rule)
+            switch phase {
+            case let .active(window):
+                parts.append("one time · until \(FlintOneShotCopy.time(window.end, zone: zone))")
+            case let .pending(window):
+                parts.append("one time · \(FlintOneShotCopy.detail(window, zone: zone))")
+            case .finished:
+                parts.append("one time · finished")
+            }
+        } else if FlintTodaySchedule.current(in: rules, at: now)?.id == rule.id {
             parts.append("until \(FlintTodaySchedule.clock(rule.schedule.endHour, rule.schedule.endMinute))")
         } else {
             parts.append("\(FlintTodaySchedule.clock(rule.schedule.startHour, rule.schedule.startMinute)) — \(FlintTodaySchedule.clock(rule.schedule.endHour, rule.schedule.endMinute))")
@@ -533,6 +543,9 @@ struct TodayView: View {
     }
 
     private func timeLeft(_ rule: FlintScheduleRule) -> String? {
+        if let window = activeOneShotWindow(rule) {
+            return FlintOneShotCopy.duration(.init(start: now, end: window.end))
+        }
         let cal = Calendar.current
         let minute = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
         let end = rule.schedule.endHour * 60 + rule.schedule.endMinute
@@ -544,6 +557,11 @@ struct TodayView: View {
     }
 
     private func occurrenceProgress(_ rule: FlintScheduleRule) -> Double {
+        if let window = activeOneShotWindow(rule) {
+            let span = window.end.timeIntervalSince(window.start)
+            guard span > 0 else { return 0 }
+            return now.timeIntervalSince(window.start) / span
+        }
         let cal = Calendar.current
         let minute = Double(cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now))
         var start = Double(rule.schedule.startHour * 60 + rule.schedule.startMinute)
@@ -555,22 +573,48 @@ struct TodayView: View {
         return (minute - start) / span
     }
 
+    /// The dated window that is running now, if this rule is a one-time session.
+    private func activeOneShotWindow(_ rule: FlintScheduleRule) -> FlintRuleWindow? {
+        guard let phase = rule.oneShotPhase(at: now), phase.isActive else { return nil }
+        return phase.window
+    }
+
     private func upcoming(limit: Int) -> [FlintScheduleRule] {
         let cal = Calendar.current
         let minute = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
         let weekday = cal.component(.weekday, from: now)
         let currentID = FlintTodaySchedule.current(in: rules, at: now)?.id
         return rules
-            .filter {
-                $0.enabled && $0.id != currentID && runs($0.schedule, on: weekday)
-                    && $0.schedule.startHour * 60 + $0.schedule.startMinute > minute
+            .filter { rule in
+                guard rule.enabled, rule.id != currentID else { return false }
+                if let phase = rule.oneShotPhase(at: now) {
+                    // A date-specific session belongs to Today only on its own day, never on its
+                    // weekday next week.
+                    guard case let .pending(window) = phase else { return false }
+                    return cal.isDate(window.start, inSameDayAs: now) && window.start > now
+                }
+                return runs(rule.schedule, on: weekday)
+                    && rule.schedule.startHour * 60 + rule.schedule.startMinute > minute
             }
-            .sorted { $0.schedule.startHour * 60 + $0.schedule.startMinute < $1.schedule.startHour * 60 + $1.schedule.startMinute }
+            .sorted { upcomingStart($0) < upcomingStart($1) }
             .prefix(limit)
             .map { $0 }
     }
 
+    /// When an upcoming rule starts today; a date-specific rule uses its own dated start.
+    private func upcomingStart(_ rule: FlintScheduleRule) -> Date {
+        if let phase = rule.oneShotPhase(at: now), case let .pending(window) = phase { return window.start }
+        let cal = Calendar.current
+        return cal.date(bySettingHour: rule.schedule.startHour, minute: rule.schedule.startMinute,
+                        second: 0, of: now) ?? now
+    }
+
     private func nextTimeText(_ rule: FlintScheduleRule) -> String? {
+        if let phase = rule.oneShotPhase(at: now), case let .pending(window) = phase {
+            let delta = window.start.timeIntervalSince(now)
+            guard delta > 0 else { return nil }
+            return "in \(FlintOneShotCopy.duration(.init(start: now, end: window.start)))"
+        }
         let cal = Calendar.current
         let minute = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
         let start = rule.schedule.startHour * 60 + rule.schedule.startMinute
@@ -606,12 +650,24 @@ struct TodayView: View {
     private var subline: String {
         var parts: [String] = []
         if let current = FlintTodaySchedule.current(in: rules, at: now) {
-            parts.append(status(current) == .registered
-                ? "Registered with iOS until \(FlintTodaySchedule.clock(current.schedule.endHour, current.schedule.endMinute))"
-                : "Open Rules or You to check protection")
+            if let window = activeOneShotWindow(current) {
+                parts.append(status(current) == .registered
+                    ? "Registered with iOS until \(FlintOneShotCopy.time(window.end, zone: FlintOneShotCopy.zone(current)))"
+                    : "Open Rules or You to check protection")
+            } else {
+                parts.append(status(current) == .registered
+                    ? "Registered with iOS until \(FlintTodaySchedule.clock(current.schedule.endHour, current.schedule.endMinute))"
+                    : "Open Rules or You to check protection")
+            }
         }
         if let next = FlintTodaySchedule.next(in: rules, at: now) {
-            parts.append("next, \(next.name) at \(FlintTodaySchedule.clock(next.schedule.startHour, next.schedule.startMinute))")
+            let start: String
+            if let phase = next.oneShotPhase(at: now), case let .pending(window) = phase {
+                start = FlintOneShotCopy.time(window.start, zone: FlintOneShotCopy.zone(next))
+            } else {
+                start = FlintTodaySchedule.clock(next.schedule.startHour, next.schedule.startMinute)
+            }
+            parts.append("next, \(next.name) at \(start)")
         }
         if parts.isEmpty { return rules.isEmpty ? "No schedules yet — add one in Rules." : "Nothing else scheduled today." }
         let line = parts.joined(separator: " · ")
@@ -637,15 +693,19 @@ struct TodayView: View {
     }
 }
 
-/// Which enabled schedule is running now, and which starts next today.
+/// Which enabled rule is running now, and which starts next today. A date-specific (one-time)
+/// rule is decided by its own dated window on the trusted clock — never by weekday math, which
+/// would make it look current every week on that weekday.
 enum FlintTodaySchedule {
-    static func current(in rules: [FlintScheduleRule], at date: Date) -> FlintScheduleRule? {
+    static func current(in rules: [FlintScheduleRule], at date: Date,
+                        clock: FlintClock = .system) -> FlintScheduleRule? {
         let cal = Calendar.current
         let minute = cal.component(.hour, from: date) * 60 + cal.component(.minute, from: date)
         let weekday = cal.component(.weekday, from: date)
         let yesterday = weekday == 1 ? 7 : weekday - 1
         return rules.first { rule in
             guard rule.enabled else { return false }
+            if let phase = rule.oneShotPhase(at: date, clock: clock) { return phase.isActive }
             let s = rule.schedule
             let start = s.startHour * 60 + s.startMinute, end = s.endHour * 60 + s.endMinute
             if start < end { return runs(s, on: weekday) && minute >= start && minute < end }
@@ -654,13 +714,34 @@ enum FlintTodaySchedule {
         }
     }
 
-    static func next(in rules: [FlintScheduleRule], at date: Date) -> FlintScheduleRule? {
+    static func next(in rules: [FlintScheduleRule], at date: Date,
+                     clock: FlintClock = .system) -> FlintScheduleRule? {
         let cal = Calendar.current
         let minute = cal.component(.hour, from: date) * 60 + cal.component(.minute, from: date)
         let weekday = cal.component(.weekday, from: date)
         return rules
-            .filter { $0.enabled && runs($0.schedule, on: weekday) && $0.schedule.startHour * 60 + $0.schedule.startMinute > minute }
-            .min { $0.schedule.startHour * 60 + $0.schedule.startMinute < $1.schedule.startHour * 60 + $1.schedule.startMinute }
+            .filter { rule in
+                guard rule.enabled else { return false }
+                if let phase = rule.oneShotPhase(at: date, clock: clock) {
+                    // Only a pending session that starts on this device day is "next today".
+                    guard case let .pending(window) = phase else { return false }
+                    return cal.isDate(window.start, inSameDayAs: date)
+                }
+                return runs(rule.schedule, on: weekday)
+                    && rule.schedule.startHour * 60 + rule.schedule.startMinute > minute
+            }
+            .min { startOfDay($0, at: date, clock: clock, calendar: cal)
+                < startOfDay($1, at: date, clock: clock, calendar: cal) }
+    }
+
+    /// A comparable start within this day: a dated window's own start, else the clock time.
+    private static func startOfDay(_ rule: FlintScheduleRule, at date: Date, clock: FlintClock,
+                                   calendar: Calendar) -> Date {
+        if let phase = rule.oneShotPhase(at: date, clock: clock), case let .pending(window) = phase {
+            return window.start
+        }
+        return calendar.date(bySettingHour: rule.schedule.startHour, minute: rule.schedule.startMinute,
+                             second: 0, of: date) ?? date
     }
 
     static func clock(_ hour: Int, _ minute: Int) -> String { String(format: "%02d:%02d", hour, minute) }

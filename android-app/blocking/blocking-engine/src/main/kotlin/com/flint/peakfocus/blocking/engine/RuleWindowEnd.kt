@@ -6,6 +6,8 @@ import com.flint.peakfocus.core.model.BlockRule
  * End used to choose and render an active rule's headline. Anchored runtime is authoritative,
  * including a null (ongoing/unknown) end. Legacy schedules use the caller's local clock,
  * matching their existing fixed-offset countdown; saved-zone/DST ends come from runtime.
+ * A dated one-time window is only ever passed here while it is active, where its end minute of
+ * day is the same day (or the next day, for an overnight end) the caller's clock already is.
  */
 fun ruleWindowEnd(rule: BlockRule, nowEpochMs: Long, nowMinutesOfDay: Int): Long? {
     rule.runtime?.evaluation?.let { return it.endsAtEpochMs }

@@ -78,6 +78,18 @@ final class FlintRuleArbiter {
                 if let proposed = mutation.proposed {
                     guard proposed.id == mutation.id else { return .invalid("Rule identity changed.") }
                     if let issue = proposed.validationIssue { return .invalid(issue) }
+                    if let window = proposed.absoluteWindow, window != old?.absoluteWindow {
+                        // A one-time window may be authored any distance ahead, but a NEW or
+                        // CHANGED one must still be able to arm: a start that already passed can
+                        // never run, the DeviceActivity floor bounds the length, and a day or more
+                        // is not a finite occurrence. A stored window is never re-judged, and an
+                        // active window keeps its tier's ordinary edit gate below (PC-11/13/14).
+                        let timeline = FlintRuleOccurrenceClock.date(for: old ?? proposed, clock: self.env.clock)
+                        if let issue = FlintOneShotSchedule.issue(for: window, now: timeline,
+                                startChanged: window.start != old?.absoluteWindow?.start) {
+                            return .invalid(issue.message)
+                        }
+                    }
                     if proposed.enabled, let issue = self.env.validateSelection(proposed.selection,
                         Rule.domain == .openLimits ? .openLimit : (proposed.allowList ? .allowList : .blockList)) {
                         return .invalid(issue.message)
@@ -556,6 +568,12 @@ final class FlintRuleArbiter {
         guard next.enabled else { return true }
         _ = FlintWebRestrictionRuleAdapter.freeze([next], environment: env, existingWebStores: env.existingWebStores)
         if next.activityName == old?.activityName { return true } // cosmetic: no restart/counter reset
+        // A one-shot whose window is already over on its trusted timeline has nothing left to
+        // arm (e.g. a queued change applied at its end, or an edit of a finished one-shot).
+        // Registering its past non-repeating interval could only be refused or fire stale.
+        if let window = next.absoluteWindow, FlintRuleOccurrenceClock.isOver(window, for: next, clock: env.clock) {
+            return true
+        }
         if let old = old as? FlintLimitRule, old.enabled, old.occurrence(at: env.clock.now(), clock: env.clock) != nil {
             if #available(iOS 17.4, *) {} else { return false } // cannot reset already-used daily usage
         }

@@ -165,8 +165,12 @@ class CommitmentPolicy {
         val dailyZoneId: String? = null,
     )
 
-    /** A recurring window: minutes of day, ISO days (empty = every day) and saved IANA zone. */
-    data class Window(val startMinute: Int, val endMinute: Int, val days: Set<Int>, val zoneId: String)
+    /**
+     * Recurring window: minutes of day, ISO days (empty = every day) and saved IANA zone.
+     * [date] makes it a one-time window (see `Schedule.date`); its days are always empty, so the
+     * only way it can cover another window is the same date.
+     */
+    data class Window(val startMinute: Int, val endMinute: Int, val days: Set<Int>, val zoneId: String, val date: java.time.LocalDate? = null)
 
     enum class EditKind { COSMETIC, STRENGTHEN, WEAKEN }
 
@@ -198,10 +202,16 @@ class CommitmentPolicy {
         return EditKind.STRENGTHEN
     }
 
-    /** [after] provably covers every minute [before] did: same zone, superset of days, same-shape superset span. */
+    /**
+     * [after] provably covers every minute [before] did: same zone, superset of days, same-shape
+     * superset span. Moving a one-time window to another date is never covering (it protects a
+     * different day, so the old commitment is gone), while the same date with an equal-or-earlier
+     * start and equal-or-later end is.
+     */
     private fun windowCovers(after: Window?, before: Window?): Boolean {
         if (before == null || after == null) return before == after
         if (after.zoneId != before.zoneId) return false
+        if (after.date != before.date) return false
         val beforeDays = before.days.ifEmpty { (1..7).toSet() }
         val afterDays = after.days.ifEmpty { (1..7).toSet() }
         if (!afterDays.containsAll(beforeDays)) return false

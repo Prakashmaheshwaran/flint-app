@@ -2,6 +2,7 @@ package com.flint.peakfocus.blocking.engine
 
 import com.flint.peakfocus.core.model.*
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import org.junit.Assert.*
 import org.junit.Test
@@ -150,8 +151,19 @@ class NextEvaluationBoundaryTest {
         assertEquals(ms("2026-10-28T10:00:00Z"), next("2026-10-28T09:59:00Z", rule(), utc))
     }
 
-    @Test fun `candidate boundaries agree with minute by minute engine across DST and weekdays`() {
-        val engine = BlockDecisionEngine()
+    @Test fun `dated one time window arms its own start and end and never next week`() {
+        fun dated(start: Int = 600, end: Int = 660) = BlockRule("d", "d", BlockTargets(apps = setOf(AppRef("app"))),
+            Schedule(startMinuteOfDay = start, endMinuteOfDay = end, date = LocalDate.parse("2026-11-20")))
+        // The only transitions of a dated window are its start and its end.
+        assertEquals(ms("2026-11-20T10:00:00Z"), next("2026-11-20T09:00:00Z", dated()))
+        assertEquals(ms("2026-11-20T11:00:00Z"), next("2026-11-20T10:00:00Z", dated()))
+        // After it ended the next wake is local midnight (a harmless recheck), never next week.
+        assertEquals(ms("2026-11-21T00:00:00Z"), next("2026-11-20T11:00:00Z", dated()))
+        val overnight = dated(22 * 60, 6 * 60)
+        assertEquals(ms("2026-11-21T06:00:00Z"), next("2026-11-21T02:00:00Z", overnight))
+    }
+
+    @Test fun `candidate boundaries agree with minute by minute engine across DST and weekdays`() {        val engine = BlockDecisionEngine()
         val dates = listOf("2026-03-08T05:00:00Z", "2026-11-01T04:00:00Z", "2026-10-26T04:00:00Z")
         val windows = listOf(0 to 60, 60 to 90, 90 to 120, 120 to 150, 150 to 240, 1320 to 360, 0 to 1440, 600 to 600)
         for (date in dates) for ((start, end) in windows) for (days in listOf(emptySet(), setOf(1), setOf(7))) {

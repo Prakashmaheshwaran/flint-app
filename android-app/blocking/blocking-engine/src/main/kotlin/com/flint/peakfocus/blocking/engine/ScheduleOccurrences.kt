@@ -13,12 +13,20 @@ object ScheduleOccurrences {
     }
 
     fun containing(schedule: Schedule, zone: ZoneId, nowEpochMs: Long): Occurrence? {
+        // A dated window has exactly one occurrence: its own start date, plus the next-day tail
+        // of an overnight window. Yesterday's date is the only other one that can still be
+        // running, and onDate() rejects every other date for a dated schedule anyway.
         val today = Instant.ofEpochMilli(nowEpochMs).atZone(zone).toLocalDate()
         return listOf(today, today.minusDays(1)).mapNotNull { onDate(schedule, zone, it) }
             .firstOrNull { nowEpochMs >= it.startsAtEpochMs && nowEpochMs < it.endsAtEpochMs }
     }
 
     fun nextStart(schedule: Schedule, zone: ZoneId, afterEpochMs: Long): Long? {
+        // A one-time window has a single start, any distance ahead (not a weekly 8-day scan).
+        // Once that start has passed there is no next start at all.
+        schedule.date?.let { date ->
+            return onDate(schedule, zone, date)?.startsAtEpochMs?.takeIf { it > afterEpochMs }
+        }
         val today = Instant.ofEpochMilli(afterEpochMs).atZone(zone).toLocalDate()
         return (0L..8L).mapNotNull { onDate(schedule, zone, today.plusDays(it))?.startsAtEpochMs }
             .filter { it > afterEpochMs }.minOrNull()
@@ -36,7 +44,11 @@ object ScheduleOccurrences {
         val start = schedule.startMinuteOfDay
         val end = schedule.endMinuteOfDay
         if (start !in 0..1439 || end !in 0..1439 || start == end) return null
-        if (schedule.daysOfWeek.isNotEmpty() && date.dayOfWeek.value !in schedule.daysOfWeek) return null
+        // A dated window is not a weekly pattern: only its own date yields an occurrence, and a
+        // weekday gate on it is ignored so a damaged record can never become a weekly rule.
+        if (schedule.date != null) {
+            if (date != schedule.date) return null
+        } else if (schedule.daysOfWeek.isNotEmpty() && date.dayOfWeek.value !in schedule.daysOfWeek) return null
         val from = endpoint(date.atStartOfDay().plusMinutes(start.toLong()), zone, start = true)
         val endDate = if (end < start) date.plusDays(1) else date
         val to = endpoint(endDate.atStartOfDay().plusMinutes(end.toLong()), zone, start = false)
