@@ -265,8 +265,12 @@ abstract class FlintE2EFixture {
             refreshAccessibilityCache()
             device.findObject(By.text(text))?.let { return it }
             // Editors have a fixed footer; a screen-relative swipe can start
-            // outside the LazyColumn and never move it. Use its actual viewport.
-            val bounds = visible(By.scrollable(true)).visibleBounds
+            // outside the LazyColumn and never move it. Use its actual viewport, and prefer
+            // the tallest scrollable: a horizontal chip row is scrollable too, and a vertical
+            // swipe inside it would never move the editor.
+            val scrollable = device.findObjects(By.scrollable(true))
+                .maxByOrNull { it.visibleBounds.height() } ?: visible(By.scrollable(true))
+            val bounds = scrollable.visibleBounds
             device.swipe(bounds.centerX(), bounds.bottom - bounds.height() / 4,
                 bounds.centerX(), bounds.top + bounds.height() / 4, 35)
             SystemClock.sleep(250)
