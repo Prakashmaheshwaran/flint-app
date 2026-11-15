@@ -155,6 +155,11 @@ internal object ProtectionStatusProjection {
         val expiry = rule.expiresAtEpochMs
         if (expiry != null && expiry <= now.wallEpochMs) return null
         val schedule = rule.schedule ?: return ForeignActivity(expiry)
+        // A dated window is one occurrence in device wall time; never a weekly pattern.
+        if (schedule.date != null) {
+            val occurrence = ScheduleOccurrences.containing(schedule, ZoneId.of(zone), now.wallEpochMs) ?: return null
+            return ForeignActivity(minOf(occurrence.endsAtEpochMs, expiry ?: Long.MAX_VALUE))
+        }
         val cal = Calendar.getInstance(TimeZone.getTimeZone(zone)).apply { timeInMillis = now.wallEpochMs }
         val minute = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         val day = ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1

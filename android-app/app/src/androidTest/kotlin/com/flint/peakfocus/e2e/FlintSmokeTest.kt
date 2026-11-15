@@ -114,16 +114,18 @@ class FlintSmokeTest : FlintE2EFixture() {
             // use the native Timer without depending on the runner's local clock/zone.
             clickTab("Today")
             scrollTo("Start focus").click()
+            // Begin sits in the sheet's fixed footer: wait for it rather than scroll for it,
+            // which would move the stepper out of view while the sheet is still opening.
+            visible(By.text("Begin 30m"))
             // v3 Start focus has no minute chips (M04): step the 30m default down once.
-            scrollTo("Begin 30m")
-            visible(By.desc("Less time").enabled(true)).click()
-            scrollTo("Begin 25m")
+            scrollTo(By.desc("Less time").enabled(true)).click()
+            visible(By.text("Begin 25m"))
             scrollTo("Choose what rests").click()
             visible(By.text("What rests"))
             scrollTo(target).click()
             click("Done · 1 app")
             scrollTo("Hardcore").click()
-            scrollTo("Begin 25m").click()
+            visible(By.text("Begin 25m")).click()
             visible(By.textStartsWith("ends at "))
             screenshot("saved-rule")
             return

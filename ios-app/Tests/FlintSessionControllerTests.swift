@@ -1,5 +1,7 @@
 import XCTest
+import CryptoKit
 import FamilyControls
+import ManagedSettings
 @testable import Flint
 @testable import FlintCore
 
@@ -102,11 +104,20 @@ final class FlintSessionControllerTests: XCTestCase {
         origin: FlintSessionOrigin = .appUI,
         replacing: Bool = true,
         confirmed: Bool = true,
-        selection: FamilyActivitySelection = FamilyActivitySelection()
+        selection: FamilyActivitySelection = FamilyActivitySelection(),
+        allowList: Bool = false
     ) throws -> FlintActiveSession {
         try controller.startBlockNow(
             selection: selection, duration: minutes * 60, breakLevel: level, source: source,
-            origin: origin, replacing: replacing, confirmed: confirmed)
+            origin: origin, replacing: replacing, confirmed: confirmed, allowList: allowList)
+    }
+
+    /// An application-only selection of real (fictional) tokens, so allow-list validation and
+    /// dominance compare actual target sets.
+    private func appSelection(_ names: String...) throws -> FamilyActivitySelection {
+        var selection = FamilyActivitySelection()
+        selection.applicationTokens = try Set(names.map { try fictionalRuleToken($0) as ApplicationToken })
+        return selection
     }
 
     /// The fake shield's second target set: `selectionA` blocks {A, B}, `selectionB` only {A}.
@@ -2055,6 +2066,263 @@ final class FlintSessionControllerTests: XCTestCase {
                                                        calendar: calendar, strategy: .floor)
         XCTAssertNil(floorPlan.warningTime)
     }
+
+    // MARK: Allow List sessions (ADR-012 §7; PC-53)
+
+    func testAllowListStartAppliesTheAllowListShieldAndPersistsTheMode() throws {
+        let c = controller()
+        let apps = try appSelection("keep-1", "keep-2")
+        let session = try start(c, minutes: 30, selection: apps, allowList: true)
+
+        XCTAssertTrue(session.isAllowList)
+        XCTAssertEqual(session.allowListMode, true)
+        XCTAssertEqual(shield.allowListCount, 1)
+        XCTAssertEqual(shield.applyCount, 0, "an allow-list session never writes a block list")
+        XCTAssertEqual(store.active?.allowListMode, true)
+        // The frozen snapshot is applications only, and it is what the shield is written from.
+        XCTAssertEqual(store.sessionSelections[session.id]?.applicationTokens, apps.applicationTokens)
+        XCTAssertNil(store.selection, "an allow list never becomes Today's block-list default")
+        // The out-of-app end is still registered before the shield is written.
+        let entries = log.entries
+        let register = try XCTUnwrap(entries.firstIndex { $0.hasPrefix("register:") })
+        let shieldWrite = try XCTUnwrap(entries.firstIndex(of: "shield-allow"))
+        XCTAssertLessThan(register, shieldWrite)
+        XCTAssertEqual(publications, 1)
+    }
+
+    func testAllowListStartDropsCategoryAndWebsitePicks() throws {
+        var selection = try appSelection("keep-1")
+        selection.categoryTokens = [try fictionalRuleToken("category") as ActivityCategoryToken]
+        selection.webDomainTokens = [try fictionalRuleToken("site") as WebDomainToken]
+        let session = try start(controller(), minutes: 30, selection: selection, allowList: true)
+
+        let frozen = try XCTUnwrap(store.sessionSelections[session.id])
+        XCTAssertEqual(frozen.applicationTokens.count, 1)
+        XCTAssertTrue(frozen.categoryTokens.isEmpty, "a category is not an exception the shield can name")
+        XCTAssertTrue(frozen.webDomainTokens.isEmpty)
+        XCTAssertEqual(shield.allowListCount, 1)
+        XCTAssertEqual(shield.applyCount, 0)
+    }
+
+    func testAllowListStartRefusesASelectionWithNoApplicationBeforeAnyWrite() throws {
+        let c = controller()
+        func expectRefusal(_ selection: FamilyActivitySelection, line: UInt = #line) {
+            let logStart = log.entries.count
+            XCTAssertThrowsError(try start(c, minutes: 30, selection: selection, allowList: true), line: line) { error in
+                XCTAssertEqual(error as? FlintSessionError, .emptyAllowList, line: line)
+                XCTAssertEqual((error as? FlintSessionError)?.errorDescription,
+                               FlintSelectionIssue.emptyAllowList.message, line: line)
+            }
+            XCTAssertNil(store.active, line: line)
+            XCTAssertTrue(store.sessionSelections.isEmpty, line: line)
+            XCTAssertNil(store.selection, line: line)
+            XCTAssertEqual(shield.allowListCount, 0, line: line)
+            XCTAssertEqual(shield.applyCount, 0, line: line)
+            XCTAssertEqual(publications, 0, line: line)
+            XCTAssertFalse(log.entries[logStart...].contains { $0.hasPrefix("register:") },
+                           "nothing is registered for a refused allow list", line: line)
+        }
+        expectRefusal(FamilyActivitySelection())
+        var categories = FamilyActivitySelection()
+        categories.categoryTokens = [try fictionalRuleToken("category") as ActivityCategoryToken]
+        expectRefusal(categories)
+        var sites = FamilyActivitySelection()
+        sites.webDomainTokens = [try fictionalRuleToken("site") as WebDomainToken]
+        expectRefusal(sites)
+    }
+
+    func testAllowListStartRefusesMoreAppsThanTheShieldCap() throws {
+        var tooMany = FamilyActivitySelection()
+        tooMany.applicationTokens = try Set((0...FlintShieldLimits.tokenCap)
+            .map { try fictionalRuleToken("app-\($0)") as ApplicationToken })
+        XCTAssertThrowsError(try start(controller(), minutes: 30, selection: tooMany, allowList: true)) { error in
+            guard let sessionError = error as? FlintSessionError,
+                  case let .tooManyTokens(count, cap) = sessionError else {
+                return XCTFail("expected tooManyTokens, got \(error)")
+            }
+            XCTAssertEqual(count, FlintShieldLimits.tokenCap + 1)
+            XCTAssertEqual(cap, FlintShieldLimits.tokenCap)
+        }
+        XCTAssertNil(store.active)
+        XCTAssertEqual(shield.allowListCount, 0)
+    }
+
+    func testASessionRecordWithoutTheModeKeyIsABlockList() throws {
+        let json = #"{"id":"legacy","name":"Focus","startedAt":793206800,"endsAt":793208600,"# +
+            #""breakLevel":"easy","monitorName":"flint.session.legacy"}"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        let session = try decoder.decode(FlintActiveSession.self, from: Data(json.utf8))
+        XCTAssertNil(session.allowListMode)
+        XCTAssertFalse(session.isAllowList)
+        XCTAssertTrue(session.checkpointed(clock: clock.flintClock).isAllowList == false,
+                      "carrying it through a checkpoint must not invent the mode")
+    }
+
+    func testBlockListStartFingerprintIsByteIdenticalWithoutAllowLists() throws {
+        // The pre-allow-list parameter shape, encoded exactly as the old build encoded it.
+        struct LegacyStartParameters: Encodable {
+            let duration: TimeInterval
+            let tier: BreakLevel
+            let selection: String
+            let name: String
+            let source: FlintSessionSource
+            let origin: String
+            let ownerID: String?
+            let replacing: Bool
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let legacy = LegacyStartParameters(duration: 1800, tier: .easy, selection: "A", name: "Focus",
+                                           source: .manual, origin: FlintSessionOrigin.appUI.rawValue,
+                                           ownerID: nil, replacing: true)
+        let expected = SHA256.hash(data: try encoder.encode(legacy)).map { String(format: "%02x", $0) }.joined()
+        let blockList = FlintSessionStartParameters(duration: 1800, tier: .easy, selection: "A", name: "Focus",
+            source: .manual, origin: FlintSessionOrigin.appUI.rawValue, ownerID: nil, replacing: true)
+        XCTAssertEqual(blockList.fingerprint, expected,
+                       "a block-list request must fingerprint exactly as it did before allow lists")
+        let allowList = FlintSessionStartParameters(duration: 1800, tier: .easy, selection: "A", name: "Focus",
+            source: .manual, origin: FlintSessionOrigin.appUI.rawValue, ownerID: nil, replacing: true,
+            mode: FlintSessionStartParameters.allowListMode)
+        XCTAssertNotEqual(allowList.fingerprint, expected, "the mode is part of the request identity")
+    }
+
+    func testTheSameRequestIDWithADifferentModeConflicts() throws {
+        let c = controller()
+        let block = try appSelection("block-1")
+        _ = try c.startBlockNow(selection: block, duration: 600, breakLevel: .easy, origin: .appUI,
+                                requestID: "request-1", confirmed: true)
+        XCTAssertThrowsError(try c.startBlockNow(selection: try appSelection("keep-1"), duration: 600,
+            breakLevel: .easy, origin: .appUI, requestID: "request-1", confirmed: true, allowList: true)) {
+            XCTAssertEqual($0 as? FlintSessionError, .conflictingStartRequest)
+        }
+        XCTAssertEqual(shield.allowListCount, 0)
+        // The token path compares the same mode-bearing fingerprint.
+        XCTAssertNoThrow(try c.prepareStartToken(selection: block, duration: 600, breakLevel: .easy,
+            origin: .appUI, route: "app-ui.session", operationID: "request-1"))
+        XCTAssertThrowsError(try c.prepareStartToken(selection: block, duration: 600, breakLevel: .easy,
+            origin: .appUI, route: "app-ui.session", operationID: "request-1", allowList: true)) {
+            XCTAssertEqual($0 as? FlintSessionError, .conflictingStartRequest)
+        }
+    }
+
+    func testAnAllowListReplacementOfAnEasyBlockListNeedsConfirmation() throws {
+        let c = controller()
+        _ = try start(c, minutes: 30, level: .easy, selection: try appSelection("block-1"))
+        XCTAssertThrowsError(try start(c, minutes: 30, level: .easy, confirmed: false, selection: try appSelection("keep-1"),
+                                       allowList: true)) {
+            XCTAssertEqual($0 as? FlintSessionError, .needsConfirmation, "block → allow is weakening")
+        }
+        XCTAssertEqual(shield.allowListCount, 0)
+        let replaced = try start(c, minutes: 30, level: .easy, confirmed: true, selection: try appSelection("keep-1"),
+                                 allowList: true)
+        XCTAssertTrue(replaced.isAllowList)
+        XCTAssertEqual(shield.allowListCount, 1)
+        XCTAssertEqual(store.active?.allowListMode, true)
+    }
+
+    func testAnAllowListReplacementOfAHarderBlockListWaits() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60, level: .harder, selection: try appSelection("block-1"))
+        let apps = try appSelection("keep-1")
+        XCTAssertThrowsError(try start(c, minutes: 30, level: .easy, selection: apps, allowList: true)) { error in
+            guard let sessionError = error as? FlintSessionError,
+                  case let .replacementWaiting(remaining) = sessionError else {
+                return XCTFail("expected a Harder wait, got \(error)")
+            }
+            XCTAssertEqual(remaining, 60)
+        }
+        XCTAssertEqual(shield.allowListCount, 0)
+        clock.advance(60)
+        let replaced = try start(c, minutes: 30, level: .easy, selection: apps, allowList: true)
+        XCTAssertTrue(replaced.isAllowList)
+        XCTAssertEqual(shield.allowListCount, 1)
+    }
+
+    func testAnAllowListCannotReplaceAHardcoreBlockList() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60, level: .hardcore, selection: try appSelection("block-1"))
+        XCTAssertThrowsError(try start(c, minutes: 30, level: .easy, selection: try appSelection("keep-1"),
+                                       allowList: true)) { error in
+            guard let sessionError = error as? FlintSessionError,
+                  case .replacementDenied = sessionError else {
+                return XCTFail("expected a Hardcore denial, got \(error)")
+            }
+        }
+        XCTAssertEqual(shield.allowListCount, 0)
+        XCTAssertEqual(store.active?.isAllowList, false)
+    }
+
+    func testABlockListReplacementOfAnAllowListIsWeakening() throws {
+        let c = controller()
+        _ = try start(c, minutes: 30, level: .easy, selection: try appSelection("keep-1"), allowList: true)
+        XCTAssertEqual(shield.allowListCount, 1)
+        XCTAssertThrowsError(try start(c, minutes: 30, level: .easy, confirmed: false, selection: try appSelection("block-1"))) {
+            XCTAssertEqual($0 as? FlintSessionError, .needsConfirmation, "allow → block is weakening")
+        }
+        XCTAssertEqual(shield.applyCount, 0)
+        let replaced = try start(c, minutes: 30, level: .easy, confirmed: true,
+                                 selection: try appSelection("block-1"))
+        XCTAssertFalse(replaced.isAllowList)
+        XCTAssertEqual(shield.applyCount, 1)
+    }
+
+    func testAnAllowListReplacementDominatesOnlyWithASubsetOfTheKeptApps() throws {
+        shield.targetsFromTokens = true
+        let c = controller()
+        _ = try start(c, minutes: 60, level: .harder,
+                      selection: try appSelection("keep-1", "keep-2"), allowList: true)
+        XCTAssertEqual(shield.allowListCount, 1)
+
+        // A superset frees an app the running session kept available: weaker, so it waits.
+        XCTAssertThrowsError(try start(c, minutes: 60, level: .harder,
+                                       selection: try appSelection("keep-1", "keep-2", "keep-3"),
+                                       allowList: true)) { error in
+            guard let sessionError = error as? FlintSessionError,
+                  case .replacementWaiting = sessionError else {
+                return XCTFail("a superset is weaker and must wait, got \(error)")
+            }
+        }
+        XCTAssertEqual(shield.allowListCount, 1)
+
+        // A subset keeps at least as much blocked for at least as long: it dominates, so only the
+        // replace flow's explicit confirmation is needed, not a wait.
+        let narrower = try start(c, minutes: 60, level: .harder, confirmed: true,
+                                 selection: try appSelection("keep-1"), allowList: true)
+        XCTAssertTrue(narrower.isAllowList)
+        XCTAssertEqual(shield.allowListCount, 2)
+        XCTAssertEqual(store.sessionSelections[narrower.id]?.applicationTokens.count, 1)
+    }
+
+    func testReconcileReappliesTheAllowListAndNeverThePickerDefault() throws {
+        let c = controller()
+        _ = try start(c, minutes: 60, selection: try appSelection("keep-1"), allowList: true)
+        XCTAssertEqual(shield.allowListCount, 1)
+
+        // Today's block-list default is a different selection: a re-apply must not use it.
+        store.selection = try appSelection("picker-default")
+        XCTAssertEqual(controller().reconcile().outcome, .running)
+        XCTAssertEqual(shield.allowListCount, 2)
+        XCTAssertEqual(shield.applyCount, 0, "reconcile never writes the picker's block list")
+
+        // A lost frozen snapshot is not re-applied from the picker either: no write, no clear.
+        store.sessionSelections.removeAll()
+        XCTAssertEqual(controller().reconcile().outcome, .running)
+        XCTAssertEqual(shield.allowListCount, 2)
+        XCTAssertEqual(shield.applyCount, 0)
+        XCTAssertEqual(shield.clearCount, 0)
+        XCTAssertEqual(store.selection?.applicationTokens.count, 1, "the picker default is untouched")
+        _ = c
+    }
+
+    func testMonitorIntervalStartReappliesTheAllowListShield() throws {
+        let c = controller()
+        let session = try start(c, minutes: 60, selection: try appSelection("keep-1"), allowList: true)
+        XCTAssertEqual(shield.allowListCount, 1)
+        c.handleMonitorEvent(.intervalDidStart, activity: session.monitorName)
+        XCTAssertEqual(shield.allowListCount, 2)
+        XCTAssertEqual(shield.applyCount, 0, "the monitor never writes a block list for it")
+    }
 }
 
 // MARK: - Fakes
@@ -2072,19 +2340,29 @@ private final class FakeShield: FlintSessionShielding {
     let log: CallLog
     var nextCounts = FlintSelectionCounts(applications: 3)
     var applyCount = 0
+    var allowListCount = 0
     var clearCount = 0
     var denyAppRemoval: Bool?
+    /// Derive targets from the real tokens instead of the two fixed sets below (allow lists).
+    var targetsFromTokens = false
 
     init(log: CallLog) { self.log = log }
 
     func counts(of selection: FamilyActivitySelection) -> FlintSelectionCounts { nextCounts }
     func targets(of selection: FamilyActivitySelection) -> FlintSessionTargets {
-        FlintSessionTargets(applications: selection.includeEntireCategory ? ["A"] : ["A", "B"])
+        if targetsFromTokens {
+            return FlintSessionTargets(applications: Set(selection.applicationTokens.map { AnyHashable($0) }))
+        }
+        return FlintSessionTargets(applications: selection.includeEntireCategory ? ["A"] : ["A", "B"])
     }
     func fingerprint(of selection: FamilyActivitySelection) -> String { selection.includeEntireCategory ? "B" : "A" }
     func applyBlockList(_ selection: FamilyActivitySelection) throws {
         applyCount += 1
         log.entries.append("shield")
+    }
+    func applyAllowList(_ selection: FamilyActivitySelection) throws {
+        allowListCount += 1
+        log.entries.append("shield-allow")
     }
 
     /// Observes the moment of each release.

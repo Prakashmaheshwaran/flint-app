@@ -52,6 +52,16 @@ object NextEvaluationBoundary {
             }
             rule.expiresAtEpochMs?.takeIf { it > nowMs }?.let(candidates::add)
             val schedule = rule.schedule ?: continue
+            val dated = schedule.date
+            if (dated != null) {
+                // A dated one-time window yields exactly one occurrence, so only its own start
+                // and end can change the decision — at any distance ahead, not just eight days.
+                val occurrence = ScheduleOccurrences.onDate(schedule, zone, dated) ?: continue
+                for (instant in listOf(occurrence.startsAtEpochMs, occurrence.endsAtEpochMs)) {
+                    if (instant > nowMs && !rule.isExpired(instant)) candidates += instant
+                }
+                continue
+            }
             val scheduleCandidates = mutableSetOf<Long>()
             // A weekly gate has a transition within eight local days. The preceding date
             // also covers a DST overlap still in progress at the caller's instant.
@@ -89,6 +99,8 @@ object NextEvaluationBoundary {
     }
 
     private fun active(schedule: Schedule, atMs: Long, zone: ZoneId): Boolean {
+        // A dated window is never weekly; callers evaluate it from its occurrence instead.
+        if (schedule.date != null) return ScheduleOccurrences.containing(schedule, zone, atMs) != null
         val local = Instant.ofEpochMilli(atMs).atZone(zone)
         return BlockDecisionEngine().scheduleActive(schedule, local.hour * 60 + local.minute, local.dayOfWeek.value)
     }
