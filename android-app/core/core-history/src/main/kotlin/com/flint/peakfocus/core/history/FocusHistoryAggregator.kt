@@ -22,6 +22,13 @@ data class FocusSession(
     val terminalRecorded: Boolean = false,
     /** intervals retain possible coverage; focusedMs also discounts these placement budgets. */
     val uncertainGaps: List<UncertainFocusGap> = emptyList(),
+    /** F01: planned rounds of a Pomodoro parent's `started` event, else null. */
+    val pomodoroRounds: Int? = null,
+    /**
+     * F01 rounds proven by this history: every round for a committed completion, otherwise the
+     * highest planned rest `k` actually observed. A deadline alone proves no round.
+     */
+    val pomodoroRoundsCompleted: Int = 0,
 ) {
     val focusedMs: Long get() = FocusHistoryBounds.lowerBound(listOf(this))
 }
@@ -292,10 +299,21 @@ object FocusHistoryAggregator {
             for (pass in relatedPasses.filter { it.uncertainTime }) {
                 uncertainGaps += uncertainGap(maximum = 3_600_000)
             }
+            // A planned rest is part of the commitment, not an ordinary break the user asked
+            // for: it never counts against the break tally (§6).
+            val ordinaryBreaks = breaks.count { it.kind != PLANNED_BREAK_KIND }
+            val plannedRounds = start.rounds?.takeIf { it > 0 }
+            val completedRounds = when {
+                plannedRounds == null -> 0
+                validTerminal && terminal?.knownType == HistoryEventType.COMPLETED -> plannedRounds
+                else -> breaks.filter { it.kind == PLANNED_BREAK_KIND && it.id !in rejectedTimeIds }
+                    .mapNotNull { it.grant?.substringAfterLast(".rest")?.toIntOrNull() }
+                    .maxOrNull()?.coerceIn(0, plannedRounds) ?: 0
+            }
             FocusSession(id, start.name ?: "Focus", start.at, end, plannedEnd, outcome, inferred,
-                intervals, breaks.size.takeIf { it > 0 },
+                intervals, ordinaryBreaks.takeIf { it > 0 },
                 ordered.count { it.knownType == HistoryEventType.OPEN_INTERCEPTED }.takeIf { it > 0 }, terminal != null,
-                uncertainGaps)
+                uncertainGaps, plannedRounds, completedRounds)
         }
     }
 

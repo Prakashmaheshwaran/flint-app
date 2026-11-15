@@ -67,6 +67,11 @@ data class BlockScreenState(
     val openCreditRequestScope: String? = null,
     /** Combined protection may outlast the headline limit's own reset. */
     val combinedEnd: Boolean = false,
+    /**
+     * F01: "Focus round 2 of 4 · rest at 10:25" while a Pomodoro parent's focus phase blocks.
+     * [remainingMillis] then counts to the rest, not to the chain end.
+     */
+    val pomodoroNote: String? = null,
 )
 
 /** How long the HARDER-level control must be held before `onBreakRequested` fires. */

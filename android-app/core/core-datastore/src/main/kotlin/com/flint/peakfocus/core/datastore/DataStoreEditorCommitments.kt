@@ -259,10 +259,21 @@ class DataStoreEditorCommitmentStore(
         }
         var state = prepare(prefs, now)
         require(rule.id.startsWith(CONTRACT_TIMER_ID_PREFIX) && rule.schedule == null && rule.enabled)
+
         require(rule.targets.apps.isNotEmpty() && rule.targets.apps.none { it.packageName.isBlank() })
         // A block list may not spend the floor on its own escape surfaces. An allow list only
         // keeps apps reachable, so naming a floor app there is harmless (mirrors the editor).
         require(rule.targets.allowListMode || rule.targets.apps.none { it.packageName in floor(safety) })
+        // A Pomodoro parent's deadline is exactly its frozen plan's chain end (§1/§2).
+        val planError = rule.pomodoro?.let { plan ->
+            when {
+                PomodoroPlan.validationError(plan) != null -> PomodoroPlan.validationError(plan)
+                !isValidNewSessionDuration(plan.totalMs) -> "Choose a duration of at most 24 hours."
+                rule.expiresAtEpochMs != now.wallEpochMs + plan.totalMs -> "Choose a valid Pomodoro plan."
+                else -> null
+            }
+        }
+        if (planError != null) return@transact TimerStartResult.Rejected(planError)
         require(isValidNewSessionDuration((rule.expiresAtEpochMs ?: 0) - now.wallEpochMs))
         val current = prefs.editorRules()
         if (state.causes.size >= MAX_EDITOR_CAUSES) return@transact TimerStartResult.Rejected("Protection capacity is full. Finish an existing commitment and try again.")

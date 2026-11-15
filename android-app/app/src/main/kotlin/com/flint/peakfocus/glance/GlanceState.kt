@@ -54,6 +54,15 @@ data class ActiveGlanceCause(
     val tier: GlanceTier,
     val logicalEndElapsedMs: Long?,
     val kind: GlanceCauseKind = GlanceCauseKind.UNKNOWN,
+    /** F01: "Focus round 2 of 4" / "Rest", or null when the surface has no phase. */
+    val phase: String? = null,
+    /** Wall estimate of the phase end; a reader must not describe the phase past it. */
+    val phaseEndsAtEpochMs: Long? = null,
+    /**
+     * F01: the commitment is in a planned rest, so its own restrictions are not enforcing. The
+     * parent is still the active commitment; only the headline must not claim protection.
+     */
+    val resting: Boolean = false,
 )
 
 data class NextGlanceSession(val name: String, val startsAtEpochMs: Long)
@@ -169,12 +178,30 @@ object GlanceDisplayMapper {
                     status = "Planned end reached", detail = "Open Flint to check protection",
                 )
                 if (end == null && cause.tier != GlanceTier.EASY) return base
+                // F01: a phase is only described while the read is inside it; past the phase
+                // end the widget shows the parent and asks for a new check instead. A planned
+                // rest is not protection of its own targets, so it never reads "Protection
+                // active": the parent is still committed and focus resumes at the phase end.
+                val phaseFresh = cause.phase != null && cause.phaseEndsAtEpochMs?.let { it > nowEpochMs } == true
+                val phaseStale = cause.phase != null && !phaseFresh
+                if (phaseStale) return available.copy(
+                    status = "Pomodoro phase needs a new check",
+                    detail = "${cause.name.take(64)} · Open Flint to check the next round",
+                    refreshAtElapsedMs = checked!! + MAX_AGE_MS,
+                )
+                val resting = phaseFresh && cause.resting
                 available.copy(
-                    status = "Protection active at last check",
-                    detail = "${cause.name.take(64)} · ${cause.tier.label}" +
+                    status = if (resting) "Rest · focus resumes ${at(cause.phaseEndsAtEpochMs!!)}"
+                        else "Protection active at last check",
+                    detail = if (resting) "${cause.name.take(64)} · Planned rest · ${cause.tier.label}"
+                    else if (phaseFresh)
+                        "${cause.name.take(64)} · ${cause.phase} · Until ${at(cause.phaseEndsAtEpochMs!!)}"
+                    else "${cause.name.take(64)} · ${cause.tier.label}" +
                         (end?.let { " · Until ${atElapsed(it)}" } ?: " · Until ended in Flint"),
-                    countdownEndElapsedMs = end.takeIf { cause.kind == GlanceCauseKind.FOCUS_SESSION },
-                    refreshAtElapsedMs = end?.let { minOf(refresh, it) } ?: refresh,
+                    countdownEndElapsedMs = (if (phaseFresh) nowElapsedMs + (cause.phaseEndsAtEpochMs!! - nowEpochMs)
+                        else end).takeIf { cause.kind == GlanceCauseKind.FOCUS_SESSION },
+                    refreshAtElapsedMs = listOfNotNull(refresh, end,
+                        cause.phaseEndsAtEpochMs?.takeIf { phaseFresh }?.let { nowElapsedMs + (it - nowEpochMs) }).min(),
                     session = if (cause.kind == GlanceCauseKind.FOCUS_SESSION && id != null)
                         GlanceOngoingSession(id, end) else null,
                     // RemoteViews may outlive this process. Progress always describes an update,

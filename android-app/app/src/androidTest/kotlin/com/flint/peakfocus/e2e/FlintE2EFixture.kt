@@ -275,6 +275,7 @@ abstract class FlintE2EFixture {
             refreshAccessibilityCache()
             device.findObject(selector)?.let { return it }
             // Editors have a fixed footer; a screen-relative swipe can start
+
             // outside the LazyColumn and never move it. Use its actual viewport.
             // UiAutomator's findObject returns the innermost match, so a horizontal chip
             // row nested in a vertical sheet would win and each swipe would only nudge the

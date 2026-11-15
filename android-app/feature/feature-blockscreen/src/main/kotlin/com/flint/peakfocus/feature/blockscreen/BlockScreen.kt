@@ -426,6 +426,18 @@ private fun BlockWords(
                 textAlign = TextAlign.Center,
             )
         }
+        state.pomodoroNote?.let { note ->
+            Spacer(Modifier.height(8.dp))
+            EntranceSlot(entrance, step = 3) {
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FlintPalette.EmberText,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.semantics { contentDescription = note },
+                )
+            }
+        }
         EntranceSlot(entrance, step = 5) {
             // Presence is independent of the entrance: the pill collapses away when the end
             // becomes unknown and expands back when a countdown starts.
