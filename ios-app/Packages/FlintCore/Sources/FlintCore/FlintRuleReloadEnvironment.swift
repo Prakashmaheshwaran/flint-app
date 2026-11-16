@@ -15,7 +15,7 @@ enum FlintDesiredRules {
                                          recoveryDirectory: URL? = FlintRuleRecovery.directory,
                                          nativeActivities: Set<String>? = nil,
                                          ledgerState: (() -> FlintLedgerState?)? = nil) -> [Rule]? {
-        guard let defaults, defaults.synchronize() else { return nil }
+        guard let defaults, defaults.flintSynchronize() else { return nil }
         let initialization = FlintRuleInitialization.receipt(in: defaults)
         guard initialization != .invalid, initialization != .preparing else { return nil }
         guard FlintRuleRecovery.available(key.original, defaults: defaults, directory: recoveryDirectory),
@@ -102,7 +102,7 @@ enum FlintDesiredRules {
 
     static func save<Rule: FlintGatedRule>(_ rules: [Rule], key: Key, to defaults: UserDefaults?,
         encode: ([Rule]) throws -> Data = { try JSONEncoder().encode($0) }) -> Bool {
-        guard let defaults, defaults.synchronize(), Set(rules.map(\.id)).count == rules.count,
+        guard let defaults, defaults.flintSynchronize(), Set(rules.map(\.id)).count == rules.count,
               rules.allSatisfy({ $0.validationIssue == nil && $0.protection != nil }),
               let data = try? encode(rules),
               let marker = try? JSONEncoder().encode(Marker(schema: 1)) else { return false }
@@ -117,13 +117,13 @@ enum FlintDesiredRules {
                 else { defaults.removeObject(forKey: key.rawValue) }
                 if let previousMarker { defaults.set(previousMarker, forKey: key.marker) }
                 else { defaults.removeObject(forKey: key.marker) }
-                defaults.synchronize()
+                defaults.flintSynchronize()
             }
         }
         defaults.set(data, forKey: key.rawValue)
-        guard defaults.synchronize(), defaults.data(forKey: key.rawValue) == data else { return false }
+        guard defaults.flintSynchronize(), defaults.data(forKey: key.rawValue) == data else { return false }
         defaults.set(marker, forKey: key.marker)
-        guard defaults.synchronize(), defaults.data(forKey: key.marker) == marker else { return false }
+        guard defaults.flintSynchronize(), defaults.data(forKey: key.marker) == marker else { return false }
         saved = true
         return true
     }

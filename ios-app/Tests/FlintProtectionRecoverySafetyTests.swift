@@ -171,13 +171,14 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
 
     func testScheduleUpgradeBaselineAndMetadataEditsDoNotRestartButFailedEditRetainsBaseline() throws {
         try withDefaults { defaults in
-            let original = FlintScheduleRule(id: "x", name: "Original", schedule: .init(startHour: 9, endHour: 17), allowListMode: true)
+            let original = FlintScheduleRule(id: "x", name: "Original", schedule: .init(startHour: 9, endHour: 17),
+                allowListMode: true, protection: .init(timeZoneID: "UTC"))
             let center = FakeActivityCenter()
             center.held[.init(original.monitorName)] = activity(original.monitorName)
             var report = FlintArmingHealth.DomainReport(enabled: 0, attempted: 0, armed: 0, failures: [])
             let env = FlintRuleReloadEnvironment(defaults: defaults, center: center,
                 clearStore: { _ in XCTFail("no removal or invalid selection") }, applyOpenShield: { _ in XCTFail(); return false },
-                record: { _, value in report = value }, existingWebStores: { false })
+                record: { _, value in report = value }, clock: fixedClock, existingWebStores: { false })
             let controller = FlintSchedulesController(environment: env)
             defaults.set(try JSONEncoder().encode([original]), forKey: FlintDesiredRules.Key.schedules.rawValue)
             XCTAssertTrue(controller.reload().isEmpty)
@@ -241,6 +242,14 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
         XCTAssertEqual(cleared, 0)
         XCTAssertTrue(center.stops.isEmpty)
         XCTAssertEqual(failed.failures.count, 1)
+    }
+
+    private var fixedClock: FlintClock {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 1, day: 15, hour: 3))!
+        return FlintClock(now: { now }, monotonic: { 50_000 }, bootSessionID: { "boot-fixed" },
+            calendar: { calendar })
     }
 
     private func activity(_ name: String, hour: Int = 9) -> FlintActivityRegistration {

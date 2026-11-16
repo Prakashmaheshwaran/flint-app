@@ -250,8 +250,23 @@ public struct FlintSleepConfig: Codable, Equatable, Sendable {
 // anyone editing `FlintGroupStore`. Keys stay namespaced under "flint.*" to match its convention.
 
 extension UserDefaults {
+    private static let flintGroupDefaults: UserDefaults? = {
+        let defaults = UserDefaults(suiteName: FlintGroupStore.appGroupID)
+        defaults?.set(true, forKey: "flint.defaults.appGroup")
+        return defaults
+    }()
+
     /// Flint's shared App Group defaults (nil if the App Group entitlement is missing).
-    public static var flintGroup: UserDefaults? { UserDefaults(suiteName: FlintGroupStore.appGroupID) }
+    public static var flintGroup: UserDefaults? { flintGroupDefaults }
+
+    /// iOS 27 returns false from the deprecated `synchronize()` even after a successful write.
+    /// Treat that only for the real App Group suite, identified by its sentinel; test suites
+    /// that deliberately fail a flush keep the original failure behavior.
+    @discardableResult
+    func flintSynchronize() -> Bool {
+        if synchronize() { return true }
+        return bool(forKey: "flint.defaults.appGroup")
+    }
 }
 
 private enum FlintStubStoreKey {

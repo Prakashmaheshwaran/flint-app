@@ -719,7 +719,16 @@ public final class FlintEmergencyPassController {
             return .failure(.unavailable)
         }
         guard Self.hasValidRecovery(snapshot) else { return .failure(.unavailable) }
-        guard let recovery = snapshot.emergencyRecovery else { return status() }
+        // No committed recovery means there is nothing to drain. Do not require a readable
+        // rule scope here: on a fresh install the rule domains are initialized only after this
+        // policy gate succeeds, so asking for their scope would deadlock initialization. A
+        // still-pending accepted installation is different: its scope must not be inferred.
+        guard let recovery = snapshot.emergencyRecovery else {
+            if snapshot.sessionAuthority?.latest?.phase == .installing {
+                return .failure(.scopeUnavailable)
+            }
+            return .success(Self.status(snapshot, at: FlintLedgerInstant(clock: env.clock), active: false))
+        }
         guard snapshot.operation(recovery.operationID)?.kind == "pass" || snapshot.pass.lastOperationID == recovery.operationID else {
             return .failure(.unavailable)
         }

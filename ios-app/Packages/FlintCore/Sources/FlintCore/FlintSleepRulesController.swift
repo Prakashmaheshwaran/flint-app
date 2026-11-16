@@ -80,9 +80,9 @@ public final class FlintSleepRulesController {
             saved.nightBreakLevel = nightTier; saved.morningBreakLevel = morningTier
             guard let data = try? JSONEncoder().encode(saved) else { return .unavailable }
             defaults.set(data, forKey: Self.key)
-            guard defaults.synchronize() else { return .unavailable }
+            guard defaults.flintSynchronize() else { return .unavailable }
             defaults.set(1, forKey: Self.key + ".initialized")
-            return defaults.synchronize() ? result : .unavailable
+            return defaults.flintSynchronize() ? result : .unavailable
         } ?? .unavailable
     }
 

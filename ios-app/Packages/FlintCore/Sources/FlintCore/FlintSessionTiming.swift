@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 // MARK: - Auto-clear plan
 
@@ -137,6 +138,20 @@ public struct FlintClock {
     )
 
     static func readBootSessionID() -> String? {
+        if let uuid = readBootSessionUUID() { return uuid }
+        // iOS 27 denies kern.bootsessionuuid to third-party apps (EPERM). kern.boottime is
+        // still available and is stable across the host and its extensions for one boot, so
+        // use its whole-second boot instant as the shared identity. A wall-clock change may
+        // move it; callers already treat a changed identity as uncertain, never as extra time.
+        var bootTime = timeval()
+        var size = MemoryLayout<timeval>.stride
+        guard sysctlbyname("kern.boottime", &bootTime, &size, nil, 0) == 0, bootTime.tv_sec > 0 else {
+            return nil
+        }
+        return "boottime:\(bootTime.tv_sec)"
+    }
+
+    private static func readBootSessionUUID() -> String? {
         var size = 0
         guard sysctlbyname("kern.bootsessionuuid", nil, &size, nil, 0) == 0, size > 1 else { return nil }
         var buffer = [CChar](repeating: 0, count: size)

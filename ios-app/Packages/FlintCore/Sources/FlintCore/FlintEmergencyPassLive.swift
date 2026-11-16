@@ -191,11 +191,11 @@ extension FlintEmergencyPassRuleEffects {
             // ordinary Sleep editor here would re-enter rule authorization/outbox draining.
             let data = try JSONEncoder().encode(sleep)
             defaults.set(data, forKey: "flint.sleepConfig")
-            guard defaults.synchronize(), defaults.data(forKey: "flint.sleepConfig") == data else {
+            guard defaults.flintSynchronize(), defaults.data(forKey: "flint.sleepConfig") == data else {
                 throw FlintEmergencyPassError.applying
             }
             defaults.set(1, forKey: "flint.sleepConfig.initialized")
-            guard defaults.synchronize() else { throw FlintEmergencyPassError.applying }
+            guard defaults.flintSynchronize() else { throw FlintEmergencyPassError.applying }
         }
     }
 

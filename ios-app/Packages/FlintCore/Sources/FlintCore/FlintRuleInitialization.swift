@@ -117,7 +117,7 @@ enum FlintRuleInitialization {
                 if defaults.object(forKey: key.ownership) == nil {
                     guard env.acceptSave() else { return false }
                     defaults.set(ownership, forKey: key.ownership)
-                    guard defaults.synchronize(), defaults.data(forKey: key.ownership) == ownership else { return false }
+                    guard defaults.flintSynchronize(), defaults.data(forKey: key.ownership) == ownership else { return false }
                 }
                 continue
             }
@@ -126,7 +126,7 @@ enum FlintRuleInitialization {
                 // Remember established ownership even if the OS later drops this registration
                 // (including after a wall edit). It cannot then masquerade as a never-used feature.
                 defaults.set(marker, forKey: key.marker)
-                guard defaults.synchronize(), defaults.data(forKey: key.marker) == marker else { return false }
+                guard defaults.flintSynchronize(), defaults.data(forKey: key.marker) == marker else { return false }
                 continue
             }
             let saved: Bool
@@ -150,7 +150,7 @@ enum FlintRuleInitialization {
     /// Must hold the initialization lock, before any session/pass operation can create ledger
     /// evidence. Existing installations are left untouched; their missing domains fail closed.
     static func prepare(environment env: FlintRuleReloadEnvironment) -> Bool {
-        guard let defaults = env.defaults, defaults.synchronize() else { return false }
+        guard let defaults = env.defaults, defaults.flintSynchronize() else { return false }
         let state = receipt(in: defaults)
         switch state {
         case .complete: return true
@@ -174,7 +174,7 @@ enum FlintRuleInitialization {
             }
             guard env.acceptSave() else { return false }
             defaults.set(preparing, forKey: receiptKey)
-            guard defaults.synchronize(), defaults.data(forKey: receiptKey) == preparing else { return false }
+            guard defaults.flintSynchronize(), defaults.data(forKey: receiptKey) == preparing else { return false }
         }
         for key in FlintRuleStoreKey.allCases {
             // Only this receipt's known empty partial after-image can be resumed.
@@ -185,12 +185,12 @@ enum FlintRuleInitialization {
         for key in FlintRuleStoreKey.allCases {
             defaults.set(empty, forKey: key.rawValue); defaults.set(marker, forKey: key.marker)
         }
-        guard defaults.synchronize(), FlintRuleStoreKey.allCases.allSatisfy({
+        guard defaults.flintSynchronize(), FlintRuleStoreKey.allCases.allSatisfy({
             defaults.data(forKey: $0.rawValue) == empty && defaults.data(forKey: $0.marker) == marker
         }) else { return false }
         defaults.set(complete, forKey: receiptKey)
-        guard defaults.synchronize(), defaults.data(forKey: receiptKey) == complete else {
-            defaults.set(preparing, forKey: receiptKey); defaults.synchronize()
+        guard defaults.flintSynchronize(), defaults.data(forKey: receiptKey) == complete else {
+            defaults.set(preparing, forKey: receiptKey); defaults.flintSynchronize()
             return false
         }
         return true

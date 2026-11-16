@@ -115,13 +115,13 @@ public struct FlintRemovalGuardPreference: Codable, Equatable, Sendable {
 
         public init(defaults: UserDefaults) {
             self.init(read: {
-                guard defaults.synchronize() else { throw Error.unavailable }
+                guard defaults.flintSynchronize() else { throw Error.unavailable }
                 guard let object = defaults.object(forKey: FlintRemovalGuardPreference.key) else { return nil }
                 guard let data = object as? Data else { throw Error.unavailable }
                 return data
             }, write: { data in
                 defaults.set(data, forKey: FlintRemovalGuardPreference.key)
-                guard defaults.synchronize() else { throw Error.unavailable }
+                guard defaults.flintSynchronize() else { throw Error.unavailable }
             })
         }
 

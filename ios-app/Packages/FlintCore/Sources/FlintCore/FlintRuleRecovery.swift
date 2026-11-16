@@ -72,9 +72,9 @@ enum FlintRuleRecovery {
             let reference = Reference(flintRuleRecoveryFile: 1, sha256: hash, byteCount: bytes.count)
             let fields = try JSONSerialization.jsonObject(with: JSONEncoder().encode(reference))
             defaults.set(fields, forKey: key)
-            guard defaults.synchronize(), let stored = defaults.object(forKey: key),
+            guard defaults.flintSynchronize(), let stored = defaults.object(forKey: key),
                   read(stored, key: key, directory: directory) == bytes else {
-                defaults.removeObject(forKey: key); defaults.synchronize()
+                defaults.removeObject(forKey: key); defaults.flintSynchronize()
                 return false
             }
             return true
