@@ -429,6 +429,41 @@ class TargetProtectionProjectionTest {
         assertEquals(true, read(stored, TargetRef.Site("example.com"), fresh).blockingNow)
     }
 
+    // R-30: an observed mount outcome must reach the per-target projection. A bound Path A
+    // plus a live covering rule previously read as "enforcing now" even when the shield
+    // delivered nothing, because only detector liveness and publication were consulted.
+    @Test fun aReportedMountOutcomeWithholdsTheEnforcingClaimForAppsAndLimits() {
+        val stored = snapshot(rule())
+        val published = StorageState.Ready(stored.projectedRulesForRead(now))
+        assertEquals(true, read(stored, env = environment().copy(publishedRules = published)).blockingNow)
+        for (reason in listOf(ProtectionStatus.REASON_BLOCK_SURFACE_MOUNT_FAILED,
+                ProtectionStatus.REASON_BLOCK_SURFACE_FALLBACK_ONLY)) {
+            val reported = environment().copy(publishedRules = published,
+                status = environment().status.copy(detectors = environment().status.detectors.copy(
+                    degradedReasons = setOf(reason))))
+            val view = read(stored, env = reported)
+            assertEquals(Readiness.Ready, view.readiness)
+            assertTrue(view.coveringCauses.single().active)
+            assertNull(view.coveringCauses.single().enforcingNow)
+            assertNull(view.blockingNow)
+            assertNull(view.blockingUntilWall)
+            // Recovery and scope facts are display-only and must not invent a grant either.
+            assertNull(view.openCredit?.activeCreditEndsAtWall)
+        }
+        // A Time-limit cause carries its own publication, so the same withholding must hold
+        // for an exhausted limit that is otherwise enforcing.
+        val limitStored = snapshot(times = listOf(TimeLimit(pkg, 0)))
+        val healthyLimit = read(limitStored, env = environment().copy(
+            publishedRules = StorageState.Ready(limitStored.projectedRulesForRead(now))))
+        assertEquals(true, healthyLimit.coveringCauses.single().enforcingNow)
+        val limitView = read(limitStored, env = environment().copy(
+            publishedRules = StorageState.Ready(limitStored.projectedRulesForRead(now)),
+            status = environment().status.copy(detectors = environment().status.detectors.copy(
+                degradedReasons = setOf(ProtectionStatus.REASON_BLOCK_SURFACE_MOUNT_FAILED)))))
+        assertNull(limitView.coveringCauses.single().enforcingNow)
+        assertNull(limitView.blockingNow)
+    }
+
     @Test fun freshRetainedBrowserContextResolvesOnlyDomainCausesWhileFlintIsForeground() {
         val domain = rule("domain").copy(targets = BlockTargets(domains = setOf(DomainRef("example.com"))))
         val browserApp = rule("browser-app", BreakLevel.HARDCORE).copy(targets = BlockTargets(apps = setOf(AppRef(chrome))))
