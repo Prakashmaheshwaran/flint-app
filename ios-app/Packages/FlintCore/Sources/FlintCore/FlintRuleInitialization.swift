@@ -139,7 +139,7 @@ enum FlintRuleInitialization {
                 // shipped install keeps its own saved `[]`, which takes the ownership branch
                 // above). A lost array write leaves only the closed established reading.
                 defaults.set(neverUsedProof, forKey: key.neverUsed)
-                guard defaults.synchronize(), defaults.data(forKey: key.neverUsed) == neverUsedProof else { return false }
+                guard defaults.flintSynchronize(), defaults.data(forKey: key.neverUsed) == neverUsedProof else { return false }
                 saved = FlintDesiredRules.save([FlintOpenLimitRule](), key: key, to: defaults)
             }
             guard saved else { return false }

@@ -250,22 +250,48 @@ public struct FlintSleepConfig: Codable, Equatable, Sendable {
 // anyone editing `FlintGroupStore`. Keys stay namespaced under "flint.*" to match its convention.
 
 extension UserDefaults {
-    private static let flintGroupDefaults: UserDefaults? = {
-        let defaults = UserDefaults(suiteName: FlintGroupStore.appGroupID)
-        defaults?.set(true, forKey: "flint.defaults.appGroup")
-        return defaults
-    }()
+    private static let flintGroupDefaults: UserDefaults? =
+        UserDefaults(suiteName: FlintGroupStore.appGroupID)
 
     /// Flint's shared App Group defaults (nil if the App Group entitlement is missing).
     public static var flintGroup: UserDefaults? { flintGroupDefaults }
 
-    /// iOS 27 returns false from the deprecated `synchronize()` even after a successful write.
-    /// Treat that only for the real App Group suite, identified by its sentinel; test suites
-    /// that deliberately fail a flush keep the original failure behavior.
+    /// The iOS release whose deprecated `synchronize()` reports a false failure.
+    static let flintFalseFlushMajorVersion = 27
+
+    /// iOS 27 returns false from the deprecated `synchronize()` even after a successful App
+    /// Group write, which previously made every rule, web, removal-guard and pass store report
+    /// "unavailable". That false negative must not become a blanket `return true`, because those
+    /// stores are security-sensitive and their fail-closed read-back checks are the only thing
+    /// catching a genuinely unavailable container.
     @discardableResult
     func flintSynchronize() -> Bool {
-        if synchronize() { return true }
-        return bool(forKey: "flint.defaults.appGroup")
+        Self.flintSynchronizeDecision(
+            flush: synchronize(),
+            osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
+            isAppGroupInstance: Self.flintGroup.map { $0 === self } == true,
+            containerAvailable: FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: FlintGroupStore.appGroupID) != nil,
+            appGroupFlush: { CFPreferencesAppSynchronize(FlintGroupStore.appGroupID as CFString) })
+    }
+
+    /// The whole exemption rule as a pure decision, so every branch is testable without forcing
+    /// a real App Group flush to fail. A reported success always wins, so healthy hosts and older
+    /// releases are untouched. Only a *false* flush, on the release that misreports it, may be
+    /// overridden; only for the App Group instance itself; and only when the container exists and
+    /// cfprefsd confirms the domain was flushed. Everything else keeps the failure, so a full disk
+    /// or missing entitlement still surfaces instead of being masked.
+    static func flintSynchronizeDecision(
+        flush: Bool,
+        osMajorVersion: Int,
+        isAppGroupInstance: Bool,
+        containerAvailable: Bool = true,
+        appGroupFlush: () -> Bool
+    ) -> Bool {
+        if flush { return true }
+        guard osMajorVersion >= flintFalseFlushMajorVersion else { return false }
+        guard isAppGroupInstance, containerAvailable else { return false }
+        return appGroupFlush()
     }
 }
 
