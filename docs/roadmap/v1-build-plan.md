@@ -14,6 +14,17 @@ The lane plan below records that build; it does not imply every planned feature
 or release gate is complete. See the [capability acceptance ledger](../acceptance/v1-capability-ledger.md)
 for the recorded evidence and open acceptance work.
 
+Current state re-checked 2026-11-15 against `main` at
+[`7091924`](https://github.com/Prakashmaheshwaran/flint-app/tree/7091924): every lane
+below has merged source, and the wave-2 gaps the plan listed as future work
+(date-specific one-shots, arbitrary future starts, the repeated Pomodoro chain,
+immediate Allow List sessions, Android app PIN, offline iOS legal screens) merged
+through #255–#261. They carry unit or fixture evidence; **no** capability is
+`DEVICE-VERIFIED`. What remains is hardware acceptance, store/account work owned by
+a human, Android automation and Android browser private-mode lockdown (still absent),
+and the parked editor-domain/lifecycle drafts. Live release readback still shows only
+v0.1.0 (2026-07-03); no tag or release exists for this merged v1 tree.
+
 ## Branch and merge policy
 
 - During the supervised build, lane work branched from and landed through focused
@@ -42,7 +53,17 @@ for the recorded evidence and open acceptance work.
 
 - Apple Developer account: Family Controls (Distribution) granted to the account
   2026-11-01 and enabled on the five Screen Time App IDs 2026-11-05; still to do —
-  register the widget App ID, profiles, App Store Connect record, TestFlight.
-- Google Play Console: upload key and Play App Signing, declarations, review.
+  register the `app.flint.focus.widgets` App ID with the shared App Group, let
+  automatic signing create the profiles (none exist yet), create the App Store
+  Connect record, archive/export the signed build, and run TestFlight.
+- Google Play Console: create and custody the upload key, enroll Play App Signing,
+  complete the declarations, and submit for review.
 - Physical iPhone and Android hardware acceptance runs (checklists are produced
-  by lanes B, C and J).
+  by lanes B, C and J, consolidated in `docs/acceptance/device-acceptance-plan.md`).
+- Cut the release tag for the selected commit. `make release-check TAG=<tag>`
+  cannot pass until a tag exists; the only published release today is v0.1.0.
+- Publish the privacy policy and support URLs. The repository copy is packaged
+  offline on both platforms but is not a public HTTPS page.
+- One human-owned submission checklist with an owner, date and evidence link per
+  line lives in `docs/store/README.md`; completing repository work does not
+  perform any account, signing, upload or publication action.
