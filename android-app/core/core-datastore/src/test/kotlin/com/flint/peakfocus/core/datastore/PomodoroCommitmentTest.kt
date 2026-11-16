@@ -118,6 +118,39 @@ class PomodoroCommitmentTest {
         assertTrue(owner.commitTimer(parent(plan = PomodoroPlan(120, 60, 8)), at(), safe) is TimerStartResult.Applying)
     }
 
+    /**
+     * The Timer screen authors the rule at one trusted sample (`TimerViewModel.start` → `now()`)
+     * and the store commits it at a later one (`clockAtCommit`). Those are never the same
+     * instant: even a few milliseconds of real time must not turn a correctly authored chain
+     * into "Choose a valid Pomodoro plan." A plain Timer tolerates exactly this drift because it
+     * only checks the *duration* is a valid finite session.
+     */
+    @Test fun `a chain authored just before its commit keeps the plan and the authored start`() = runBlocking {
+        val disk = Disk()
+        val owner = DataStoreEditorCommitmentStore(disk, clockAtCommit = { at(5) }, defaultZone = { "UTC" })
+        // parent() is authored at `base`; the store samples 5 ms later.
+        val rule = parent()
+        assertEquals(TimerStartResult.Applying(rule.id, at(5)), owner.commitTimer(rule, at(), safe))
+        val committed = cause(disk, rule)
+        // The chain still starts at the authored instant: the deadline is plan end from `base`.
+        assertEquals(base + plan.totalMs, committed.interval!!.wallEndEpochMs)
+        assertEquals(plan.totalMs - 5, committed.interval!!.remainingMs(at(5)))
+        // That drift is inside focus round 1, so the phase math stays inside the frozen plan.
+        assertEquals(0, phase(rule, committed, at(5))!!.index)
+        assertEquals(PomodoroPhaseKind.FOCUS, phase(rule, committed, at(5))!!.kind)
+        assertTrue(readTerminalEvents(disk.values.value).isEmpty())
+    }
+
+    @Test fun `a chain whose authored start is in the future of the commit clock is still refused`() = runBlocking {
+        val disk = Disk(); val owner = store(disk)
+        // A rule authored 30 s ahead of the commit clock would make remaining exceed the plan,
+        // so no phase could be derived: that stays an invalid plan rather than a plain Timer.
+        val ahead = parent().copy(expiresAtEpochMs = base + plan.totalMs + 30_000L)
+        assertEquals(TimerStartResult.Rejected("Choose a valid Pomodoro plan."),
+            owner.commitTimer(ahead, at(), safe))
+        assertTrue(readTerminalEvents(disk.values.value).isEmpty())
+    }
+
     @Test fun `a plan needs the parent's own finite end, never a repeating window`() {
         assertEquals("A Pomodoro chain needs a finite Timer, not a schedule.",
             validateEditorRule(parent().copy(schedule = Schedule(startMinuteOfDay = 540, endMinuteOfDay = 1020)),
