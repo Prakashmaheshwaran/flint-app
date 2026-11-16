@@ -103,6 +103,34 @@ final class FlintEmergencyPassFreshInstallDrainTests: XCTestCase {
         XCTAssertEqual(status.pass.eligibility, .nothingToRecover)
     }
 
+    /// A generation terminated while still `.installing` is positively idle: the tombstone proves
+    /// nothing is installed, but `latest.phase` stays `.installing` because `terminate` never
+    /// clears it. The drain must not treat that residue as a pending installation, or the refusal
+    /// would persist forever and block every later session, rule application and monitor callback.
+    func testIdleAuthorityWithInstallingResidueStillDrainsWithoutAScope() throws {
+        try installPendingStart()
+        let terminated: Result<Void, FlintLedgerError> = ledger().transaction { state in
+            var authority = try XCTUnwrap(state.sessionAuthority)
+            let latest = try XCTUnwrap(authority.latest)
+            // The interrupted-installation repair path terminates the generation it never applied.
+            try authority.terminate(latest.session, outcome: .unconfirmed,
+                route: "start_expired_unapplied", at: self.now.addingTimeInterval(120))
+            state.sessionAuthority = authority
+        }
+        try terminated.get()
+
+        // Precondition: exactly the reachable state the refusal must not trip on.
+        let stored = try XCTUnwrap(try ledger().peek().get().sessionAuthority)
+        XCTAssertTrue(stored.provesIdle, "a tombstone for the latest generation proves idleness")
+        XCTAssertEqual(stored.latest?.phase, .installing, "terminate does not clear the phase")
+
+        scopeReads = 0
+        let status = try controller().reconcile().get()
+        XCTAssertEqual(scopeReads, 0, "an idle authority's pass scope is reachable by design, so it is not read")
+        XCTAssertEqual(status.pass.eligibility, .nothingToRecover)
+        XCTAssertFalse(status.isAvailable)
+    }
+
     private static func session(startingAt start: Date) -> FlintActiveSession {
         .init(id: "s", name: "Focus", startedAt: start, endsAt: start.addingTimeInterval(1_800),
               breakLevel: .hardcore, monitorName: "flint.session.pending",
