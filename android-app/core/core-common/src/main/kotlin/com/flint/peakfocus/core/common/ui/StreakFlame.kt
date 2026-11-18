@@ -1,6 +1,6 @@
 package com.flint.peakfocus.core.common.ui
 
-import android.widget.ImageView
+import android.graphics.Movie
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -27,12 +27,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -44,6 +46,8 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.layout.boundsInWindow
@@ -62,7 +66,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.flint.peakfocus.core.common.R
 import com.flint.peakfocus.core.common.theme.FlintNumerals
 import com.flint.peakfocus.core.common.theme.FlintPalette
@@ -937,6 +940,7 @@ private fun appleLickPath(w: Float, h: Float, ox: Float, oy: Float): Path {
 }
 
 @Composable
+@Suppress("DEPRECATION")
 fun StreakFlame(
     state: StreakFlameState,
     streakCount: Int,
@@ -952,18 +956,36 @@ fun StreakFlame(
     val windowFocused = windowInfo.isWindowFocused
     val hostView = LocalView.current
     val context = LocalContext.current
+    // Decode the GIF once into a Movie. We drive its clock ourselves so the loop is
+    // continuous: no platform loop gap, no one-second pause at the end of the GIF.
+    val movie = remember(context) {
+        context.resources.openRawResource(R.drawable.flint_streak_fire).use { stream ->
+            Movie.decodeStream(stream)
+        }
+    }
     var onScreen by remember { mutableStateOf(true) }
+    var elapsedMs by remember { mutableLongStateOf(0L) }
     val animate = !reduced && windowFocused && onScreen && (state != StreakFlameState.Inactive || forceAnimate)
 
-    AndroidView(
-        factory = { ctx ->
-            ImageView(ctx).apply {
-                setImageResource(R.drawable.flint_streak_fire)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+    LaunchedEffect(animate) {
+        if (!animate) return@LaunchedEffect
+        val anchor = elapsedMs
+        val start = withFrameNanos { it }
+        var lastFrame = -1L
+        while (true) {
+            withFrameNanos { now ->
+                val ms = anchor + (now - start) / 1_000_000L
+                val frame = ms / 60L
+                if (frame != lastFrame) {
+                    lastFrame = frame
+                    elapsedMs = ms
+                }
             }
-        },
-        modifier = modifier
+        }
+    }
+
+    Box(
+        modifier
             .size(size)
             .onGloballyPositioned { coords ->
                 val b = coords.boundsInWindow()
@@ -971,26 +993,42 @@ fun StreakFlame(
                 val rootH = hostView.height.toFloat()
                 onScreen = b.right > 0f && b.bottom > 0f && b.left < rootW && b.top < rootH
             }
-            .semantics {
+            .alpha(
+                when (state) {
+                    StreakFlameState.Active -> 1f
+                    StreakFlameState.AtRisk -> 0.96f
+                    StreakFlameState.Inactive -> 0.92f
+                }
+            )
+            .semantics(mergeDescendants = true) {
+                if (contentDescription != null) this.contentDescription = contentDescription
+            }
+            .clearAndSetSemantics {
                 if (contentDescription != null) this.contentDescription = contentDescription
             },
-        update = { view ->
-            val drawable = view.drawable
-            if (drawable is android.graphics.drawable.Animatable) {
-                if (animate) {
-                    if (!drawable.isRunning) drawable.start()
-                } else {
-                    if (drawable.isRunning) drawable.stop()
-                }
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val m = movie ?: return@Canvas
+            val duration = m.duration().coerceAtLeast(1)
+            m.setTime((elapsedMs % duration).toInt())
+            val mw = m.width().toFloat()
+            val mh = m.height().toFloat()
+            val canvasW = this.size.width
+            val canvasH = this.size.height
+            val scale = min(canvasW / mw, canvasH / mh)
+            val dx = (canvasW - mw * scale) * 0.5f
+            val dy = (canvasH - mh * scale) * 0.5f
+            drawIntoCanvas { canvas ->
+                canvas.nativeCanvas.save()
+                canvas.nativeCanvas.translate(dx, dy)
+                canvas.nativeCanvas.scale(scale, scale)
+                m.draw(canvas.nativeCanvas, 0f, 0f)
+                canvas.nativeCanvas.restore()
             }
-            view.alpha = when (state) {
-                StreakFlameState.Active -> 1f
-                StreakFlameState.AtRisk -> 0.96f
-                StreakFlameState.Inactive -> 0.92f
-            }
-        },
-    )
+        }
+    }
 }
+
 
 // ---------------------------------------------------------------------------------------
 // Streak ember: mood model, glass-drop canvas flame, cinematic stage, sheet copy and the

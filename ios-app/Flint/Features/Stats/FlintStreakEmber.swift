@@ -1,6 +1,8 @@
 import SwiftUI
 import Foundation
 import FlintCore
+import ImageIO
+import UIKit
 
 /// Visual mood for the cinematic ember — mapped from streak lifecycle.
 enum StreakEmberMood: Equatable {
@@ -288,11 +290,24 @@ struct FlintStreakEmber: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: nil, paused: !shouldAnimate)) { timeline in
-            let t = shouldAnimate ? animationTime(timeline.date) : STATIC_FLAME_SECONDS
-            Canvas { context, canvasSize in
-                drawEmber(in: &context, size: min(canvasSize.width, canvasSize.height), elapsed: t)
+        let frames = StreakGifFrames.shared.frames
+        TimelineView(.animation(paused: !shouldAnimate)) { timeline in
+            let elapsed = shouldAnimate ? timeline.date.timeIntervalSince(startDate) : 0
+            let index = frames.isEmpty ? 0 : Int(elapsed / 0.06) % frames.count
+            Group {
+                if frames.isEmpty {
+                    Image(systemName: "flame.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundStyle(FlintBrand.ember)
+                } else {
+                    Image(uiImage: frames[index])
+                        .resizable()
+                        .scaledToFit()
+                }
             }
+            .frame(width: size, height: size)
+            .opacity(mood == .dormant ? 0.92 : 1)
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
@@ -528,5 +543,29 @@ struct FlintStreakCinematicStage: View {
             )
         }
         .ignoresSafeArea()
+    }
+}
+
+
+/// Loads and caches the animated streak GIF frames from the app bundle.
+final class StreakGifFrames {
+    static let shared = StreakGifFrames()
+    let frames: [UIImage]
+
+    private init() {
+        guard let url = Bundle.main.url(forResource: "flint_streak_fire", withExtension: "gif"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            frames = []
+            return
+        }
+        let count = CGImageSourceGetCount(source)
+        var images: [UIImage] = []
+        images.reserveCapacity(count)
+        for index in 0..<count {
+            if let cgImage = CGImageSourceCreateImageAtIndex(source, index, nil) {
+                images.append(UIImage(cgImage: cgImage))
+            }
+        }
+        frames = images
     }
 }
