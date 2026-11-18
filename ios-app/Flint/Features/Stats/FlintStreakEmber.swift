@@ -208,7 +208,7 @@ internal func fringeWidthsDp(sizeDp: Double) -> (Double, Double) {
     if sizeDp < 48 { return (0.7, 1.1) } else if sizeDp < 120 { return (1.0, 1.8) } else { return (1.4, 2.6) }
 }
 
-/// Emoji/Snapchat-like 🔥 outer silhouette (parity with Android StreakFlame).
+/// Reference fire-emoji outer silhouette (parity with Android StreakFlame).
 private func buildOuter(geo: FlameGeometry, tipDx: CGFloat, sway: CGFloat, heightScale: CGFloat, widen: CGFloat, lickL: CGFloat, lickR: CGFloat, morph: CGFloat) -> Path {
     let w = geo.w, h = geo.h, cx = geo.cx, baseY = geo.baseY
     func x(_ fx: CGFloat, _ ft: CGFloat) -> CGFloat { cx + fx * w * widen + sway * ft * ft + tipDx * ft * ft }

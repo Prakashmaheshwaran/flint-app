@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -191,26 +192,21 @@ internal fun brushSet(state: StreakFlameState, geo: FlameGeometry): FlameBrushSe
     val orange = when (state) {
         StreakFlameState.Active -> Brush.verticalGradient(
             0.00f to Color(0xFFF79B3A),
-            0.30f to Color(0xFFF7B53A),
-            0.55f to Color(0xFFFFD24A),
-            0.78f to Color(0xFFFFE98A),
-            1.00f to Color(0xFFFFF6C8),
-            startY = geo.baseY - geo.h, endY = geo.baseY,
+            0.45f to Color(0xFFF7B53A),
+            1.00f to Color(0xFFFFC84A),
+            startY = geo.baseY - geo.h * 0.82f, endY = geo.baseY,
         )
         StreakFlameState.AtRisk -> Brush.verticalGradient(
             0.00f to Color(0xFFE89A50),
-            0.35f to Color(0xFFE8B060),
-            0.65f to Color(0xFFF7D070),
-            1.00f to Color(0xFFF7E8B0),
-            startY = geo.baseY - geo.h, endY = geo.baseY,
+            0.55f to Color(0xFFE8B060),
+            1.00f to Color(0xFFF7C870),
+            startY = geo.baseY - geo.h * 0.78f, endY = geo.baseY,
         )
         StreakFlameState.Inactive -> Brush.verticalGradient(
             0.00f to Color(0xFFF79B3A),
-            0.30f to Color(0xFFF7B53A),
-            0.55f to Color(0xFFFFD24A),
-            0.78f to Color(0xFFFFE98A),
-            1.00f to Color(0xFFFFF6C8),
-            startY = geo.baseY - geo.h, endY = geo.baseY,
+            0.45f to Color(0xFFF7B53A),
+            1.00f to Color(0xFFFFC84A),
+            startY = geo.baseY - geo.h * 0.82f, endY = geo.baseY,
         )
     }
     val yellow = when (state) {
@@ -315,9 +311,10 @@ internal class StreakFlamePainter(
 
     private val outerPath: Path = appleMainPath(flameW, flameH, ox, oy)
     private val lickPath: Path = appleLickPath(flameW, flameH, ox, oy)
-    // One organic inner flame traced from the reference. Its gradient carries the
-    // orange -> yellow -> pale-yellow transition, so there are no stacked triangles.
-    private val innerPath: Path = appleInnerPath(flameW, flameH, ox, oy)
+    // Two inner layers traced from the reference and aligned on the same center.
+    // The orange layer fills the interior; the yellow tongue sits inside it.
+    private val orangePath: Path = appleInnerPath(flameW, flameH, ox, oy)
+    private val yellowPath: Path = appleYellowTonguePath(flameW, flameH, ox, oy)
 
     fun draw(
         scope: DrawScope,
@@ -346,11 +343,15 @@ internal class StreakFlamePainter(
         // Base-anchored horizontal shear: the bottom stays planted, the upper body sways.
         val swayRad = if (animate) (tiltDegrees(t, rate) * 1.15f +
             sin(reducedPhase(t, rate, 2.6) * twoPi) * 0.8f) * intensity * (PI.toFloat() / 180f) * 0.64f else 0f
-        val scaleY = if (animate) 1f + (breath - 1f) * 0.55f else 1f
-        val scaleX = if (animate) 1f + (breath - 1f) * 0.22f else 1f
+        // The reference GIF pulses at ~2.25 Hz (444 ms): visible squash-and-stretch
+        // anchored at the base, with a slightly larger width change than height.
+        val pulse = if (animate) sin(t * twoPi.toDouble() / 0.444).toFloat() else 0f
+        val scaleY = 1f + 0.072f * pulse * intensity
+        val scaleX = 1f - 0.095f * pulse * intensity
         val lickBob = if (animate) sin(reducedPhase(t, rate, 2.4) * twoPi + 1.1f) * geo.s * 0.007f * intensity else 0f
         val lickScale = if (animate) 1f + 0.035f * sin(reducedPhase(t, rate, 1.9) * twoPi + 0.4f) else 1f
         val innerPulse = if (animate) 1f + 0.030f * sin(reducedPhase(t, rate, 2.2) * twoPi + 1.6f) else 1f
+        val yellowPulse = if (animate) 1f + 0.022f * sin(reducedPhase(t, rate, 2.8) * twoPi + 0.8f) else 1f
         val innerShift = if (animate) sin(reducedPhase(t, rate, 1.7) * twoPi + 0.9f) * geo.s * 0.004f * intensity else 0f
         val innerAlpha = if (animate) (0.94f + 0.06f * ((sin(reducedPhase(t, rate, 3.0) * twoPi) + 1f) * 0.5f)) else 1f
 
@@ -392,13 +393,32 @@ internal class StreakFlamePainter(
                 scope.drawPath(lickPath, brush.body)
             }
 
-            // One organic inner flame inset inside the red rim. The vertical gradient
-            // carries orange at the top through yellow to a pale-yellow base.
+            // The reference periodically grows a detached lick on the upper right too.
+            val rightLickAlpha = if (animate) {
+                (0.35f + 0.65f * ((sin(reducedPhase(t, rate, 1.4) * twoPi + 2.2f) + 1f) * 0.5f)) * 0.80f
+            } else 0f
+            if (rightLickAlpha > 0.03f) {
+                scope.withTransform({
+                    scale(scaleX = -1f, scaleY = 1f, pivot = Offset(geo.cx, oy + flameH * 0.5f))
+                    translate(left = 0f, top = lickBob * 0.8f)
+                }) {
+                    scope.drawPath(lickPath, brush.body, alpha = rightLickAlpha.coerceIn(0f, 0.7f))
+                }
+            }
+
+            // Centered rounded orange tongue.
             scope.withTransform({
                 translate(left = 0f, top = innerShift)
                 scale(scaleX = innerPulse, scaleY = innerPulse, pivot = Offset(geo.cx, geo.s))
             }) {
-                scope.drawPath(innerPath, brush.orange, alpha = innerAlpha.coerceIn(0.82f, 1f))
+                scope.drawPath(orangePath, brush.orange, alpha = innerAlpha.coerceIn(0.82f, 1f))
+            }
+            // Smaller golden-yellow tongue, vertically aligned with the orange one.
+            scope.withTransform({
+                translate(left = 0f, top = innerShift * 0.55f)
+                scale(scaleX = yellowPulse, scaleY = yellowPulse, pivot = Offset(geo.cx, geo.s))
+            }) {
+                scope.drawPath(yellowPath, brush.yellow, alpha = innerAlpha.coerceIn(0.82f, 1f))
             }
 
             // White-hot core low in the belly.
@@ -492,7 +512,8 @@ internal class StreakFlamePainter(
             for (i in 0 until perSide) {
                 val phaseIndex = i + if (side < 0) 0 else SIDE_SPARK_PHASE_OFFSET
                 val seed = sparkSeed(t, rate, phaseIndex)
-                val alpha = (sparkAlpha(seed, intensity) * SIDE_SPARK_ALPHA).coerceIn(0f, 0.72f)
+                // Keep each dash bright for most of its life, easing only at birth/death.
+                val alpha = (sideSparkAlpha(seed) * SIDE_SPARK_ALPHA * (0.72f + 0.28f * intensity)).coerceIn(0f, 0.95f)
                 if (alpha <= 0.03f) continue
                 val slot = if (perSide <= 1) 0f else i.toFloat() / (perSide - 1).toFloat()
                 val startY = SIDE_SPARK_START_BOTTOM - SIDE_SPARK_START_SPAN * slot
@@ -506,21 +527,30 @@ internal class StreakFlamePainter(
                 val y = oy + flameH * yFrac
                 val r = geometry.s * (SIDE_SPARK_RADIUS + SIDE_SPARK_RADIUS_SPREAD * (i % 2))
                 // Subtle halo, then the droplet body, then a hot pinpoint highlight.
-                scope.drawCircle(color = SideSparkGlow, alpha = alpha * 0.30f, radius = r * 2.4f, center = Offset(x, y))
+                scope.drawCircle(color = SideSparkGlow, alpha = alpha * 0.10f, radius = r * 1.8f, center = Offset(x, y))
+                // Bright red-orange rim, golden body, white-hot tip — a miniature flame,
+                // not a dark ring. The rim is only ~0.10r wider than the body.
+                scope.drawOval(
+                    color = SideSparkRim,
+                    alpha = alpha * 0.90f,
+                    topLeft = Offset(x - r * 0.725f, y - r * 1.40f),
+                    size = Size(r * 1.45f, r * 2.80f),
+                )
                 scope.drawOval(
                     color = SideSparkBody,
                     alpha = alpha,
-                    topLeft = Offset(x - r * 0.62f, y - r * 1.05f),
-                    size = Size(r * 1.24f, r * 2.10f),
+                    topLeft = Offset(x - r * 0.625f, y - r * 1.25f),
+                    size = Size(r * 1.25f, r * 2.50f),
                 )
-                scope.drawCircle(color = SideSparkHot, alpha = alpha * 0.72f, radius = r * 0.50f, center = Offset(x, y - r * 0.25f))
+                scope.drawCircle(color = SideSparkHot, alpha = alpha * 0.85f, radius = r * 0.40f, center = Offset(x, y - r * 0.50f))
             }
         }
     }
 
     private fun drawAsh(scope: DrawScope, brush: FlameBrushSet, flash: Float) {
         scope.drawPath(outerPath, brush.body)
-        scope.drawPath(innerPath, brush.orange)
+        scope.drawPath(orangePath, brush.orange)
+        scope.drawPath(yellowPath, brush.yellow)
         scope.drawOval(
             brush = brush.hotBase,
             alpha = (if (compact) 0.20f else 0.26f) + flash * 0.08f,
@@ -531,6 +561,58 @@ internal class StreakFlamePainter(
 }
 
 private fun twoPi(): Float = 2f * PI.toFloat()
+
+/**
+ * Erode a closed flame silhouette by a constant [inset] and keep only the lower arc
+ * (below [topY]), closing it with a pointed cap at [spineX]. This produces the even
+ * inner frame of a real fire emoji instead of a uniformly scaled copy.
+ */
+private fun erodedInnerPath(
+    outer: Path,
+    inset: Float,
+    topY: Float,
+    spineX: Float,
+): Path {
+    val measure = PathMeasure()
+    measure.setPath(outer, true)
+    val length = measure.length
+    if (length <= 0f) return Path()
+    val samples = 140
+    val cx = spineX
+    val cy = topY + (outer.getBounds().height * 0.28f)
+    val points = ArrayList<Offset>(samples)
+    for (i in 0 until samples) {
+        val distance = length * i / samples
+        val p = measure.getPosition(distance)
+        val tangent = measure.getTangent(distance)
+        var nx = -tangent.y
+        var ny = tangent.x
+        // Point the normal toward the flame's lower-center.
+        val toCenterX = cx - p.x
+        val toCenterY = cy - p.y
+        if (nx * toCenterX + ny * toCenterY < 0f) {
+            nx = -nx
+            ny = -ny
+        }
+        points.add(Offset(p.x + nx * inset, p.y + ny * inset))
+    }
+    // The closed contour starts at the tip; keep the lower arc only.
+    val lower = points.filter { it.y >= topY }
+    if (lower.size < 6) return Path()
+    val path = Path()
+    val first = lower.first()
+    val last = lower.last()
+    path.moveTo(first.x, first.y)
+    for (i in 1 until lower.size) {
+        val p = lower[i]
+        path.lineTo(p.x, p.y)
+    }
+    // Close with a pointed cap at the upper spine, then back to the first lower point.
+    path.lineTo(spineX, topY)
+    path.lineTo(first.x, first.y)
+    path.close()
+    return path
+}
 
 /** Left (-1) and right (+1) sides for the optional celebration droplets. */
 private val SIDE_SPARK_SIDES = intArrayOf(-1, 1)
@@ -545,26 +627,33 @@ private fun sideSparkCountFor(emberCount: Int): Int = when {
     else -> 2
 }
 
+/** Smooth on/off envelope: bright for most of the dash's life, fading at both ends. */
+private fun sideSparkAlpha(seed: Float): Float {
+    val edge = minOf(seed / 0.15f, (1f - seed) / 0.15f).coerceIn(0f, 1f)
+    return edge * edge * (3f - 2f * edge)
+}
+
 /** Droplets spawn between these fractions of the flame height (lower sides). */
 private const val SIDE_SPARK_START_BOTTOM = 0.92f
 private const val SIDE_SPARK_START_SPAN = 0.30f
 
 /** Upward travel across a droplet's life, as a fraction of the flame height. */
-private const val SIDE_SPARK_RISE = 0.09f
+private const val SIDE_SPARK_RISE = 0.16f
 
 /** Outward travel across a droplet's life, as a fraction of the flame width. */
 private const val SIDE_SPARK_DRIFT_MIN = 0.020f
 private const val SIDE_SPARK_DRIFT_SPAN = 0.075f
 
 /** Peak droplet alpha stays under the rising embers so it reads as a sparkle, not debris. */
-private const val SIDE_SPARK_ALPHA = 0.88f
+private const val SIDE_SPARK_ALPHA = 1.0f
 
-private const val SIDE_SPARK_RADIUS = 0.0062f
-private const val SIDE_SPARK_RADIUS_SPREAD = 0.0012f
+private const val SIDE_SPARK_RADIUS = 0.018f
+private const val SIDE_SPARK_RADIUS_SPREAD = 0.0025f
 
 private val SideSparkGlow = Color(0xFFFFA43A)
-private val SideSparkBody = Color(0xFFFFCF57)
-private val SideSparkHot = Color(0xFFFFF3C4)
+private val SideSparkRim = Color(0xFFFF6A3A)
+private val SideSparkBody = Color(0xFFFFD24A)
+private val SideSparkHot = Color(0xFFFFF6C8)
 
 /**
  * Distance from the flame centre to its outer edge, as a fraction of the flame width,
@@ -585,6 +674,11 @@ private fun sideEdgeHalfWidth(yFrac: Float): Float {
 }
 
 /** Smooth inset flame tongue, like the orange/yellow layers of the reference emoji. */
+/**
+ * A centered, rounded flame tongue for the inner layers.
+ * Unlike the earlier teardrop it has a soft cap rather than a sharp triangular point,
+ * so the inner frame stays aligned and reads as a real flame tongue.
+ */
 private fun appleInnerPath(w: Float, h: Float, ox: Float, oy: Float): Path {
     val p = Path()
     p.moveTo((ox + 0.52046f * w), (oy + 0.17505f * h))
@@ -632,6 +726,92 @@ private fun appleInnerPath(w: Float, h: Float, ox: Float, oy: Float): Path {
     p.cubicTo((ox + 0.61147f * w), (oy + 0.24212f * h), (ox + 0.59889f * w), (oy + 0.22871f * h), (ox + 0.58312f * w), (oy + 0.21529f * h))
     p.cubicTo((ox + 0.56735f * w), (oy + 0.20188f * h), (ox + 0.53858f * w), (oy + 0.18176f * h), (ox + 0.52813f * w), (oy + 0.17505f * h))
     p.cubicTo((ox + 0.51769f * w), (oy + 0.16834f * h), (ox + 0.52131f * w), (oy + 0.16834f * h), (ox + 0.52046f * w), (oy + 0.17505f * h))
+    p.close()
+    return p
+}
+
+private fun appleYellowPath(w: Float, h: Float, ox: Float, oy: Float): Path {
+    val p = Path()
+    p.moveTo((ox + 0.51662f * w), (oy + 0.47887f * h))
+    p.cubicTo((ox + 0.49979f * w), (oy + 0.48558f * h), (ox + 0.48593f * w), (oy + 0.50570f * h), (ox + 0.47570f * w), (oy + 0.51911f * h))
+    p.cubicTo((ox + 0.46547f * w), (oy + 0.53253f * h), (ox + 0.47101f * w), (oy + 0.54594f * h), (ox + 0.45524f * w), (oy + 0.55936f * h))
+    p.cubicTo((ox + 0.43947f * w), (oy + 0.57277f * h), (ox + 0.39727f * w), (oy + 0.58618f * h), (ox + 0.38107f * w), (oy + 0.59960f * h))
+    p.cubicTo((ox + 0.36488f * w), (oy + 0.61301f * h), (ox + 0.37042f * w), (oy + 0.62643f * h), (ox + 0.35806f * w), (oy + 0.63984f * h))
+    p.cubicTo((ox + 0.34569f * w), (oy + 0.65325f * h), (ox + 0.32310f * w), (oy + 0.66667f * h), (ox + 0.30691f * w), (oy + 0.68008f * h))
+    p.cubicTo((ox + 0.29071f * w), (oy + 0.69349f * h), (ox + 0.26897f * w), (oy + 0.70691f * h), (ox + 0.26087f * w), (oy + 0.72032f * h))
+    p.cubicTo((ox + 0.25277f * w), (oy + 0.73374f * h), (ox + 0.26130f * w), (oy + 0.74715f * h), (ox + 0.25831f * w), (oy + 0.76056f * h))
+    p.cubicTo((ox + 0.25533f * w), (oy + 0.77398f * h), (ox + 0.24638f * w), (oy + 0.78739f * h), (ox + 0.24297f * w), (oy + 0.80080f * h))
+    p.cubicTo((ox + 0.23956f * w), (oy + 0.81422f * h), (ox + 0.23679f * w), (oy + 0.82763f * h), (ox + 0.23785f * w), (oy + 0.84105f * h))
+    p.cubicTo((ox + 0.23892f * w), (oy + 0.85446f * h), (ox + 0.23934f * w), (oy + 0.86787f * h), (ox + 0.24936f * w), (oy + 0.88129f * h))
+    p.cubicTo((ox + 0.25938f * w), (oy + 0.89470f * h), (ox + 0.28538f * w), (oy + 0.90812f * h), (ox + 0.29795f * w), (oy + 0.92153f * h))
+    p.cubicTo((ox + 0.31053f * w), (oy + 0.93494f * h), (ox + 0.30797f * w), (oy + 0.95003f * h), (ox + 0.32481f * w), (oy + 0.96177f * h))
+    p.cubicTo((ox + 0.34165f * w), (oy + 0.97351f * h), (ox + 0.35635f * w), (oy + 0.98692f * h), (ox + 0.39898f * w), (oy + 0.99195f * h))
+    p.cubicTo((ox + 0.44160f * w), (oy + 0.99698f * h), (ox + 0.54049f * w), (oy + 0.99698f * h), (ox + 0.58056f * w), (oy + 0.99195f * h))
+    p.cubicTo((ox + 0.62063f * w), (oy + 0.98692f * h), (ox + 0.61935f * w), (oy + 0.97351f * h), (ox + 0.63939f * w), (oy + 0.96177f * h))
+    p.cubicTo((ox + 0.65942f * w), (oy + 0.95003f * h), (ox + 0.68159f * w), (oy + 0.93494f * h), (ox + 0.70077f * w), (oy + 0.92153f * h))
+    p.cubicTo((ox + 0.71995f * w), (oy + 0.90812f * h), (ox + 0.73785f * w), (oy + 0.89470f * h), (ox + 0.75448f * w), (oy + 0.88129f * h))
+    p.cubicTo((ox + 0.77110f * w), (oy + 0.86787f * h), (ox + 0.79476f * w), (oy + 0.85446f * h), (ox + 0.80051f * w), (oy + 0.84105f * h))
+    p.cubicTo((ox + 0.80627f * w), (oy + 0.82763f * h), (ox + 0.79348f * w), (oy + 0.81422f * h), (ox + 0.78900f * w), (oy + 0.80080f * h))
+    p.cubicTo((ox + 0.78453f * w), (oy + 0.78739f * h), (ox + 0.77408f * w), (oy + 0.77398f * h), (ox + 0.77366f * w), (oy + 0.76056f * h))
+    p.cubicTo((ox + 0.77323f * w), (oy + 0.74715f * h), (ox + 0.79710f * w), (oy + 0.73374f * h), (ox + 0.78645f * w), (oy + 0.72032f * h))
+    p.cubicTo((ox + 0.77579f * w), (oy + 0.70691f * h), (ox + 0.73146f * w), (oy + 0.69349f * h), (ox + 0.70972f * w), (oy + 0.68008f * h))
+    p.cubicTo((ox + 0.68798f * w), (oy + 0.66667f * h), (ox + 0.67050f * w), (oy + 0.65325f * h), (ox + 0.65601f * w), (oy + 0.63984f * h))
+    p.cubicTo((ox + 0.64152f * w), (oy + 0.62643f * h), (ox + 0.63598f * w), (oy + 0.61301f * h), (ox + 0.62276f * w), (oy + 0.59960f * h))
+    p.cubicTo((ox + 0.60955f * w), (oy + 0.58618f * h), (ox + 0.58568f * w), (oy + 0.57277f * h), (ox + 0.57673f * w), (oy + 0.55936f * h))
+    p.cubicTo((ox + 0.56777f * w), (oy + 0.54594f * h), (ox + 0.56905f * w), (oy + 0.53253f * h), (ox + 0.56905f * w), (oy + 0.51911f * h))
+    p.cubicTo((ox + 0.56905f * w), (oy + 0.50570f * h), (ox + 0.58546f * w), (oy + 0.48558f * h), (ox + 0.57673f * w), (oy + 0.47887f * h))
+    p.cubicTo((ox + 0.56799f * w), (oy + 0.47217f * h), (ox + 0.53346f * w), (oy + 0.47217f * h), (ox + 0.51662f * w), (oy + 0.47887f * h))
+    p.close()
+    return p
+}
+
+private fun appleYellowTonguePath(w: Float, h: Float, ox: Float, oy: Float): Path {
+    val p = Path()
+    p.moveTo((ox + 0.51269f * w), (oy + 0.45813f * h))
+    p.cubicTo((ox + 0.51216f * w), (oy + 0.46229f * h), (ox + 0.51520f * w), (oy + 0.47476f * h), (ox + 0.51427f * w), (oy + 0.48308f * h))
+    p.cubicTo((ox + 0.51335f * w), (oy + 0.49140f * h), (ox + 0.51150f * w), (oy + 0.49971f * h), (ox + 0.50714f * w), (oy + 0.50803f * h))
+    p.cubicTo((ox + 0.50277f * w), (oy + 0.51635f * h), (ox + 0.49551f * w), (oy + 0.52466f * h), (ox + 0.48811f * w), (oy + 0.53298f * h))
+    p.cubicTo((ox + 0.48071f * w), (oy + 0.54130f * h), (ox + 0.47093f * w), (oy + 0.54961f * h), (ox + 0.46274f * w), (oy + 0.55793f * h))
+    p.cubicTo((ox + 0.45454f * w), (oy + 0.56625f * h), (ox + 0.44582f * w), (oy + 0.57456f * h), (ox + 0.43895f * w), (oy + 0.58288f * h))
+    p.cubicTo((ox + 0.43208f * w), (oy + 0.59120f * h), (ox + 0.42693f * w), (oy + 0.59951f * h), (ox + 0.42151f * w), (oy + 0.60783f * h))
+    p.cubicTo((ox + 0.41609f * w), (oy + 0.61615f * h), (ox + 0.41054f * w), (oy + 0.62446f * h), (ox + 0.40645f * w), (oy + 0.63278f * h))
+    p.cubicTo((ox + 0.40235f * w), (oy + 0.64110f * h), (ox + 0.39865f * w), (oy + 0.64941f * h), (ox + 0.39693f * w), (oy + 0.65773f * h))
+    p.cubicTo((ox + 0.39521f * w), (oy + 0.66605f * h), (ox + 0.39706f * w), (oy + 0.67436f * h), (ox + 0.39614f * w), (oy + 0.68268f * h))
+    p.cubicTo((ox + 0.39521f * w), (oy + 0.69100f * h), (ox + 0.41279f * w), (oy + 0.69931f * h), (ox + 0.39138f * w), (oy + 0.70763f * h))
+    p.cubicTo((ox + 0.36997f * w), (oy + 0.71594f * h), (ox + 0.28844f * w), (oy + 0.72426f * h), (ox + 0.26770f * w), (oy + 0.73258f * h))
+    p.cubicTo((ox + 0.24695f * w), (oy + 0.74089f * h), (ox + 0.26664f * w), (oy + 0.74921f * h), (ox + 0.26691f * w), (oy + 0.75753f * h))
+    p.cubicTo((ox + 0.26717f * w), (oy + 0.76584f * h), (ox + 0.26757f * w), (oy + 0.77416f * h), (ox + 0.26928f * w), (oy + 0.78248f * h))
+    p.cubicTo((ox + 0.27100f * w), (oy + 0.79079f * h), (ox + 0.27431f * w), (oy + 0.79911f * h), (ox + 0.27721f * w), (oy + 0.80743f * h))
+    p.cubicTo((ox + 0.28012f * w), (oy + 0.81574f * h), (ox + 0.28263f * w), (oy + 0.82406f * h), (ox + 0.28673f * w), (oy + 0.83238f * h))
+    p.cubicTo((ox + 0.29082f * w), (oy + 0.84069f * h), (ox + 0.29730f * w), (oy + 0.84901f * h), (ox + 0.30179f * w), (oy + 0.85733f * h))
+    p.cubicTo((ox + 0.30628f * w), (oy + 0.86564f * h), (ox + 0.31276f * w), (oy + 0.87396f * h), (ox + 0.31368f * w), (oy + 0.88228f * h))
+    p.cubicTo((ox + 0.31461f * w), (oy + 0.89059f * h), (ox + 0.30602f * w), (oy + 0.89891f * h), (ox + 0.30734f * w), (oy + 0.90723f * h))
+    p.cubicTo((ox + 0.30866f * w), (oy + 0.91554f * h), (ox + 0.31038f * w), (oy + 0.92386f * h), (ox + 0.32161f * w), (oy + 0.93218f * h))
+    p.cubicTo((ox + 0.33284f * w), (oy + 0.94049f * h), (ox + 0.36152f * w), (oy + 0.95193f * h), (ox + 0.37473f * w), (oy + 0.95713f * h))
+    p.cubicTo((ox + 0.38795f * w), (oy + 0.96232f * h), (ox + 0.37050f * w), (oy + 0.96232f * h), (ox + 0.40090f * w), (oy + 0.96336f * h))
+    p.cubicTo((ox + 0.43129f * w), (oy + 0.96440f * h), (ox + 0.52537f * w), (oy + 0.96440f * h), (ox + 0.55708f * w), (oy + 0.96336f * h))
+    p.cubicTo((ox + 0.58880f * w), (oy + 0.96232f * h), (ox + 0.57268f * w), (oy + 0.96232f * h), (ox + 0.59118f * w), (oy + 0.95713f * h))
+    p.cubicTo((ox + 0.60968f * w), (oy + 0.95193f * h), (ox + 0.65090f * w), (oy + 0.94049f * h), (ox + 0.66808f * w), (oy + 0.93218f * h))
+    p.cubicTo((ox + 0.68526f * w), (oy + 0.92386f * h), (ox + 0.69002f * w), (oy + 0.91554f * h), (ox + 0.69425f * w), (oy + 0.90723f * h))
+    p.cubicTo((ox + 0.69847f * w), (oy + 0.89891f * h), (ox + 0.69160f * w), (oy + 0.89059f * h), (ox + 0.69345f * w), (oy + 0.88228f * h))
+    p.cubicTo((ox + 0.69530f * w), (oy + 0.87396f * h), (ox + 0.70059f * w), (oy + 0.86564f * h), (ox + 0.70535f * w), (oy + 0.85733f * h))
+    p.cubicTo((ox + 0.71010f * w), (oy + 0.84901f * h), (ox + 0.72503f * w), (oy + 0.84069f * h), (ox + 0.72199f * w), (oy + 0.83238f * h))
+    p.cubicTo((ox + 0.71896f * w), (oy + 0.82406f * h), (ox + 0.69292f * w), (oy + 0.81574f * h), (ox + 0.68711f * w), (oy + 0.80743f * h))
+    p.cubicTo((ox + 0.68130f * w), (oy + 0.79911f * h), (ox + 0.68552f * w), (oy + 0.79079f * h), (ox + 0.68711f * w), (oy + 0.78248f * h))
+    p.cubicTo((ox + 0.68870f * w), (oy + 0.77416f * h), (ox + 0.69411f * w), (oy + 0.76584f * h), (ox + 0.69662f * w), (oy + 0.75753f * h))
+    p.cubicTo((ox + 0.69913f * w), (oy + 0.74921f * h), (ox + 0.71565f * w), (oy + 0.74089f * h), (ox + 0.70217f * w), (oy + 0.73258f * h))
+    p.cubicTo((ox + 0.68870f * w), (oy + 0.72426f * h), (ox + 0.63174f * w), (oy + 0.71594f * h), (ox + 0.61575f * w), (oy + 0.70763f * h))
+    p.cubicTo((ox + 0.59977f * w), (oy + 0.69931f * h), (ox + 0.60717f * w), (oy + 0.69100f * h), (ox + 0.60624f * w), (oy + 0.68268f * h))
+    p.cubicTo((ox + 0.60532f * w), (oy + 0.67436f * h), (ox + 0.60902f * w), (oy + 0.66605f * h), (ox + 0.61020f * w), (oy + 0.65773f * h))
+    p.cubicTo((ox + 0.61139f * w), (oy + 0.64941f * h), (ox + 0.61258f * w), (oy + 0.64110f * h), (ox + 0.61338f * w), (oy + 0.63278f * h))
+    p.cubicTo((ox + 0.61417f * w), (oy + 0.62446f * h), (ox + 0.61496f * w), (oy + 0.61615f * h), (ox + 0.61496f * w), (oy + 0.60783f * h))
+    p.cubicTo((ox + 0.61496f * w), (oy + 0.59951f * h), (ox + 0.61483f * w), (oy + 0.59120f * h), (ox + 0.61338f * w), (oy + 0.58288f * h))
+    p.cubicTo((ox + 0.61192f * w), (oy + 0.57456f * h), (ox + 0.60954f * w), (oy + 0.56625f * h), (ox + 0.60624f * w), (oy + 0.55793f * h))
+    p.cubicTo((ox + 0.60294f * w), (oy + 0.54961f * h), (ox + 0.59858f * w), (oy + 0.54130f * h), (ox + 0.59355f * w), (oy + 0.53298f * h))
+    p.cubicTo((ox + 0.58853f * w), (oy + 0.52466f * h), (ox + 0.58312f * w), (oy + 0.51635f * h), (ox + 0.57611f * w), (oy + 0.50803f * h))
+    p.cubicTo((ox + 0.56911f * w), (oy + 0.49971f * h), (ox + 0.56131f * w), (oy + 0.49140f * h), (ox + 0.55153f * w), (oy + 0.48308f * h))
+    p.cubicTo((ox + 0.54176f * w), (oy + 0.47476f * h), (ox + 0.52392f * w), (oy + 0.46229f * h), (ox + 0.51744f * w), (oy + 0.45813f * h))
+    p.cubicTo((ox + 0.51097f * w), (oy + 0.45397f * h), (ox + 0.51321f * w), (oy + 0.45397f * h), (ox + 0.51269f * w), (oy + 0.45813f * h))
     p.close()
     return p
 }
