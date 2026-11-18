@@ -168,10 +168,10 @@ private struct FlameGeometry {
 
     init(s: CGFloat) {
         self.s = s
-        self.w = s * 0.74
+        self.w = s * 0.78
         self.h = s * 0.92
         self.cx = s * 0.50
-        self.baseY = s * 0.96
+        self.baseY = s * 0.965
     }
 }
 
@@ -208,70 +208,74 @@ internal func fringeWidthsDp(sizeDp: Double) -> (Double, Double) {
     if sizeDp < 48 { return (0.7, 1.1) } else if sizeDp < 120 { return (1.0, 1.8) } else { return (1.4, 2.6) }
 }
 
-/// Emoji/Snapchat-like 🔥 outer silhouette.
-private func buildOuter(geo: FlameGeometry, tipDx: CGFloat, sway: CGFloat, heightScale: CGFloat, widen: CGFloat, lickL: CGFloat, lickR: CGFloat) -> Path {
+/// Emoji/Snapchat-like 🔥 outer silhouette (parity with Android StreakFlame).
+private func buildOuter(geo: FlameGeometry, tipDx: CGFloat, sway: CGFloat, heightScale: CGFloat, widen: CGFloat, lickL: CGFloat, lickR: CGFloat, morph: CGFloat) -> Path {
     let w = geo.w, h = geo.h, cx = geo.cx, baseY = geo.baseY
     func x(_ fx: CGFloat, _ ft: CGFloat) -> CGFloat { cx + fx * w * widen + sway * ft * ft + tipDx * ft * ft }
     func y(_ ft: CGFloat) -> CGFloat { baseY - ft * h * heightScale }
+    let tipX = 0.055 + morph * 0.010
+    let notchIn = 0.030 * morph
+    let rightBulge = 0.018 * morph
+    let leftLobe = 0.012 * morph
     var p = Path()
-    // Pointed tip, slightly right of center.
-    p.move(to: CGPoint(x: x(0.06, 1.00), y: y(1.00)))
-    p.addCurve(to: CGPoint(x: x(0.40, 0.58) + lickR * 0.8, y: y(0.58)),
-               control1: CGPoint(x: x(0.18, 0.90), y: y(0.90)),
-               control2: CGPoint(x: x(0.34, 0.74) + lickR * 0.5, y: y(0.74)))
-    p.addCurve(to: CGPoint(x: x(0.40, 0.18), y: y(0.18)),
-               control1: CGPoint(x: x(0.46, 0.44), y: y(0.44)),
-               control2: CGPoint(x: x(0.48, 0.32), y: y(0.32)))
-    p.addCurve(to: CGPoint(x: x(0.18, -0.01), y: y(-0.01)),
-               control1: CGPoint(x: x(0.46, 0.10), y: y(0.10)),
-               control2: CGPoint(x: x(0.38, 0.01), y: y(0.01)))
-    p.addCurve(to: CGPoint(x: x(-0.24, 0.01), y: y(0.01)),
-               control1: CGPoint(x: x(0.02, -0.015), y: y(-0.015)),
-               control2: CGPoint(x: x(-0.10, -0.01), y: y(-0.01)))
-    p.addCurve(to: CGPoint(x: x(-0.40, 0.28), y: y(0.28)),
-               control1: CGPoint(x: x(-0.40, 0.04), y: y(0.04)),
-               control2: CGPoint(x: x(-0.46, 0.16), y: y(0.16)))
-    p.addCurve(to: CGPoint(x: x(-0.27, 0.54) + lickL * 0.7, y: y(0.54)),
-               control1: CGPoint(x: x(-0.36, 0.36), y: y(0.36)),
-               control2: CGPoint(x: x(-0.32, 0.44) + lickL * 0.4, y: y(0.44)))
-    p.addCurve(to: CGPoint(x: x(-0.02, 0.90), y: y(0.90)),
-               control1: CGPoint(x: x(-0.20, 0.66) + lickL * 0.4, y: y(0.66)),
-               control2: CGPoint(x: x(-0.10, 0.80), y: y(0.80)))
-    p.addCurve(to: CGPoint(x: x(0.06, 1.00), y: y(1.00)),
-               control1: CGPoint(x: x(0.01, 0.95), y: y(0.95)),
-               control2: CGPoint(x: x(0.04, 0.985), y: y(0.985)))
+    p.move(to: CGPoint(x: x(tipX, 1.00), y: y(1.00)))
+    p.addCurve(to: CGPoint(x: x(0.43 + rightBulge, 0.60) + lickR * 0.85, y: y(0.60)),
+               control1: CGPoint(x: x(0.19, 0.90), y: y(0.90)),
+               control2: CGPoint(x: x(0.36 + rightBulge, 0.76) + lickR * 0.45, y: y(0.76)))
+    p.addCurve(to: CGPoint(x: x(0.40, 0.16), y: y(0.16)),
+               control1: CGPoint(x: x(0.50 + rightBulge, 0.46), y: y(0.46)),
+               control2: CGPoint(x: x(0.50 + rightBulge * 0.7, 0.30), y: y(0.30)))
+    p.addCurve(to: CGPoint(x: x(0.16, -0.012), y: y(-0.012)),
+               control1: CGPoint(x: x(0.45, 0.09), y: y(0.09)),
+               control2: CGPoint(x: x(0.34, 0.005), y: y(0.005)))
+    p.addCurve(to: CGPoint(x: x(-0.26, 0.015), y: y(0.015)),
+               control1: CGPoint(x: x(0.00, -0.018), y: y(-0.018)),
+               control2: CGPoint(x: x(-0.14, -0.010), y: y(-0.010)))
+    p.addCurve(to: CGPoint(x: x(-0.42 - leftLobe, 0.30), y: y(0.30)),
+               control1: CGPoint(x: x(-0.41, 0.05), y: y(0.05)),
+               control2: CGPoint(x: x(-0.47 - leftLobe, 0.17), y: y(0.17)))
+    p.addCurve(to: CGPoint(x: x(-0.29, 0.52) + lickL * 0.55, y: y(0.52)),
+               control1: CGPoint(x: x(-0.38 - leftLobe * 0.7, 0.39), y: y(0.39)),
+               control2: CGPoint(x: x(-0.33, 0.46) + lickL * 0.35, y: y(0.46)))
+    // Clear upper-left notch/dip
+    p.addCurve(to: CGPoint(x: x(-0.08, 0.70), y: y(0.70)),
+               control1: CGPoint(x: x(-0.23 + notchIn, 0.47), y: y(0.47)),
+               control2: CGPoint(x: x(-0.14 + notchIn * 0.6, 0.58), y: y(0.58)))
+    p.addCurve(to: CGPoint(x: x(tipX, 1.00), y: y(1.00)),
+               control1: CGPoint(x: x(-0.03, 0.82), y: y(0.82)),
+               control2: CGPoint(x: x(0.01, 0.93), y: y(0.93)))
     p.closeSubpath()
     return p
 }
 
 /// Inner yellow/orange flame tongue.
-private func buildCore(geo: FlameGeometry, tipDx: CGFloat, sway: CGFloat, heightScale: CGFloat, widen: CGFloat, top: CGFloat) -> Path {
+private func buildCore(geo: FlameGeometry, tipDx: CGFloat, sway: CGFloat, heightScale: CGFloat, widen: CGFloat, top: CGFloat, morph: CGFloat) -> Path {
     let w = geo.w, h = geo.h, cx = geo.cx, baseY = geo.baseY
-    func x(_ fx: CGFloat, _ ft: CGFloat) -> CGFloat { cx + fx * w * widen + sway * ft * ft + tipDx * ft * ft * 0.70 }
+    func x(_ fx: CGFloat, _ ft: CGFloat) -> CGFloat { cx + fx * w * widen + sway * ft * ft + tipDx * ft * ft * 0.65 }
     func y(_ ft: CGFloat) -> CGFloat { baseY - ft * h * heightScale }
-    let tipY = min(top, 0.84)
+    let tipY = min(top, 0.62) + morph * 0.03
     var p = Path()
-    p.move(to: CGPoint(x: x(0.03, tipY), y: y(tipY)))
-    p.addCurve(to: CGPoint(x: x(0.16, 0.44), y: y(0.44)),
-               control1: CGPoint(x: x(0.10, tipY - 0.12), y: y(tipY - 0.12)),
-               control2: CGPoint(x: x(0.16, 0.58), y: y(0.58)))
-    p.addCurve(to: CGPoint(x: x(0.03, 0.14), y: y(0.14)),
-               control1: CGPoint(x: x(0.17, 0.32), y: y(0.32)),
-               control2: CGPoint(x: x(0.12, 0.20), y: y(0.20)))
-    p.addCurve(to: CGPoint(x: x(-0.13, 0.30), y: y(0.30)),
-               control1: CGPoint(x: x(-0.05, 0.12), y: y(0.12)),
-               control2: CGPoint(x: x(-0.12, 0.18), y: y(0.18)))
-    p.addCurve(to: CGPoint(x: x(-0.05, 0.64), y: y(0.64)),
-               control1: CGPoint(x: x(-0.14, 0.42), y: y(0.42)),
-               control2: CGPoint(x: x(-0.10, 0.54), y: y(0.54)))
-    p.addCurve(to: CGPoint(x: x(0.03, tipY), y: y(tipY)),
-               control1: CGPoint(x: x(-0.01, 0.74), y: y(0.74)),
-               control2: CGPoint(x: x(0.00, tipY - 0.08), y: y(tipY - 0.08)))
+    p.move(to: CGPoint(x: x(0.02 + morph * 0.01, tipY), y: y(tipY)))
+    p.addCurve(to: CGPoint(x: x(0.18, 0.36), y: y(0.36)),
+               control1: CGPoint(x: x(0.11, tipY - 0.10), y: y(tipY - 0.10)),
+               control2: CGPoint(x: x(0.19, 0.46), y: y(0.46)))
+    p.addCurve(to: CGPoint(x: x(0.02, 0.13), y: y(0.13)),
+               control1: CGPoint(x: x(0.17, 0.27), y: y(0.27)),
+               control2: CGPoint(x: x(0.11, 0.18), y: y(0.18)))
+    p.addCurve(to: CGPoint(x: x(-0.16, 0.27), y: y(0.27)),
+               control1: CGPoint(x: x(-0.06, 0.11), y: y(0.11)),
+               control2: CGPoint(x: x(-0.14, 0.17), y: y(0.17)))
+    p.addCurve(to: CGPoint(x: x(-0.06, 0.54), y: y(0.54)),
+               control1: CGPoint(x: x(-0.17, 0.36), y: y(0.36)),
+               control2: CGPoint(x: x(-0.12, 0.46), y: y(0.46)))
+    p.addCurve(to: CGPoint(x: x(0.02 + morph * 0.01, tipY), y: y(tipY)),
+               control1: CGPoint(x: x(-0.02, 0.58), y: y(0.58)),
+               control2: CGPoint(x: x(0.00, tipY - 0.04), y: y(tipY - 0.04)))
     p.closeSubpath()
     return p
 }
 
-private func buildAsh(geo: FlameGeometry) -> Path { buildOuter(geo: geo, tipDx: 0, sway: 0, heightScale: 1, widen: 1, lickL: 0, lickR: 0) }
+private func buildAsh(geo: FlameGeometry) -> Path { buildOuter(geo: geo, tipDx: 0, sway: 0, heightScale: 1, widen: 1, lickL: 0, lickR: 0, morph: 0) }
 
 /// Glowing streak flame (emoji-like 🔥 silhouette in all states).
 struct FlintStreakEmber: View {
@@ -306,51 +310,65 @@ struct FlintStreakEmber: View {
         let compact = s < 48
         let emberCount = s >= 128 ? 3 : (s >= 64 ? 2 : (s >= 36 ? 1 : 0))
         let animate = shouldAnimate
-        let rate = mood == .dormant ? 0.45 : (mood == .warning ? 0.6 : 1.0)
-        let intensity = palette.intensity
+        let baseRate: Double = (mood == .dormant && forceAnimate) ? 0.72 : (mood == .dormant ? 0.45 : (mood == .warning ? 0.6 : 1.0))
+        let rate = animate ? baseRate : 0.0
+        let baseIntensity = flameIntensity(mood)
+        let intensity = (forceAnimate && mood == .dormant) ? 0.62 : baseIntensity
 
         let tipDx = animate ? tipFlickerDx(t, rate: rate, halfW: Double(geo.w) * 0.5) * intensity : 0
         let tilt = animate ? tiltDegrees(t, rate: rate) * intensity : 0
         let bob = animate ? bobOffset(t, rate: rate, unit: Double(geo.s)) * intensity : 0
         let breath01 = animate ? breathPhase01(t) : 0.5
         let breath = animate ? breathScale(breath01) : 1.0
-        let sway = animate ? (sin(reducedPhase(t, rate: rate, freq: 1.0) * twoPi()) * 0.020 +
-            sin(reducedPhase(t, rate: rate, freq: 2.3) * twoPi() + 1.3) * 0.010) * Double(geo.w) * intensity : 0
-        let lickL = animate ? sin(reducedPhase(t, rate: rate, freq: 1.4) * twoPi() + 1.0) * Double(geo.w) * 0.030 * intensity : 0
-        let lickR = animate ? sin(reducedPhase(t, rate: rate, freq: 1.9) * twoPi() + 2.2) * Double(geo.w) * 0.024 * intensity : 0
-        let innerPulse = animate ? (0.985 + 0.03 * sin(reducedPhase(t, rate: rate, freq: 1.8) * twoPi())) : 1.0
-        let heightScale = 1.0 + (breath - 1.0) * 0.55
-        let widen = 1.0 + (breath - 1.0) * 0.45
+        let sway = animate ? (sin(reducedPhase(t, rate: rate, freq: 1.0) * twoPi()) * 0.022 +
+            sin(reducedPhase(t, rate: rate, freq: 2.4) * twoPi() + 1.3) * 0.011) * Double(geo.w) * intensity : 0
+        let lickL = animate ? sin(reducedPhase(t, rate: rate, freq: 1.5) * twoPi() + 1.0) * Double(geo.w) * 0.032 * intensity : 0
+        let lickR = animate ? sin(reducedPhase(t, rate: rate, freq: 2.0) * twoPi() + 2.2) * Double(geo.w) * 0.026 * intensity : 0
+        let morph = animate ? CGFloat(sin(reducedPhase(t, rate: rate, freq: 1.15) * twoPi() + 0.6)) : 0
+        let innerDance = animate ? sin(reducedPhase(t, rate: rate, freq: 2.6) * twoPi() + 1.9) : 0
+        let innerPulse = animate ? (0.98 + 0.045 * sin(reducedPhase(t, rate: rate, freq: 2.1) * twoPi())) : 1.0
+        let flicker = animate ? (0.94 + 0.06 * ((sin(reducedPhase(t, rate: rate, freq: 3.4) * twoPi()) + 1.0) * 0.5)) : 1.0
+        let heightScale = 1.0 + (breath - 1.0) * 0.60 + (animate ? innerDance * 0.012 : 0)
+        let widen = 1.0 + (breath - 1.0) * 0.40
         let flash = Double(milestoneFlash)
-        let coreTop: CGFloat = mood == .active ? 0.72 : (mood == .warning ? 0.66 : 0.60)
+        let coreTop: CGFloat = CGFloat((mood == .active ? 0.62 : (mood == .warning ? 0.58 : 0.55)) + innerDance * 0.02)
 
-        let bloomA = (mood == .active ? (compact ? 0.13 : 0.20) : (mood == .warning ? (compact ? 0.09 : 0.13) : (compact ? 0.05 : 0.07))) + flash * 0.06
-        let bloomR = geo.h * 0.95
-        context.fill(Path(ellipseIn: CGRect(x: geo.cx - bloomR, y: geo.baseY - geo.h * 0.42 - bloomR, width: bloomR * 2, height: bloomR * 2)), with: .color(palette.bloomColor.opacity(bloomA)))
-        let bloomIR = geo.h * 0.50
-        context.fill(Path(ellipseIn: CGRect(x: geo.cx - bloomIR, y: geo.baseY - geo.h * 0.38 - bloomIR, width: bloomIR * 2, height: bloomIR * 2)), with: .color(palette.bloomInnerColor.opacity(bloomA * 0.85)))
+        let glowPulse = animate ? 0.90 + 0.10 * ((sin(reducedPhase(t, rate: rate, freq: 0.9) * twoPi() + 0.4) + 1.0) * 0.5) : 1.0
+        let bloomA = (mood == .active ? (compact ? 0.16 : 0.24) : (mood == .warning ? (compact ? 0.10 : 0.15) : (compact ? 0.06 : 0.09))) * glowPulse + flash * 0.06
+        let bloomR = geo.h * (0.92 + CGFloat(breath - 1.0) * 0.6)
+        context.fill(Path(ellipseIn: CGRect(x: geo.cx - bloomR, y: geo.baseY - geo.h * 0.43 - bloomR, width: bloomR * 2, height: bloomR * 2)), with: .color(palette.bloomColor.opacity(min(0.35, bloomA))))
+        let bloomIR = geo.h * (0.48 + CGFloat(breath - 1.0) * 0.4)
+        context.fill(Path(ellipseIn: CGRect(x: geo.cx - bloomIR, y: geo.baseY - geo.h * 0.38 - bloomIR, width: bloomIR * 2, height: bloomIR * 2)), with: .color(palette.bloomInnerColor.opacity(min(0.30, bloomA * 0.85))))
         if !compact {
-            context.fill(Path(ellipseIn: CGRect(x: geo.cx - geo.w * 0.50, y: geo.baseY - geo.h * 0.03 - geo.h * 0.05, width: geo.w * 1.00, height: geo.h * 0.10)), with: .color(palette.contactColor))
+            context.fill(Path(ellipseIn: CGRect(x: geo.cx - geo.w * 0.52, y: geo.baseY - geo.h * 0.03 - geo.h * 0.05, width: geo.w * 1.04, height: geo.h * 0.10)), with: .color(palette.contactColor))
         }
 
         var flame = context
         flame.translateBy(x: 0, y: CGFloat(bob))
-        flame.translateBy(x: geo.cx, y: geo.baseY * 0.90)
+        flame.translateBy(x: geo.cx, y: geo.baseY * 0.92)
         flame.rotate(by: .degrees(tilt))
-        flame.translateBy(x: -geo.cx, y: -geo.baseY * 0.90)
+        flame.translateBy(x: -geo.cx, y: -geo.baseY * 0.92)
 
-        let outer = buildOuter(geo: geo, tipDx: CGFloat(tipDx), sway: CGFloat(sway), heightScale: CGFloat(heightScale), widen: CGFloat(widen), lickL: CGFloat(lickL), lickR: CGFloat(lickR))
+        let outer = buildOuter(geo: geo, tipDx: CGFloat(tipDx), sway: CGFloat(sway), heightScale: CGFloat(heightScale), widen: CGFloat(widen), lickL: CGFloat(lickL), lickR: CGFloat(lickR), morph: morph)
+        flame.opacity = flicker
         flame.fill(outer, with: .linearGradient(Gradient(stops: palette.bodyStops), startPoint: CGPoint(x: geo.cx, y: geo.baseY), endPoint: CGPoint(x: geo.cx, y: geo.baseY - geo.h)))
+        flame.opacity = 1.0
 
-        let inner = buildCore(geo: geo, tipDx: CGFloat(tipDx * 0.85), sway: CGFloat(sway * 0.80), heightScale: CGFloat(heightScale * innerPulse), widen: CGFloat(widen * 0.97), top: coreTop)
-        flame.fill(inner, with: .linearGradient(Gradient(stops: palette.innerStops), startPoint: CGPoint(x: geo.cx, y: geo.baseY - geo.h * 0.10), endPoint: CGPoint(x: geo.cx, y: geo.baseY - geo.h * 0.88)))
+        let innerSway = sway * 0.78 + (animate ? sin(reducedPhase(t, rate: rate, freq: 2.8) * twoPi() + 0.7) * Double(geo.w) * 0.008 * intensity : 0)
+        let innerTipDx = tipDx * 0.75 + (animate ? sin(reducedPhase(t, rate: rate, freq: 3.1) * twoPi() + 1.4) * Double(geo.w) * 0.010 * intensity : 0)
+        let innerPath = buildCore(geo: geo, tipDx: CGFloat(innerTipDx), sway: CGFloat(innerSway), heightScale: CGFloat(heightScale * innerPulse), widen: CGFloat(widen * 0.97), top: coreTop, morph: CGFloat(innerDance))
+        let innerAlpha = 0.92 + 0.08 * ((sin(reducedPhase(t, rate: rate, freq: 2.9) * twoPi() + 0.9) + 1.0) * 0.5)
+        flame.opacity = min(1.0, max(0.86, innerAlpha))
+        flame.fill(innerPath, with: .linearGradient(Gradient(stops: palette.innerStops), startPoint: CGPoint(x: geo.cx, y: geo.baseY - geo.h * 0.10), endPoint: CGPoint(x: geo.cx, y: geo.baseY - geo.h * 0.88)))
+        flame.opacity = 1.0
 
-        let hotA = ((mood == .active ? (compact ? 0.42 : 0.52) : (mood == .warning ? (compact ? 0.28 : 0.34) : (compact ? 0.16 : 0.20))) + (breath - 1.0) * 1.2 + flash * 0.12)
-        let coreCx = geo.cx + geo.w * 0.02 + CGFloat(sway) * 0.15
-        let hotRect = CGRect(x: coreCx - geo.w * 0.13, y: geo.baseY - geo.h * 0.26 - geo.h * 0.09, width: geo.w * 0.26, height: geo.h * 0.18)
-        flame.fill(Path(ellipseIn: hotRect), with: .radialGradient(Gradient(stops: palette.hotBaseStops), center: CGPoint(x: coreCx, y: geo.baseY - geo.h * 0.20), startRadius: 0, endRadius: geo.w * 0.26))
-        let coreRect = CGRect(x: coreCx - geo.w * 0.09, y: geo.baseY - geo.h * 0.30 - geo.h * 0.08, width: geo.w * 0.18, height: geo.h * 0.16)
-        flame.fill(Path(ellipseIn: coreRect), with: .radialGradient(Gradient(stops: palette.coreStops), center: CGPoint(x: coreCx + geo.w * 0.00, y: geo.baseY - geo.h * 0.28), startRadius: 0, endRadius: geo.h * 0.18))
+        let hotA = ((mood == .active ? (compact ? 0.52 : 0.62) : (mood == .warning ? (compact ? 0.34 : 0.42) : (compact ? 0.20 : 0.26))) + (breath - 1.0) * 1.1 + flash * 0.12)
+        let coreCx = geo.cx + geo.w * 0.015 + CGFloat(sway) * 0.12
+        let coreCy = geo.baseY - geo.h * CGFloat(0.24 - innerDance * 0.015)
+        let hotRect = CGRect(x: coreCx - geo.w * 0.145, y: coreCy - geo.h * 0.075 - geo.h * 0.085, width: geo.w * 0.29, height: geo.h * 0.17)
+        flame.fill(Path(ellipseIn: hotRect), with: .radialGradient(Gradient(stops: palette.hotBaseStops), center: CGPoint(x: coreCx, y: coreCy), startRadius: 0, endRadius: geo.w * 0.24))
+        let coreRect = CGRect(x: coreCx - geo.w * 0.095, y: coreCy - geo.h * 0.11 - geo.h * 0.08, width: geo.w * 0.19, height: geo.h * 0.16)
+        flame.fill(Path(ellipseIn: coreRect), with: .radialGradient(Gradient(stops: palette.coreStops), center: CGPoint(x: coreCx, y: coreCy - geo.h * 0.02), startRadius: 0, endRadius: geo.h * 0.18))
 
         if animate && emberCount > 0 {
             drawEmbers(in: &flame, geo: geo, t: t, rate: rate, intensity: intensity, count: emberCount)
@@ -358,9 +376,9 @@ struct FlintStreakEmber: View {
     }
 
     private func drawAsh(in context: inout GraphicsContext, geo: FlameGeometry, palette: EmberPalette, compact: Bool, flash: Double) {
-        let outer = buildOuter(geo: geo, tipDx: 0, sway: 0, heightScale: 1, widen: 1, lickL: 0, lickR: 0)
+        let outer = buildOuter(geo: geo, tipDx: 0, sway: 0, heightScale: 1, widen: 1, lickL: 0, lickR: 0, morph: 0)
         context.fill(outer, with: .linearGradient(Gradient(stops: palette.bodyStops), startPoint: CGPoint(x: geo.cx, y: geo.baseY), endPoint: CGPoint(x: geo.cx, y: geo.baseY - geo.h)))
-        let inner = buildCore(geo: geo, tipDx: 0, sway: 0, heightScale: 1, widen: 1, top: 0.60)
+        let inner = buildCore(geo: geo, tipDx: 0, sway: 0, heightScale: 1, widen: 1, top: 0.60, morph: 0)
         context.fill(inner, with: .linearGradient(Gradient(stops: palette.innerStops), startPoint: CGPoint(x: geo.cx, y: geo.baseY - geo.h * 0.10), endPoint: CGPoint(x: geo.cx, y: geo.baseY - geo.h * 0.88)))
     }
 
