@@ -112,6 +112,7 @@ fun FocusStreakCelebrationSheet(
                     size = 148.dp,
                     contentDescription = null,
                     forceAnimate = true,
+                    sideSparks = true,
                 )
                 Text(
                     streak.toString(),

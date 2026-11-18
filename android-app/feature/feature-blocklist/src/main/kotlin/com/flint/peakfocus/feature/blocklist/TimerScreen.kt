@@ -405,7 +405,7 @@ private fun TodayScene(
                 )
                 Box(
                     Modifier
-                        .size(40.dp)
+                        .size(24.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -417,7 +417,7 @@ private fun TodayScene(
                         .testTag("today.streak.ember"),
                     contentAlignment = Alignment.Center,
                 ) {
-                    FlintStreakEmber(mood = emberMood, size = 40.dp)
+                    FlintStreakEmber(mood = emberMood, size = 24.dp)
                 }
                 Spacer(Modifier.width(8.dp))
                 // Fail closed: only a loaded rule set may claim "Protected ┬╖ N rules".
@@ -434,6 +434,9 @@ private fun TodayScene(
                     dot = healthy,
                     modifier = Modifier.clip(RoundedCornerShape(percent = 50)).clickable(onClick = onOpenRules),
                 )
+                Spacer(Modifier.width(6.dp))
+                // The Flint app mark belongs in the top-right corner, like an app/profile icon.
+                FlintMark(Modifier.size(22.dp))
             }
 
             Text(

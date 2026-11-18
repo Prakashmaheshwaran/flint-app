@@ -312,7 +312,14 @@ internal class StreakFlamePainter(
     private val orangePath: Path = tonguePath(flameW, flameH, ox, oy, tipY = 0.28f, halfW = 0.380f, baseY = 0.998f)
     private val yellowPath: Path = tonguePath(flameW, flameH, ox, oy, tipY = 0.43f, halfW = 0.258f, baseY = 0.988f)
 
-    fun draw(scope: DrawScope, state: StreakFlameState, elapsed: Double, flashIn: Float, forceAnimate: Boolean = false) {
+    fun draw(
+        scope: DrawScope,
+        state: StreakFlameState,
+        elapsed: Double,
+        flashIn: Float,
+        forceAnimate: Boolean = false,
+        sideSparks: Boolean = false,
+    ) {
         val flash = flashIn.coerceIn(0f, 1f)
         val brush = brushes.getOrPut(state) { brushSet(state, geometry) }
         val geo = geometry
@@ -417,14 +424,29 @@ internal class StreakFlamePainter(
             if (animate && emberCount > 0) {
                 drawEmbers(scope, geo, t, rate, intensity)
             }
+            // Optional celebration sparkle beside the silhouette. Extra droplets only:
+            // the outer path above is never modified, so the flame stays bit-identical
+            // to previous renders when sideSparks is off.
+            if (animate && sideSparks) {
+                drawSideSparks(scope, t, rate, intensity)
+            }
         }
     }
 
-    fun drawCrossFade(scope: DrawScope, from: StreakFlameState, to: StreakFlameState, elapsed: Double, flashIn: Float, progress: Float, forceAnimate: Boolean = false) {
+    fun drawCrossFade(
+        scope: DrawScope,
+        from: StreakFlameState,
+        to: StreakFlameState,
+        elapsed: Double,
+        flashIn: Float,
+        progress: Float,
+        forceAnimate: Boolean = false,
+        sideSparks: Boolean = false,
+    ) {
         val p = progress.coerceIn(0f, 1f)
-        if (from == to || p >= 1f) { draw(scope, to, elapsed, flashIn, forceAnimate); return }
-        withLayerAlpha(scope, 1f - p) { draw(scope, from, elapsed, flashIn, forceAnimate) }
-        withLayerAlpha(scope, p) { draw(scope, to, elapsed, flashIn, forceAnimate) }
+        if (from == to || p >= 1f) { draw(scope, to, elapsed, flashIn, forceAnimate, sideSparks); return }
+        withLayerAlpha(scope, 1f - p) { draw(scope, from, elapsed, flashIn, forceAnimate, sideSparks) }
+        withLayerAlpha(scope, p) { draw(scope, to, elapsed, flashIn, forceAnimate, sideSparks) }
     }
 
     private inline fun withLayerAlpha(scope: DrawScope, alpha: Float, block: () -> Unit) {
@@ -454,6 +476,47 @@ internal class StreakFlamePainter(
         }
     }
 
+    /**
+     * Celebration sparkle: 2-4 small fire droplets per side, outside the silhouette.
+     *
+     * Positions are seeded from [sparkSeed]/[sparkAlpha] so each droplet spawns, rises and
+     * fades on its own phase. Nothing here touches the outer path, its alpha, or the
+     * ember budget, so the flame body is pixel-identical when [draw] is called with
+     * `sideSparks = false`.
+     */
+    private fun drawSideSparks(scope: DrawScope, t: Double, rate: Float, intensity: Float) {
+        val perSide = sideSparkCountFor(emberCount)
+        val centreX = ox + flameW * 0.5f
+        for (side in SIDE_SPARK_SIDES) {
+            for (i in 0 until perSide) {
+                val phaseIndex = i + if (side < 0) 0 else SIDE_SPARK_PHASE_OFFSET
+                val seed = sparkSeed(t, rate, phaseIndex)
+                val alpha = (sparkAlpha(seed, intensity) * SIDE_SPARK_ALPHA).coerceIn(0f, 0.72f)
+                if (alpha <= 0.03f) continue
+                val slot = if (perSide <= 1) 0f else i.toFloat() / (perSide - 1).toFloat()
+                val startY = SIDE_SPARK_START_BOTTOM - SIDE_SPARK_START_SPAN * slot
+                val yFrac = startY - seed * SIDE_SPARK_RISE
+                // Always measure against the wider of the start/current height, then push
+                // outward, so a rising droplet never travels back inside the silhouette.
+                val edge = maxOf(sideEdgeHalfWidth(startY), sideEdgeHalfWidth(yFrac))
+                val drift = SIDE_SPARK_DRIFT_MIN + seed * SIDE_SPARK_DRIFT_SPAN
+                val wobble = sin(seed * 5f + i * 1.7f) * 0.012f
+                val x = centreX + side * (edge + drift + wobble) * flameW
+                val y = oy + flameH * yFrac
+                val r = geometry.s * (SIDE_SPARK_RADIUS + SIDE_SPARK_RADIUS_SPREAD * (i % 2))
+                // Subtle halo, then the droplet body, then a hot pinpoint highlight.
+                scope.drawCircle(color = SideSparkGlow, alpha = alpha * 0.30f, radius = r * 2.4f, center = Offset(x, y))
+                scope.drawOval(
+                    color = SideSparkBody,
+                    alpha = alpha,
+                    topLeft = Offset(x - r * 0.62f, y - r * 1.05f),
+                    size = Size(r * 1.24f, r * 2.10f),
+                )
+                scope.drawCircle(color = SideSparkHot, alpha = alpha * 0.72f, radius = r * 0.50f, center = Offset(x, y - r * 0.25f))
+            }
+        }
+    }
+
     private fun drawAsh(scope: DrawScope, brush: FlameBrushSet, flash: Float) {
         scope.drawPath(outerPath, brush.body)
         scope.drawPath(orangePath, brush.orange)
@@ -468,6 +531,58 @@ internal class StreakFlamePainter(
 }
 
 private fun twoPi(): Float = 2f * PI.toFloat()
+
+/** Left (-1) and right (+1) sides for the optional celebration droplets. */
+private val SIDE_SPARK_SIDES = intArrayOf(-1, 1)
+
+/** Keeps the two sides on different phases of the [sparkSeed] cycle. */
+private const val SIDE_SPARK_PHASE_OFFSET = 4
+
+/** Droplets per side track the rising-ember size tiers: 2 (>=64dp), 3 (>=128dp), 4 (hero). */
+private fun sideSparkCountFor(emberCount: Int): Int = when {
+    emberCount >= 3 -> 4
+    emberCount >= 2 -> 3
+    else -> 2
+}
+
+/** Droplets spawn between these fractions of the flame height (lower sides). */
+private const val SIDE_SPARK_START_BOTTOM = 0.92f
+private const val SIDE_SPARK_START_SPAN = 0.30f
+
+/** Upward travel across a droplet's life, as a fraction of the flame height. */
+private const val SIDE_SPARK_RISE = 0.09f
+
+/** Outward travel across a droplet's life, as a fraction of the flame width. */
+private const val SIDE_SPARK_DRIFT_MIN = 0.020f
+private const val SIDE_SPARK_DRIFT_SPAN = 0.075f
+
+/** Peak droplet alpha stays under the rising embers so it reads as a sparkle, not debris. */
+private const val SIDE_SPARK_ALPHA = 0.88f
+
+private const val SIDE_SPARK_RADIUS = 0.0062f
+private const val SIDE_SPARK_RADIUS_SPREAD = 0.0012f
+
+private val SideSparkGlow = Color(0xFFFFA43A)
+private val SideSparkBody = Color(0xFFFFCF57)
+private val SideSparkHot = Color(0xFFFFF3C4)
+
+/**
+ * Distance from the flame centre to its outer edge, as a fraction of the flame width,
+ * sampled from [appleMainPath] between 0.55 and 0.95 of the flame height.
+ */
+private val SIDE_EDGE_Y = floatArrayOf(0.55f, 0.64f, 0.72f, 0.80f, 0.87f, 0.95f)
+private val SIDE_EDGE_HALF_W = floatArrayOf(0.478f, 0.500f, 0.478f, 0.440f, 0.398f, 0.300f)
+
+/** Linearly interpolated silhouette half-width, clamped to the sampled band. */
+private fun sideEdgeHalfWidth(yFrac: Float): Float {
+    val y = yFrac.coerceIn(SIDE_EDGE_Y.first(), SIDE_EDGE_Y.last())
+    var i = 0
+    while (i < SIDE_EDGE_Y.size - 2 && y > SIDE_EDGE_Y[i + 1]) i++
+    val y0 = SIDE_EDGE_Y[i]
+    val y1 = SIDE_EDGE_Y[i + 1]
+    val f = if (y1 > y0) (y - y0) / (y1 - y0) else 0f
+    return SIDE_EDGE_HALF_W[i] + (SIDE_EDGE_HALF_W[i + 1] - SIDE_EDGE_HALF_W[i]) * f
+}
 
 /** Smooth inset flame tongue, like the orange/yellow layers of the reference emoji. */
 private fun tonguePath(
@@ -598,6 +713,10 @@ fun StreakFlame(
     /** When true, keeps a gentle live/burning motion even for [StreakFlameState.Inactive]
      *  (e.g. streak detail sheet). Reduce-motion still disables animation. */
     forceAnimate: Boolean = false,
+    /** When true, and the flame is at least 64dp, adds 2-4 small celebration droplets
+     *  sparkling outside each side of the silhouette. Defaults off, so existing renders
+     *  and shipped placements are unchanged. The outer flame itself never changes. */
+    sideSparks: Boolean = false,
 ) {
     val reduced = rememberReducedMotion()
     val windowInfo = LocalWindowInfo.current
@@ -613,6 +732,7 @@ fun StreakFlame(
         dpSize >= 36f -> 1
         else -> 0
     }
+    val sideSparkEligible = sideSparks && dpSize >= 64f
     val (fringeInnerDp, fringeOuterDp) = fringeWidthsDp(dpSize)
     val fringeInner = with(density) { Stroke(fringeInnerDp.dp.toPx()) }
     val fringeOuter = with(density) { Stroke(fringeOuterDp.dp.toPx()) }
@@ -681,9 +801,12 @@ fun StreakFlame(
         Canvas(Modifier.fillMaxSize()) {
             val from = outgoing
             if (from != null) {
-                painter.drawCrossFade(this, from, shown, elapsed, milestoneFlash + crossflash, fade.value, forceAnimate)
+                painter.drawCrossFade(
+                    this, from, shown, elapsed, milestoneFlash + crossflash, fade.value, forceAnimate,
+                    sideSparks = sideSparkEligible,
+                )
             } else {
-                painter.draw(this, shown, elapsed, milestoneFlash + crossflash, forceAnimate)
+                painter.draw(this, shown, elapsed, milestoneFlash + crossflash, forceAnimate, sideSparks = sideSparkEligible)
             }
         }
     }

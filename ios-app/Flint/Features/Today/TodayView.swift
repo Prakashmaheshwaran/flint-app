@@ -144,7 +144,7 @@ struct TodayView: View {
                     .foregroundStyle(FlintBrand.bone)
                 Spacer(minLength: 8)
                 Button { showStreakSheet = true } label: {
-                    FlintStreakEmber(mood: streakMood, size: 40)
+                    FlintStreakEmber(mood: streakMood, size: 24)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(streakLabel)
