@@ -231,7 +231,12 @@ final class StreakGifFrames {
     let frames: [UIImage]
 
     private init() {
-        guard let url = Bundle.main.url(forResource: "flint_streak_fire", withExtension: "gif"),
+        // App: Bundle.main carries the resource. Test host: the resource sits in the app
+        // bundle that hosts the class, so fall back to the class bundle instead of
+        // silently reporting an empty frame list.
+        let url = Bundle.main.url(forResource: "flint_streak_fire", withExtension: "gif")
+            ?? Bundle(for: StreakGifFrames.self).url(forResource: "flint_streak_fire", withExtension: "gif")
+        guard let url,
               let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             frames = []
             return

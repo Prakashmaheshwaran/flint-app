@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import Flint
 
 /// Covers the streak copy and policy the app actually renders: the sheet label, the
@@ -65,5 +66,18 @@ final class FocusStreakCopyTests: XCTestCase {
 
     func testFrameIntervalMatchesTheAtlas() {
         XCTAssertEqual(streakFrameInterval, 0.06, accuracy: 0.000_001)
+    }
+
+    func testBundledAtlasShipsTheSharedFrameContract() {
+        let frames = StreakGifFrames.shared.frames
+        XCTAssertEqual(
+            frames.count, 45,
+            "the streak asset must ship 45 frames; if this fails, confirm flint_streak_fire.gif is in the bundle")
+
+        guard let first = frames.first?.cgImage else {
+            return XCTFail("the first streak frame must decode")
+        }
+        XCTAssertEqual(first.width, 156)
+        XCTAssertEqual(first.height, 187)
     }
 }

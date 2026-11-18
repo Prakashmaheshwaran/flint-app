@@ -49,7 +49,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -220,53 +219,27 @@ enum class StreakEmberMood {
 }
 
 internal data class EmberPalette(
-    val coreHot: Color,
     val coreMid: Color,
-    val coreDeep: Color,
-    val shellTop: Color,
     val shellMid: Color,
-    val shellBase: Color,
-    val rim: Color,
     val halo: Color,
-    val hasFire: Boolean,
 )
 
 internal fun paletteFor(mood: StreakEmberMood): EmberPalette = when (mood) {
-    // Milky shell, glowing rim, fire core.
     StreakEmberMood.Active -> EmberPalette(
-        coreHot = Color(0xFFFFF6D6),
         coreMid = Color(0xFFFFAE3D),
-        coreDeep = Color(0xFFF06414),
-        shellTop = Color(0x4DFFF3DC),
         shellMid = Color(0x94FFF0CE),
-        shellBase = Color(0xF2FFE7C2),
-        rim = Color(0xFFFFFDF6),
         halo = Color(0xFFF5A623),
-        hasFire = true,
     )
+    // At-risk reads as heat leaving the flame: warm amber chrome, no red in the sheet.
     StreakEmberMood.Warning -> EmberPalette(
-        // Earlier this was a red/rose warning tint. At-risk now reads as heat leaving
-        // the flame: warm amber chrome, no red anywhere in the sheet.
-        coreHot = Color(0xFFFFE3B8),
         coreMid = Color(0xFFF2A24A),
-        coreDeep = Color(0xFFB2652A),
-        shellTop = Color(0x4DFFE8C8),
         shellMid = Color(0x94F6DDBB),
-        shellBase = Color(0xF2EBCB9E),
-        rim = Color(0xFFFFF3DF),
         halo = Color(0xFFE08A34),
-        hasFire = true,
     )
     StreakEmberMood.Dormant -> EmberPalette(
-        coreHot = Color(0xFFF2F2F4),
         coreMid = Color(0xFFE6E6EA),
-        coreDeep = Color(0xFFDBDBDE),
-        shellTop = Color(0x4DF2F2F4),
         shellMid = Color(0x94E6E6EA),
-        shellBase = Color(0xE6DBDBDE),
-        rim = Color(0xFFFFFFFF),
         halo = Color(0xFFB7AE9F),
-        hasFire = false,
     )
 }
 
@@ -329,8 +302,8 @@ fun FlintStreakCinematicStage(
         )
 
         // Soft stone masses — restrained, out-of-focus.
-        drawRockMass(Offset(w * -0.05f, h * 0.40f), w * 0.34f, h * 0.90f, phase, 0.85f)
-        drawRockMass(Offset(w * 1.05f, h * 0.48f), w * 0.36f, h * 0.95f, phase + 0.35f, 0.85f)
+        drawRockMass(Offset(w * -0.05f, h * 0.40f), w * 0.34f, h * 0.90f, 0.85f)
+        drawRockMass(Offset(w * 1.05f, h * 0.48f), w * 0.36f, h * 0.95f, 0.85f)
 
         val glowA = when (mood) {
             StreakEmberMood.Active -> 0.11f
@@ -373,13 +346,11 @@ private fun DrawScope.drawRockMass(
     anchor: Offset,
     spanX: Float,
     spanY: Float,
-    phase: Float,
     alphaScale: Float,
 ) {
-    // Rock masses sit still — their shimmer came free with the static palette.
-    val wobble = 0f
+    // Rock masses sit still; the stage owns the only clock.
     for (i in 0..4) {
-        val ox = anchor.x + (i - 2f) * spanX * 0.10f + wobble
+        val ox = anchor.x + (i - 2f) * spanX * 0.10f
         val oy = anchor.y + (i % 3 - 1) * spanY * 0.09f
         val rx = spanX * (0.30f + i * 0.07f)
         val ry = spanY * (0.24f + (4 - i) * 0.05f)
@@ -413,7 +384,6 @@ object FocusStreakSheetCopy {
         StreakEmberMood.Warning -> "Your streak still holds. Finish a focus session today."
         StreakEmberMood.Dormant -> "A completed focus session lights the first day."
     }
-
 }
 
 /**

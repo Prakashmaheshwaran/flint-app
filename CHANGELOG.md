@@ -9,8 +9,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
 - **Cinematic streak celebration.** Today gains a bottom-sheet celebration with the streak
   flame. Android's Insights also gains a Focus Streak card (current streak, best recorded
   streak, this week's completed days, honest "no active streak" state). The flame plays the
-  bundled 45-frame animation at 60 ms per frame on a continuous 2.7 s loop, honours Reduce
-  Motion, and stops advancing when it is off-screen or the window is not focused.
+  bundled 45-frame animation at 60 ms per frame on a continuous 2.7 s loop and honours Reduce
+  Motion; on Android it also stops advancing when it is off-screen or the window is not
+  focused.
 - **Streak mood.** Active, at-risk and dormant mood use the same approved flame; the mood
   changes its opacity and whether it animates, never the silhouette.
 - **Streak semantics.** Only completed Timer focus sessions count; multiple completions in one

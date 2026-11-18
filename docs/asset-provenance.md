@@ -7,7 +7,7 @@ the generated third-party notices (which cover libraries and fonts only).
 
 | Platform | File | Used by |
 | --- | --- | --- |
-| Android | `android-app/core/core-common/src/main/res/drawable/flint_streak_sheet.png` | `FlintStreakEmber` (frame atlas, 45 frames, 9 x 5 grid of 156 x 187 px) |
+| Android | `android-app/core/core-common/src/main/res/drawable-nodpi/flint_streak_sheet.png` | `FlintStreakEmber` (frame atlas, 45 frames, 9 x 5 grid of 156 x 187 px) |
 | iOS | `ios-app/Flint/Resources/flint_streak_fire.gif` | `FlintStreakEmber` via `StreakGifFrames` (45 frames, 60 ms each) |
 
 - **What it is:** a stylised fire emblem, supplied as an animated GIF for the streak

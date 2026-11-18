@@ -9,10 +9,11 @@ import org.junit.Test
 /**
  * Cross-platform streak contract.
  *
- * Both platforms must draw the same loop from the same asset geometry and the same three
- * placements. This test pins the contract by value (frame count, frame duration, loop
- * length, placement sizes) instead of asserting source-code strings, so renaming a symbol
- * cannot break it while a real drift still does.
+ * Android's loop values are asserted directly against production declarations. iOS is
+ * checked by reading its source, because there is no shared test runner: the assertions
+ * pin the numbers that must not drift (frame interval, placement sizes) and the loop
+ * helper call. A behavioural iOS assertion lives in `FocusStreakCopyTests`; this test is
+ * the guard that both platforms still declare the same loop and placements.
  *
  * It also asserts that each platform keeps exactly one flame renderer: the abandoned
  * vector renderer is gone and must not come back.
@@ -34,12 +35,14 @@ class StreakContractTest {
     }
 
     @Test
-    fun `loop geometry is identical on both platforms`() {
+    fun `loop constants match on both platforms`() {
         assertEquals(45, StreakAtlasFrames.FRAME_COUNT)
         assertEquals(9, StreakAtlasFrames.COLUMNS)
         assertEquals(60L, STREAK_FRAME_MS)
         assertEquals(2_700L, StreakAtlasFrames.FRAME_COUNT * STREAK_FRAME_MS)
 
+        // iOS keeps its own frame list; these pin the same interval and the loop helper
+        // that wraps it. The asset-level check lives in FocusStreakCopyTests.
         val ios = read("ios-app/Flint/Features/Stats/FlintStreakEmber.swift")
         assertTrue("iOS must advance one frame per 0.06 s", ios.contains("0.06"))
         assertTrue("iOS must wrap on the frame count", ios.contains("flameFrameIndex("))

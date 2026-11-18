@@ -30,10 +30,9 @@ class EmberMoodRuleTest {
 
     @Test
     fun `warning never appears without an active streak`() {
-        for (streak in 0..3) {
-            if (streak == 0) {
-                assertEquals(StreakEmberMood.Dormant, emberMoodFor(streak, completedToday = false))
-            }
+        for (streak in 1..3) {
+            assertEquals(StreakEmberMood.Warning, emberMoodFor(streak, completedToday = false))
+            assertEquals(StreakEmberMood.Dormant, emberMoodFor(streak = 0, completedToday = false))
         }
     }
 }
