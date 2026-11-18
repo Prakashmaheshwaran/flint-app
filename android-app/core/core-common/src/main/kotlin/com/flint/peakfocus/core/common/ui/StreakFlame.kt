@@ -2,8 +2,7 @@ package com.flint.peakfocus.core.common.ui
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas as AndroidCanvas
-import android.graphics.Movie
+import android.graphics.BitmapFactory
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -945,7 +944,6 @@ private fun appleLickPath(w: Float, h: Float, ox: Float, oy: Float): Path {
 }
 
 @Composable
-@Suppress("DEPRECATION")
 fun StreakFlame(
     state: StreakFlameState,
     streakCount: Int,
@@ -1398,30 +1396,31 @@ fun FocusStreakCelebrationSheet(
 }
 
 private object StreakGifFrames {
-    private const val FRAME_MS = 60
     private const val FRAME_COUNT = 45
+    private const val COLUMNS = 9
     @Volatile private var cache: List<ImageBitmap>? = null
 
-    @Suppress("DEPRECATION")
     fun get(context: Context): List<ImageBitmap> {
         cache?.let { return it }
         synchronized(this) {
             cache?.let { return it }
-            val movie = context.resources.openRawResource(R.drawable.flint_streak_fire).use {
-                Movie.decodeStream(it)
-            } ?: return emptyList()
-            val width = movie.width()
-            val height = movie.height()
+            val options = BitmapFactory.Options().apply { inScaled = false }
+            val source = BitmapFactory.decodeResource(
+                context.resources,
+                R.drawable.flint_streak_sheet,
+                options,
+            ) ?: return emptyList()
+            val frameW = source.width / COLUMNS
+            val frameH = source.height / ((FRAME_COUNT + COLUMNS - 1) / COLUMNS)
             val decoded = ArrayList<ImageBitmap>(FRAME_COUNT)
             for (index in 0 until FRAME_COUNT) {
-                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                movie.setTime(index * FRAME_MS)
-                movie.draw(AndroidCanvas(bitmap), 0f, 0f)
-                decoded.add(bitmap.asImageBitmap())
+                val col = index % COLUMNS
+                val row = index / COLUMNS
+                val frame = Bitmap.createBitmap(source, col * frameW, row * frameH, frameW, frameH)
+                decoded.add(frame.asImageBitmap())
             }
             cache = decoded
             return decoded
         }
     }
 }
-
