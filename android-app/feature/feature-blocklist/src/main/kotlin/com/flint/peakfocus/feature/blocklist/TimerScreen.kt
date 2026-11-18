@@ -344,6 +344,12 @@ private fun TodayScene(
     onDismiss: () -> Unit,
     modifier: Modifier,
 ) {
+    var showStreakSheet by remember { mutableStateOf(false) }
+    val streak = history?.streak ?: 0
+    val historyKnown = history != null && history.availability != HistoryAvailability.UNAVAILABLE
+    val completedToday = history?.days?.lastOrNull()?.completed?.let { it > 0 } == true
+    val emberMood = FocusStreakSheetCopy.moodFrom(streak, completedToday)
+
     val nowMinute = localMinuteOfDay(state.nowEpochMs)
     val ready = rulesState as? RulesUiState.Ready
     val authored = ready?.rules.orEmpty().filter {
@@ -390,6 +396,23 @@ private fun TodayScene(
                     ),
                     modifier = Modifier.weight(1f),
                 )
+                Box(
+                    Modifier
+                        .size(22.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClickLabel = "Show streak details",
+                            role = Role.Button,
+                            onClick = { showStreakSheet = true },
+                        )
+                        .semantics { contentDescription = streakBadgeDescription(historyKnown, streak) }
+                        .testTag("today.streak.ember"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    FlintStreakEmber(mood = emberMood, size = 22.dp)
+                }
+                Spacer(Modifier.width(8.dp))
                 // Fail closed: only a loaded rule set may claim "Protected ┬╖ N rules".
                 val pillText = when {
                     setupLabel != null -> "Setup needed"
