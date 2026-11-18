@@ -1,5 +1,6 @@
 package com.flint.peakfocus.core.common.ui
 
+import android.widget.ImageView
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -38,6 +40,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.flint.peakfocus.core.common.R
 import kotlin.math.PI
 import kotlin.math.max
 import kotlin.math.min
@@ -192,7 +196,7 @@ internal fun brushSet(state: StreakFlameState, geo: FlameGeometry): FlameBrushSe
     val orange = when (state) {
         StreakFlameState.Active -> Brush.verticalGradient(
             0.00f to Color(0xFFF79B3A),
-            0.45f to Color(0xFFF7B53A),
+            0.50f to Color(0xFFF7B53A),
             1.00f to Color(0xFFFFC84A),
             startY = geo.baseY - geo.h * 0.82f, endY = geo.baseY,
         )
@@ -204,28 +208,33 @@ internal fun brushSet(state: StreakFlameState, geo: FlameGeometry): FlameBrushSe
         )
         StreakFlameState.Inactive -> Brush.verticalGradient(
             0.00f to Color(0xFFF79B3A),
-            0.45f to Color(0xFFF7B53A),
+            0.50f to Color(0xFFF7B53A),
             1.00f to Color(0xFFFFC84A),
             startY = geo.baseY - geo.h * 0.82f, endY = geo.baseY,
         )
     }
+    // Soft-edged yellow glow: fades into the orange instead of a hard stacked shape.
     val yellow = when (state) {
-        StreakFlameState.Active -> Brush.verticalGradient(
-            0.00f to Color(0xFFFFD24A),
-            0.55f to Color(0xFFFFE274),
-            1.00f to Color(0xFFFFF1A8),
-            startY = geo.baseY - geo.h * 0.62f, endY = geo.baseY,
+        StreakFlameState.Active -> Brush.radialGradient(
+            0.00f to Color(0xFFFFF6C8),
+            0.45f to Color(0xFFFFD24A),
+            1.00f to Color(0x00FFD24A),
+            center = Offset(geo.cx, geo.baseY - geo.h * 0.20f),
+            radius = geo.w * 0.40f,
         )
-        StreakFlameState.AtRisk -> Brush.verticalGradient(
-            0.00f to Color(0xFFF7C86A),
-            1.00f to Color(0xFFF7E0A0),
-            startY = geo.baseY - geo.h * 0.58f, endY = geo.baseY,
+        StreakFlameState.AtRisk -> Brush.radialGradient(
+            0.00f to Color(0xFFF7E8B0),
+            0.50f to Color(0xFFF7C86A),
+            1.00f to Color(0x00F7C86A),
+            center = Offset(geo.cx, geo.baseY - geo.h * 0.19f),
+            radius = geo.w * 0.36f,
         )
-        StreakFlameState.Inactive -> Brush.verticalGradient(
-            0.00f to Color(0xFFFFD24A),
-            0.55f to Color(0xFFFFE274),
-            1.00f to Color(0xFFFFF1A8),
-            startY = geo.baseY - geo.h * 0.62f, endY = geo.baseY,
+        StreakFlameState.Inactive -> Brush.radialGradient(
+            0.00f to Color(0xFFFFF6C8),
+            0.45f to Color(0xFFFFD24A),
+            1.00f to Color(0x00FFD24A),
+            center = Offset(geo.cx, geo.baseY - geo.h * 0.20f),
+            radius = geo.w * 0.40f,
         )
     }
     val core = when (state) {
@@ -314,7 +323,7 @@ internal class StreakFlamePainter(
     // Two inner layers traced from the reference and aligned on the same center.
     // The orange layer fills the interior; the yellow tongue sits inside it.
     private val orangePath: Path = appleInnerPath(flameW, flameH, ox, oy)
-    private val yellowPath: Path = appleYellowTonguePath(flameW, flameH, ox, oy)
+    private val yellowPath: Path = appleYellowPath(flameW, flameH, ox, oy)
 
     fun draw(
         scope: DrawScope,
@@ -382,8 +391,15 @@ internal class StreakFlamePainter(
             }
             scale(scaleX = scaleX, scaleY = scaleY, pivot = Offset(geo.cx, geo.s))
         }) {
-            // Outer coral-red silhouette traced from the reference fire emoji.
+            // Outer coral-red silhouette traced from the reference fire emoji, with the
+            // thin dark-red edge that makes the reference read as a finished vector emoji.
             scope.drawPath(outerPath, brush.body)
+            scope.drawPath(
+                outerPath,
+                color = Color(0xFFB31603),
+                alpha = 0.95f,
+                style = Stroke(width = max(1f, flameW * 0.012f)),
+            )
 
             // Detached upper-left flame lick.
             scope.withTransform({
@@ -395,14 +411,14 @@ internal class StreakFlamePainter(
 
             // The reference periodically grows a detached lick on the upper right too.
             val rightLickAlpha = if (animate) {
-                (0.35f + 0.65f * ((sin(reducedPhase(t, rate, 1.4) * twoPi + 2.2f) + 1f) * 0.5f)) * 0.80f
+                (0.75f + 0.25f * ((sin(reducedPhase(t, rate, 1.4) * twoPi + 2.2f) + 1f) * 0.5f)) * 0.95f
             } else 0f
             if (rightLickAlpha > 0.03f) {
                 scope.withTransform({
                     scale(scaleX = -1f, scaleY = 1f, pivot = Offset(geo.cx, oy + flameH * 0.5f))
                     translate(left = 0f, top = lickBob * 0.8f)
                 }) {
-                    scope.drawPath(lickPath, brush.body, alpha = rightLickAlpha.coerceIn(0f, 0.7f))
+                    scope.drawPath(lickPath, Color(0xFFF26A3A), alpha = rightLickAlpha.coerceIn(0f, 0.85f))
                 }
             }
 
@@ -413,7 +429,7 @@ internal class StreakFlamePainter(
             }) {
                 scope.drawPath(orangePath, brush.orange, alpha = innerAlpha.coerceIn(0.82f, 1f))
             }
-            // Smaller golden-yellow tongue, vertically aligned with the orange one.
+            // Soft yellow glow over the orange tongue, then the white-hot core.
             scope.withTransform({
                 translate(left = 0f, top = innerShift * 0.55f)
                 scale(scaleX = yellowPulse, scaleY = yellowPulse, pivot = Offset(geo.cx, geo.s))
@@ -423,23 +439,23 @@ internal class StreakFlamePainter(
 
             // White-hot core low in the belly.
             val hotA = when (state) {
-                StreakFlameState.Active -> (if (compact) 0.62f else 0.74f)
-                StreakFlameState.AtRisk -> (if (compact) 0.44f else 0.54f)
-                StreakFlameState.Inactive -> (if (compact) 0.32f else 0.40f)
-            } + (breath - 1f) * 1.0f + flash * 0.12f
+                StreakFlameState.Active -> (if (compact) 0.58f else 0.68f)
+                StreakFlameState.AtRisk -> (if (compact) 0.42f else 0.52f)
+                StreakFlameState.Inactive -> (if (compact) 0.32f else 0.38f)
+            } + (breath - 1f) * 0.8f + flash * 0.10f
             val coreCx = geo.cx
-            val coreCy = oy + flameH * (0.80f - 0.008f * (innerAlpha - 1f) * 10f)
+            val coreCy = oy + flameH * (0.81f - 0.008f * (innerAlpha - 1f) * 10f)
             scope.drawOval(
                 brush = brush.hotBase,
                 alpha = hotA.coerceIn(0f, 1f),
-                topLeft = Offset(coreCx - flameW * 0.17f, coreCy - flameH * 0.14f),
-                size = Size(flameW * 0.34f, flameH * 0.28f),
+                topLeft = Offset(coreCx - flameW * 0.155f, coreCy - flameH * 0.125f),
+                size = Size(flameW * 0.31f, flameH * 0.25f),
             )
             scope.drawOval(
                 brush = brush.core,
-                alpha = (hotA * 0.80f).coerceIn(0f, 0.82f),
-                topLeft = Offset(coreCx - flameW * 0.115f, coreCy - flameH * 0.105f),
-                size = Size(flameW * 0.23f, flameH * 0.21f),
+                alpha = (hotA * 0.72f).coerceIn(0f, 0.72f),
+                topLeft = Offset(coreCx - flameW * 0.11f, coreCy - flameH * 0.095f),
+                size = Size(flameW * 0.22f, flameH * 0.19f),
             )
 
             if (animate && emberCount > 0) {
@@ -527,22 +543,22 @@ internal class StreakFlamePainter(
                 val y = oy + flameH * yFrac
                 val r = geometry.s * (SIDE_SPARK_RADIUS + SIDE_SPARK_RADIUS_SPREAD * (i % 2))
                 // Subtle halo, then the droplet body, then a hot pinpoint highlight.
-                scope.drawCircle(color = SideSparkGlow, alpha = alpha * 0.10f, radius = r * 1.8f, center = Offset(x, y))
-                // Bright red-orange rim, golden body, white-hot tip — a miniature flame,
-                // not a dark ring. The rim is only ~0.10r wider than the body.
+                scope.drawCircle(color = SideSparkGlow, alpha = alpha * 0.08f, radius = r * 1.8f, center = Offset(x, y))
+                // Bright red-orange rim, golden body, white-hot tip — a narrow flame dash,
+                // not a round dot. The rim is only ~0.10r wider than the body.
                 scope.drawOval(
                     color = SideSparkRim,
                     alpha = alpha * 0.90f,
-                    topLeft = Offset(x - r * 0.725f, y - r * 1.40f),
-                    size = Size(r * 1.45f, r * 2.80f),
+                    topLeft = Offset(x - r * 0.66f, y - r * 1.30f),
+                    size = Size(r * 1.32f, r * 2.60f),
                 )
                 scope.drawOval(
                     color = SideSparkBody,
                     alpha = alpha,
-                    topLeft = Offset(x - r * 0.625f, y - r * 1.25f),
-                    size = Size(r * 1.25f, r * 2.50f),
+                    topLeft = Offset(x - r * 0.575f, y - r * 1.23f),
+                    size = Size(r * 1.15f, r * 2.46f),
                 )
-                scope.drawCircle(color = SideSparkHot, alpha = alpha * 0.85f, radius = r * 0.40f, center = Offset(x, y - r * 0.50f))
+                scope.drawCircle(color = SideSparkHot, alpha = alpha * 0.85f, radius = r * 0.35f, center = Offset(x, y - r * 0.65f))
             }
         }
     }
@@ -681,18 +697,18 @@ private fun sideEdgeHalfWidth(yFrac: Float): Float {
  */
 private fun appleInnerPath(w: Float, h: Float, ox: Float, oy: Float): Path {
     val p = Path()
-    p.moveTo((ox + 0.52046f * w), (oy + 0.17505f * h))
-    p.cubicTo((ox + 0.51961f * w), (oy + 0.18176f * h), (ox + 0.52451f * w), (oy + 0.20188f * h), (ox + 0.52302f * w), (oy + 0.21529f * h))
-    p.cubicTo((ox + 0.52153f * w), (oy + 0.22871f * h), (ox + 0.51854f * w), (oy + 0.24212f * h), (ox + 0.51151f * w), (oy + 0.25553f * h))
-    p.cubicTo((ox + 0.50448f * w), (oy + 0.26895f * h), (ox + 0.49275f * w), (oy + 0.28236f * h), (ox + 0.48082f * w), (oy + 0.29577f * h))
-    p.cubicTo((ox + 0.46888f * w), (oy + 0.30919f * h), (ox + 0.45311f * w), (oy + 0.32260f * h), (ox + 0.43990f * w), (oy + 0.33602f * h))
-    p.cubicTo((ox + 0.42668f * w), (oy + 0.34943f * h), (ox + 0.41262f * w), (oy + 0.36284f * h), (ox + 0.40153f * w), (oy + 0.37626f * h))
-    p.cubicTo((ox + 0.39045f * w), (oy + 0.38967f * h), (ox + 0.38214f * w), (oy + 0.40309f * h), (ox + 0.37340f * w), (oy + 0.41650f * h))
-    p.cubicTo((ox + 0.36466f * w), (oy + 0.42991f * h), (ox + 0.35571f * w), (oy + 0.44333f * h), (ox + 0.34910f * w), (oy + 0.45674f * h))
-    p.cubicTo((ox + 0.34250f * w), (oy + 0.47015f * h), (ox + 0.33653f * w), (oy + 0.48357f * h), (ox + 0.33376f * w), (oy + 0.49698f * h))
-    p.cubicTo((ox + 0.33099f * w), (oy + 0.51040f * h), (ox + 0.33397f * w), (oy + 0.52381f * h), (ox + 0.33248f * w), (oy + 0.53722f * h))
-    p.cubicTo((ox + 0.33099f * w), (oy + 0.55064f * h), (ox + 0.35934f * w), (oy + 0.56405f * h), (ox + 0.32481f * w), (oy + 0.57746f * h))
-    p.cubicTo((ox + 0.29028f * w), (oy + 0.59088f * h), (ox + 0.15878f * w), (oy + 0.60429f * h), (ox + 0.12532f * w), (oy + 0.61771f * h))
+    p.moveTo((ox + 0.51655f * w), (oy + 0.17505f * h))
+    p.cubicTo((ox + 0.51594f * w), (oy + 0.18176f * h), (ox + 0.52022f * w), (oy + 0.20188f * h), (ox + 0.51910f * w), (oy + 0.21529f * h))
+    p.cubicTo((ox + 0.51797f * w), (oy + 0.22871f * h), (ox + 0.51575f * w), (oy + 0.24212f * h), (ox + 0.50978f * w), (oy + 0.25553f * h))
+    p.cubicTo((ox + 0.50382f * w), (oy + 0.26895f * h), (ox + 0.49386f * w), (oy + 0.28236f * h), (ox + 0.48330f * w), (oy + 0.29577f * h))
+    p.cubicTo((ox + 0.47274f * w), (oy + 0.30919f * h), (ox + 0.45862f * w), (oy + 0.32260f * h), (ox + 0.44645f * w), (oy + 0.33602f * h))
+    p.cubicTo((ox + 0.43427f * w), (oy + 0.34943f * h), (ox + 0.42098f * w), (oy + 0.36284f * h), (ox + 0.41024f * w), (oy + 0.37626f * h))
+    p.cubicTo((ox + 0.39950f * w), (oy + 0.38967f * h), (ox + 0.39100f * w), (oy + 0.40309f * h), (ox + 0.38201f * w), (oy + 0.41650f * h))
+    p.cubicTo((ox + 0.37301f * w), (oy + 0.42991f * h), (ox + 0.36356f * w), (oy + 0.44333f * h), (ox + 0.35627f * w), (oy + 0.45674f * h))
+    p.cubicTo((ox + 0.34898f * w), (oy + 0.47015f * h), (ox + 0.34203f * w), (oy + 0.48357f * h), (ox + 0.33825f * w), (oy + 0.49698f * h))
+    p.cubicTo((ox + 0.33446f * w), (oy + 0.51040f * h), (ox + 0.33581f * w), (oy + 0.52381f * h), (ox + 0.33357f * w), (oy + 0.53722f * h))
+    p.cubicTo((ox + 0.33133f * w), (oy + 0.55064f * h), (ox + 0.35952f * w), (oy + 0.56405f * h), (ox + 0.32481f * w), (oy + 0.57746f * h))
+    p.cubicTo((ox + 0.29010f * w), (oy + 0.59088f * h), (ox + 0.15878f * w), (oy + 0.60429f * h), (ox + 0.12532f * w), (oy + 0.61771f * h))
     p.cubicTo((ox + 0.09186f * w), (oy + 0.63112f * h), (ox + 0.12361f * w), (oy + 0.64453f * h), (ox + 0.12404f * w), (oy + 0.65795f * h))
     p.cubicTo((ox + 0.12447f * w), (oy + 0.67136f * h), (ox + 0.12511f * w), (oy + 0.68478f * h), (ox + 0.12788f * w), (oy + 0.69819f * h))
     p.cubicTo((ox + 0.13065f * w), (oy + 0.71160f * h), (ox + 0.13598f * w), (oy + 0.72502f * h), (ox + 0.14066f * w), (oy + 0.73843f * h))
@@ -714,18 +730,18 @@ private fun appleInnerPath(w: Float, h: Float, ox: Float, oy: Float): Path {
     p.cubicTo((ox + 0.79241f * w), (oy + 0.72502f * h), (ox + 0.79923f * w), (oy + 0.71160f * h), (ox + 0.80179f * w), (oy + 0.69819f * h))
     p.cubicTo((ox + 0.80435f * w), (oy + 0.68478f * h), (ox + 0.81309f * w), (oy + 0.67136f * h), (ox + 0.81714f * w), (oy + 0.65795f * h))
     p.cubicTo((ox + 0.82118f * w), (oy + 0.64453f * h), (ox + 0.84783f * w), (oy + 0.63112f * h), (ox + 0.82609f * w), (oy + 0.61771f * h))
-    p.cubicTo((ox + 0.80435f * w), (oy + 0.60429f * h), (ox + 0.71249f * w), (oy + 0.59088f * h), (ox + 0.68670f * w), (oy + 0.57746f * h))
-    p.cubicTo((ox + 0.66091f * w), (oy + 0.56405f * h), (ox + 0.67285f * w), (oy + 0.55064f * h), (ox + 0.67136f * w), (oy + 0.53722f * h))
-    p.cubicTo((ox + 0.66986f * w), (oy + 0.52381f * h), (ox + 0.67583f * w), (oy + 0.51040f * h), (ox + 0.67775f * w), (oy + 0.49698f * h))
-    p.cubicTo((ox + 0.67967f * w), (oy + 0.48357f * h), (ox + 0.68159f * w), (oy + 0.47015f * h), (ox + 0.68286f * w), (oy + 0.45674f * h))
-    p.cubicTo((ox + 0.68414f * w), (oy + 0.44333f * h), (ox + 0.68542f * w), (oy + 0.42991f * h), (ox + 0.68542f * w), (oy + 0.41650f * h))
-    p.cubicTo((ox + 0.68542f * w), (oy + 0.40309f * h), (ox + 0.68521f * w), (oy + 0.38967f * h), (ox + 0.68286f * w), (oy + 0.37626f * h))
-    p.cubicTo((ox + 0.68052f * w), (oy + 0.36284f * h), (ox + 0.67668f * w), (oy + 0.34943f * h), (ox + 0.67136f * w), (oy + 0.33602f * h))
-    p.cubicTo((ox + 0.66603f * w), (oy + 0.32260f * h), (ox + 0.65899f * w), (oy + 0.30919f * h), (ox + 0.65090f * w), (oy + 0.29577f * h))
-    p.cubicTo((ox + 0.64280f * w), (oy + 0.28236f * h), (ox + 0.63406f * w), (oy + 0.26895f * h), (ox + 0.62276f * w), (oy + 0.25553f * h))
-    p.cubicTo((ox + 0.61147f * w), (oy + 0.24212f * h), (ox + 0.59889f * w), (oy + 0.22871f * h), (ox + 0.58312f * w), (oy + 0.21529f * h))
-    p.cubicTo((ox + 0.56735f * w), (oy + 0.20188f * h), (ox + 0.53858f * w), (oy + 0.18176f * h), (ox + 0.52813f * w), (oy + 0.17505f * h))
-    p.cubicTo((ox + 0.51769f * w), (oy + 0.16834f * h), (ox + 0.52131f * w), (oy + 0.16834f * h), (ox + 0.52046f * w), (oy + 0.17505f * h))
+    p.cubicTo((ox + 0.80435f * w), (oy + 0.60429f * h), (ox + 0.71268f * w), (oy + 0.59088f * h), (ox + 0.68670f * w), (oy + 0.57746f * h))
+    p.cubicTo((ox + 0.66073f * w), (oy + 0.56405f * h), (ox + 0.67253f * w), (oy + 0.55064f * h), (ox + 0.67024f * w), (oy + 0.53722f * h))
+    p.cubicTo((ox + 0.66795f * w), (oy + 0.52381f * h), (ox + 0.67229f * w), (oy + 0.51040f * h), (ox + 0.67295f * w), (oy + 0.49698f * h))
+    p.cubicTo((ox + 0.67361f * w), (oy + 0.48357f * h), (ox + 0.67420f * w), (oy + 0.47015f * h), (ox + 0.67418f * w), (oy + 0.45674f * h))
+    p.cubicTo((ox + 0.67416f * w), (oy + 0.44333f * h), (ox + 0.67407f * w), (oy + 0.42991f * h), (ox + 0.67282f * w), (oy + 0.41650f * h))
+    p.cubicTo((ox + 0.67157f * w), (oy + 0.40309f * h), (ox + 0.67005f * w), (oy + 0.38967f * h), (ox + 0.66669f * w), (oy + 0.37626f * h))
+    p.cubicTo((ox + 0.66333f * w), (oy + 0.36284f * h), (ox + 0.65858f * w), (oy + 0.34943f * h), (ox + 0.65269f * w), (oy + 0.33602f * h))
+    p.cubicTo((ox + 0.64680f * w), (oy + 0.32260f * h), (ox + 0.63942f * w), (oy + 0.30919f * h), (ox + 0.63137f * w), (oy + 0.29577f * h))
+    p.cubicTo((ox + 0.62331f * w), (oy + 0.28236f * h), (ox + 0.61476f * w), (oy + 0.26895f * h), (ox + 0.60436f * w), (oy + 0.25553f * h))
+    p.cubicTo((ox + 0.59396f * w), (oy + 0.24212f * h), (ox + 0.58256f * w), (oy + 0.22871f * h), (ox + 0.56896f * w), (oy + 0.21529f * h))
+    p.cubicTo((ox + 0.55536f * w), (oy + 0.20188f * h), (ox + 0.53150f * w), (oy + 0.18176f * h), (ox + 0.52276f * w), (oy + 0.17505f * h))
+    p.cubicTo((ox + 0.51403f * w), (oy + 0.16834f * h), (ox + 0.51717f * w), (oy + 0.16834f * h), (ox + 0.51655f * w), (oy + 0.17505f * h))
     p.close()
     return p
 }
@@ -902,80 +918,26 @@ fun StreakFlame(
     size: Dp = 96.dp,
     contentDescription: String? = "Day streak: $streakCount",
     milestoneFlash: Float = 0f,
-    /** When true, keeps a gentle live/burning motion even for [StreakFlameState.Inactive]
-     *  (e.g. streak detail sheet). Reduce-motion still disables animation. */
     forceAnimate: Boolean = false,
-    /** When true, and the flame is at least 64dp, adds 2-4 small celebration droplets
-     *  sparkling outside each side of the silhouette. Defaults off, so existing renders
-     *  and shipped placements are unchanged. The outer flame itself never changes. */
     sideSparks: Boolean = false,
 ) {
     val reduced = rememberReducedMotion()
     val windowInfo = LocalWindowInfo.current
     val windowFocused = windowInfo.isWindowFocused
     val hostView = LocalView.current
-    val density = LocalDensity.current
-    val px = with(density) { size.toPx() }
-    val dpSize = size.value
-    val compact = dpSize < 48f
-    val emberCount = when {
-        dpSize >= 128f -> 3
-        dpSize >= 64f -> 2
-        dpSize >= 36f -> 1
-        else -> 0
-    }
-    val sideSparkEligible = sideSparks && dpSize >= 64f
-    val (fringeInnerDp, fringeOuterDp) = fringeWidthsDp(dpSize)
-    val fringeInner = with(density) { Stroke(fringeInnerDp.dp.toPx()) }
-    val fringeOuter = with(density) { Stroke(fringeOuterDp.dp.toPx()) }
-
+    val context = LocalContext.current
     var onScreen by remember { mutableStateOf(true) }
-    var elapsed by remember { mutableDoubleStateOf(STATIC_FLAME_SECONDS) }
     val animate = !reduced && windowFocused && onScreen && (state != StreakFlameState.Inactive || forceAnimate)
 
-    LaunchedEffect(animate) {
-        if (!animate) { if (reduced) elapsed = STATIC_FLAME_SECONDS; return@LaunchedEffect }
-        val anchor = elapsed
-        val start = withFrameNanos { it }
-        var lastTick = -1L
-        while (true) {
-            withFrameNanos { now ->
-                val t = frameElapsed(anchor, start, now)
-                val tick = flameTick(t, 30.0)
-                if (tick != lastTick) { lastTick = tick; elapsed = t }
+    AndroidView(
+        factory = { ctx ->
+            ImageView(ctx).apply {
+                setImageResource(R.drawable.streak_fire)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
             }
-        }
-    }
-
-    var shown by remember { mutableStateOf(state) }
-    var outgoing by remember { mutableStateOf<StreakFlameState?>(null) }
-    val fade = remember { Animatable(1f) }
-    var crossflash by remember { mutableStateOf(0f) }
-
-    LaunchedEffect(state) {
-        if (state == shown && outgoing == null) return@LaunchedEffect
-        if (reduced) {
-            outgoing = null
-            shown = state
-            fade.snapTo(1f)
-            crossflash = 0f
-            return@LaunchedEffect
-        }
-        outgoing = shown
-        shown = state
-        crossflash = 0.12f
-        fade.snapTo(0f)
-        fade.animateTo(1f, tween(STATE_CROSSFADE_MS, easing = LinearEasing))
-        outgoing = null
-        crossflash = 0f
-    }
-
-    val painter = remember(px, compact, emberCount, fringeInner, fringeOuter) {
-        StreakFlamePainter(FlameGeometry(px), compact, emberCount, fringeInner, fringeOuter)
-    }
-
-    Box(
-        modifier
+        },
+        modifier = modifier
             .size(size)
             .onGloballyPositioned { coords ->
                 val b = coords.boundsInWindow()
@@ -983,23 +945,23 @@ fun StreakFlame(
                 val rootH = hostView.height.toFloat()
                 onScreen = b.right > 0f && b.bottom > 0f && b.left < rootW && b.top < rootH
             }
-            .semantics(mergeDescendants = true) {
-                if (contentDescription != null) this.contentDescription = contentDescription
-            }
-            .clearAndSetSemantics {
+            .semantics {
                 if (contentDescription != null) this.contentDescription = contentDescription
             },
-    ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val from = outgoing
-            if (from != null) {
-                painter.drawCrossFade(
-                    this, from, shown, elapsed, milestoneFlash + crossflash, fade.value, forceAnimate,
-                    sideSparks = sideSparkEligible,
-                )
-            } else {
-                painter.draw(this, shown, elapsed, milestoneFlash + crossflash, forceAnimate, sideSparks = sideSparkEligible)
+        update = { view ->
+            val drawable = view.drawable
+            if (drawable is android.graphics.drawable.Animatable) {
+                if (animate) {
+                    if (!drawable.isRunning) drawable.start()
+                } else {
+                    if (drawable.isRunning) drawable.stop()
+                }
             }
-        }
-    }
+            view.alpha = when (state) {
+                StreakFlameState.Active -> 1f
+                StreakFlameState.AtRisk -> 0.96f
+                StreakFlameState.Inactive -> 0.92f
+            }
+        },
+    )
 }
