@@ -191,20 +191,26 @@ internal fun brushSet(state: StreakFlameState, geo: FlameGeometry): FlameBrushSe
     val orange = when (state) {
         StreakFlameState.Active -> Brush.verticalGradient(
             0.00f to Color(0xFFF79B3A),
-            0.55f to Color(0xFFF7A83A),
-            1.00f to Color(0xFFF7B53A),
-            startY = geo.baseY - geo.h * 0.78f, endY = geo.baseY,
+            0.30f to Color(0xFFF7B53A),
+            0.55f to Color(0xFFFFD24A),
+            0.78f to Color(0xFFFFE98A),
+            1.00f to Color(0xFFFFF6C8),
+            startY = geo.baseY - geo.h, endY = geo.baseY,
         )
         StreakFlameState.AtRisk -> Brush.verticalGradient(
             0.00f to Color(0xFFE89A50),
-            1.00f to Color(0xFFE8B060),
-            startY = geo.baseY - geo.h * 0.74f, endY = geo.baseY,
+            0.35f to Color(0xFFE8B060),
+            0.65f to Color(0xFFF7D070),
+            1.00f to Color(0xFFF7E8B0),
+            startY = geo.baseY - geo.h, endY = geo.baseY,
         )
         StreakFlameState.Inactive -> Brush.verticalGradient(
             0.00f to Color(0xFFF79B3A),
-            0.55f to Color(0xFFF7A83A),
-            1.00f to Color(0xFFF7B53A),
-            startY = geo.baseY - geo.h * 0.78f, endY = geo.baseY,
+            0.30f to Color(0xFFF7B53A),
+            0.55f to Color(0xFFFFD24A),
+            0.78f to Color(0xFFFFE98A),
+            1.00f to Color(0xFFFFF6C8),
+            startY = geo.baseY - geo.h, endY = geo.baseY,
         )
     }
     val yellow = when (state) {
@@ -309,8 +315,9 @@ internal class StreakFlamePainter(
 
     private val outerPath: Path = appleMainPath(flameW, flameH, ox, oy)
     private val lickPath: Path = appleLickPath(flameW, flameH, ox, oy)
-    private val orangePath: Path = tonguePath(flameW, flameH, ox, oy, tipY = 0.28f, halfW = 0.380f, baseY = 0.998f)
-    private val yellowPath: Path = tonguePath(flameW, flameH, ox, oy, tipY = 0.43f, halfW = 0.258f, baseY = 0.988f)
+    // One organic inner flame traced from the reference. Its gradient carries the
+    // orange -> yellow -> pale-yellow transition, so there are no stacked triangles.
+    private val innerPath: Path = appleInnerPath(flameW, flameH, ox, oy)
 
     fun draw(
         scope: DrawScope,
@@ -343,8 +350,7 @@ internal class StreakFlamePainter(
         val scaleX = if (animate) 1f + (breath - 1f) * 0.22f else 1f
         val lickBob = if (animate) sin(reducedPhase(t, rate, 2.4) * twoPi + 1.1f) * geo.s * 0.007f * intensity else 0f
         val lickScale = if (animate) 1f + 0.035f * sin(reducedPhase(t, rate, 1.9) * twoPi + 0.4f) else 1f
-        val orangePulse = if (animate) 1f + 0.025f * sin(reducedPhase(t, rate, 2.2) * twoPi + 1.6f) else 1f
-        val yellowPulse = if (animate) 1f + 0.035f * sin(reducedPhase(t, rate, 2.6) * twoPi + 0.8f) else 1f
+        val innerPulse = if (animate) 1f + 0.030f * sin(reducedPhase(t, rate, 2.2) * twoPi + 1.6f) else 1f
         val innerShift = if (animate) sin(reducedPhase(t, rate, 1.7) * twoPi + 0.9f) * geo.s * 0.004f * intensity else 0f
         val innerAlpha = if (animate) (0.94f + 0.06f * ((sin(reducedPhase(t, rate, 3.0) * twoPi) + 1f) * 0.5f)) else 1f
 
@@ -386,18 +392,13 @@ internal class StreakFlamePainter(
                 scope.drawPath(lickPath, brush.body)
             }
 
-            // Orange body and yellow tongue, both inset inside the red silhouette.
+            // One organic inner flame inset inside the red rim. The vertical gradient
+            // carries orange at the top through yellow to a pale-yellow base.
             scope.withTransform({
                 translate(left = 0f, top = innerShift)
-                scale(scaleX = orangePulse, scaleY = orangePulse, pivot = Offset(geo.cx, geo.s))
+                scale(scaleX = innerPulse, scaleY = innerPulse, pivot = Offset(geo.cx, geo.s))
             }) {
-                scope.drawPath(orangePath, brush.orange, alpha = innerAlpha.coerceIn(0.82f, 1f))
-            }
-            scope.withTransform({
-                translate(left = 0f, top = innerShift * 0.6f)
-                scale(scaleX = yellowPulse, scaleY = yellowPulse, pivot = Offset(geo.cx, geo.s))
-            }) {
-                scope.drawPath(yellowPath, brush.yellow, alpha = innerAlpha.coerceIn(0.82f, 1f))
+                scope.drawPath(innerPath, brush.orange, alpha = innerAlpha.coerceIn(0.82f, 1f))
             }
 
             // White-hot core low in the belly.
@@ -519,8 +520,7 @@ internal class StreakFlamePainter(
 
     private fun drawAsh(scope: DrawScope, brush: FlameBrushSet, flash: Float) {
         scope.drawPath(outerPath, brush.body)
-        scope.drawPath(orangePath, brush.orange)
-        scope.drawPath(yellowPath, brush.yellow)
+        scope.drawPath(innerPath, brush.orange)
         scope.drawOval(
             brush = brush.hotBase,
             alpha = (if (compact) 0.20f else 0.26f) + flash * 0.08f,
@@ -585,41 +585,53 @@ private fun sideEdgeHalfWidth(yFrac: Float): Float {
 }
 
 /** Smooth inset flame tongue, like the orange/yellow layers of the reference emoji. */
-private fun tonguePath(
-    w: Float,
-    h: Float,
-    ox: Float,
-    oy: Float,
-    tipY: Float,
-    halfW: Float,
-    baseY: Float,
-): Path {
-    val cx = ox + w * 0.5f
-    val tip = oy + h * tipY
-    val base = oy + h * baseY
-    val hw = w * halfW
+private fun appleInnerPath(w: Float, h: Float, ox: Float, oy: Float): Path {
     val p = Path()
-    p.moveTo(cx, tip)
-    p.cubicTo(
-        cx + hw * 0.08f, tip + (base - tip) * 0.12f,
-        cx + hw * 0.78f, tip + (base - tip) * 0.48f,
-        cx + hw, tip + (base - tip) * 0.72f,
-    )
-    p.cubicTo(
-        cx + hw * 0.98f, base - (base - tip) * 0.02f,
-        cx + hw * 0.55f, base,
-        cx, base,
-    )
-    p.cubicTo(
-        cx - hw * 0.55f, base,
-        cx - hw * 0.98f, base - (base - tip) * 0.02f,
-        cx - hw, tip + (base - tip) * 0.72f,
-    )
-    p.cubicTo(
-        cx - hw * 0.78f, tip + (base - tip) * 0.48f,
-        cx - hw * 0.08f, tip + (base - tip) * 0.12f,
-        cx, tip,
-    )
+    p.moveTo((ox + 0.52046f * w), (oy + 0.17505f * h))
+    p.cubicTo((ox + 0.51961f * w), (oy + 0.18176f * h), (ox + 0.52451f * w), (oy + 0.20188f * h), (ox + 0.52302f * w), (oy + 0.21529f * h))
+    p.cubicTo((ox + 0.52153f * w), (oy + 0.22871f * h), (ox + 0.51854f * w), (oy + 0.24212f * h), (ox + 0.51151f * w), (oy + 0.25553f * h))
+    p.cubicTo((ox + 0.50448f * w), (oy + 0.26895f * h), (ox + 0.49275f * w), (oy + 0.28236f * h), (ox + 0.48082f * w), (oy + 0.29577f * h))
+    p.cubicTo((ox + 0.46888f * w), (oy + 0.30919f * h), (ox + 0.45311f * w), (oy + 0.32260f * h), (ox + 0.43990f * w), (oy + 0.33602f * h))
+    p.cubicTo((ox + 0.42668f * w), (oy + 0.34943f * h), (ox + 0.41262f * w), (oy + 0.36284f * h), (ox + 0.40153f * w), (oy + 0.37626f * h))
+    p.cubicTo((ox + 0.39045f * w), (oy + 0.38967f * h), (ox + 0.38214f * w), (oy + 0.40309f * h), (ox + 0.37340f * w), (oy + 0.41650f * h))
+    p.cubicTo((ox + 0.36466f * w), (oy + 0.42991f * h), (ox + 0.35571f * w), (oy + 0.44333f * h), (ox + 0.34910f * w), (oy + 0.45674f * h))
+    p.cubicTo((ox + 0.34250f * w), (oy + 0.47015f * h), (ox + 0.33653f * w), (oy + 0.48357f * h), (ox + 0.33376f * w), (oy + 0.49698f * h))
+    p.cubicTo((ox + 0.33099f * w), (oy + 0.51040f * h), (ox + 0.33397f * w), (oy + 0.52381f * h), (ox + 0.33248f * w), (oy + 0.53722f * h))
+    p.cubicTo((ox + 0.33099f * w), (oy + 0.55064f * h), (ox + 0.35934f * w), (oy + 0.56405f * h), (ox + 0.32481f * w), (oy + 0.57746f * h))
+    p.cubicTo((ox + 0.29028f * w), (oy + 0.59088f * h), (ox + 0.15878f * w), (oy + 0.60429f * h), (ox + 0.12532f * w), (oy + 0.61771f * h))
+    p.cubicTo((ox + 0.09186f * w), (oy + 0.63112f * h), (ox + 0.12361f * w), (oy + 0.64453f * h), (ox + 0.12404f * w), (oy + 0.65795f * h))
+    p.cubicTo((ox + 0.12447f * w), (oy + 0.67136f * h), (ox + 0.12511f * w), (oy + 0.68478f * h), (ox + 0.12788f * w), (oy + 0.69819f * h))
+    p.cubicTo((ox + 0.13065f * w), (oy + 0.71160f * h), (ox + 0.13598f * w), (oy + 0.72502f * h), (ox + 0.14066f * w), (oy + 0.73843f * h))
+    p.cubicTo((ox + 0.14535f * w), (oy + 0.75184f * h), (ox + 0.14940f * w), (oy + 0.76526f * h), (ox + 0.15601f * w), (oy + 0.77867f * h))
+    p.cubicTo((ox + 0.16262f * w), (oy + 0.79209f * h), (ox + 0.17306f * w), (oy + 0.80550f * h), (ox + 0.18031f * w), (oy + 0.81891f * h))
+    p.cubicTo((ox + 0.18755f * w), (oy + 0.83233f * h), (ox + 0.19800f * w), (oy + 0.84574f * h), (ox + 0.19949f * w), (oy + 0.85915f * h))
+    p.cubicTo((ox + 0.20098f * w), (oy + 0.87257f * h), (ox + 0.18713f * w), (oy + 0.88598f * h), (ox + 0.18926f * w), (oy + 0.89940f * h))
+    p.cubicTo((ox + 0.19139f * w), (oy + 0.91281f * h), (ox + 0.19416f * w), (oy + 0.92622f * h), (ox + 0.21228f * w), (oy + 0.93964f * h))
+    p.cubicTo((ox + 0.23039f * w), (oy + 0.95305f * h), (ox + 0.27664f * w), (oy + 0.97150f * h), (ox + 0.29795f * w), (oy + 0.97988f * h))
+    p.cubicTo((ox + 0.31927f * w), (oy + 0.98826f * h), (ox + 0.29113f * w), (oy + 0.98826f * h), (ox + 0.34015f * w), (oy + 0.98994f * h))
+    p.cubicTo((ox + 0.38917f * w), (oy + 0.99162f * h), (ox + 0.54092f * w), (oy + 0.99162f * h), (ox + 0.59207f * w), (oy + 0.98994f * h))
+    p.cubicTo((ox + 0.64322f * w), (oy + 0.98826f * h), (ox + 0.61722f * w), (oy + 0.98826f * h), (ox + 0.64706f * w), (oy + 0.97988f * h))
+    p.cubicTo((ox + 0.67690f * w), (oy + 0.97150f * h), (ox + 0.74339f * w), (oy + 0.95305f * h), (ox + 0.77110f * w), (oy + 0.93964f * h))
+    p.cubicTo((ox + 0.79881f * w), (oy + 0.92622f * h), (ox + 0.80648f * w), (oy + 0.91281f * h), (ox + 0.81330f * w), (oy + 0.89940f * h))
+    p.cubicTo((ox + 0.82012f * w), (oy + 0.88598f * h), (ox + 0.80904f * w), (oy + 0.87257f * h), (ox + 0.81202f * w), (oy + 0.85915f * h))
+    p.cubicTo((ox + 0.81500f * w), (oy + 0.84574f * h), (ox + 0.82353f * w), (oy + 0.83233f * h), (ox + 0.83120f * w), (oy + 0.81891f * h))
+    p.cubicTo((ox + 0.83887f * w), (oy + 0.80550f * h), (ox + 0.86296f * w), (oy + 0.79209f * h), (ox + 0.85806f * w), (oy + 0.77867f * h))
+    p.cubicTo((ox + 0.85315f * w), (oy + 0.76526f * h), (ox + 0.81117f * w), (oy + 0.75184f * h), (ox + 0.80179f * w), (oy + 0.73843f * h))
+    p.cubicTo((ox + 0.79241f * w), (oy + 0.72502f * h), (ox + 0.79923f * w), (oy + 0.71160f * h), (ox + 0.80179f * w), (oy + 0.69819f * h))
+    p.cubicTo((ox + 0.80435f * w), (oy + 0.68478f * h), (ox + 0.81309f * w), (oy + 0.67136f * h), (ox + 0.81714f * w), (oy + 0.65795f * h))
+    p.cubicTo((ox + 0.82118f * w), (oy + 0.64453f * h), (ox + 0.84783f * w), (oy + 0.63112f * h), (ox + 0.82609f * w), (oy + 0.61771f * h))
+    p.cubicTo((ox + 0.80435f * w), (oy + 0.60429f * h), (ox + 0.71249f * w), (oy + 0.59088f * h), (ox + 0.68670f * w), (oy + 0.57746f * h))
+    p.cubicTo((ox + 0.66091f * w), (oy + 0.56405f * h), (ox + 0.67285f * w), (oy + 0.55064f * h), (ox + 0.67136f * w), (oy + 0.53722f * h))
+    p.cubicTo((ox + 0.66986f * w), (oy + 0.52381f * h), (ox + 0.67583f * w), (oy + 0.51040f * h), (ox + 0.67775f * w), (oy + 0.49698f * h))
+    p.cubicTo((ox + 0.67967f * w), (oy + 0.48357f * h), (ox + 0.68159f * w), (oy + 0.47015f * h), (ox + 0.68286f * w), (oy + 0.45674f * h))
+    p.cubicTo((ox + 0.68414f * w), (oy + 0.44333f * h), (ox + 0.68542f * w), (oy + 0.42991f * h), (ox + 0.68542f * w), (oy + 0.41650f * h))
+    p.cubicTo((ox + 0.68542f * w), (oy + 0.40309f * h), (ox + 0.68521f * w), (oy + 0.38967f * h), (ox + 0.68286f * w), (oy + 0.37626f * h))
+    p.cubicTo((ox + 0.68052f * w), (oy + 0.36284f * h), (ox + 0.67668f * w), (oy + 0.34943f * h), (ox + 0.67136f * w), (oy + 0.33602f * h))
+    p.cubicTo((ox + 0.66603f * w), (oy + 0.32260f * h), (ox + 0.65899f * w), (oy + 0.30919f * h), (ox + 0.65090f * w), (oy + 0.29577f * h))
+    p.cubicTo((ox + 0.64280f * w), (oy + 0.28236f * h), (ox + 0.63406f * w), (oy + 0.26895f * h), (ox + 0.62276f * w), (oy + 0.25553f * h))
+    p.cubicTo((ox + 0.61147f * w), (oy + 0.24212f * h), (ox + 0.59889f * w), (oy + 0.22871f * h), (ox + 0.58312f * w), (oy + 0.21529f * h))
+    p.cubicTo((ox + 0.56735f * w), (oy + 0.20188f * h), (ox + 0.53858f * w), (oy + 0.18176f * h), (ox + 0.52813f * w), (oy + 0.17505f * h))
+    p.cubicTo((ox + 0.51769f * w), (oy + 0.16834f * h), (ox + 0.52131f * w), (oy + 0.16834f * h), (ox + 0.52046f * w), (oy + 0.17505f * h))
     p.close()
     return p
 }
