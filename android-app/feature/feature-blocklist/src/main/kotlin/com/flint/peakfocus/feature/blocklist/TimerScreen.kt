@@ -405,7 +405,7 @@ private fun TodayScene(
                 )
                 Box(
                     Modifier
-                        .size(24.dp)
+                        .size(40.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -417,7 +417,7 @@ private fun TodayScene(
                         .testTag("today.streak.ember"),
                     contentAlignment = Alignment.Center,
                 ) {
-                    FlintStreakEmber(mood = emberMood, size = 24.dp)
+                    FlintStreakEmber(mood = emberMood, size = 40.dp)
                 }
                 Spacer(Modifier.width(8.dp))
                 // Fail closed: only a loaded rule set may claim "Protected ┬╖ N rules".

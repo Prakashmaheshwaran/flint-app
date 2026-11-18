@@ -168,10 +168,10 @@ private struct FlameGeometry {
 
     init(s: CGFloat) {
         self.s = s
-        self.w = s * 0.78
-        self.h = s * 0.92
+        self.w = s * 0.76
+        self.h = s * 0.90
         self.cx = s * 0.50
-        self.baseY = s * 0.965
+        self.baseY = s * 0.95
     }
 }
 

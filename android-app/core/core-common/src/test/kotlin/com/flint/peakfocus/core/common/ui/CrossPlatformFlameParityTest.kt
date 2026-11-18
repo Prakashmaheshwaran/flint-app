@@ -31,8 +31,8 @@ class CrossPlatformFlameParityTest {
         assertTrue(android.contains("Recognizable low-intensity flame"))
         assertTrue(android.contains("DormantBodyStops"))
         assertTrue(android.contains("private fun drawAsh"))
-        assertTrue(android.contains("buildOuter(body, geo, 0f, 0f, 1f, 1f, 0f, 0f)"))
-        assertTrue(android.contains("pointed"))
+        assertTrue(android.contains("twemojiOuter"))
+        assertTrue(android.contains("twemojiInner"))
         assertTrue(ios.contains("Recognizable low-intensity flame"))
         assertTrue(ios.contains("dormant"))
         assertTrue(ios.contains("private func drawAsh"))
@@ -49,7 +49,7 @@ class CrossPlatformFlameParityTest {
             .map { it.readText() }
             .toList()
         assertEquals(1, androidSources.sumOf { Regex("""fun StreakFlame\(""").findAll(it).count() })
-        for (function in listOf("buildOuter", "buildCore", "buildAsh")) {
+        for (function in listOf("twemojiOuter", "twemojiInner")) {
             assertEquals(1, androidSources.sumOf { Regex("""fun $function\(""").findAll(it).count() })
         }
         val iosSources = File(root, "ios-app/Flint").walkTopDown()
