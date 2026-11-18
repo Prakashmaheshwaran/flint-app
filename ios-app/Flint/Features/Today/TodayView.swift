@@ -251,7 +251,7 @@ struct TodayView: View {
                             Text(active.name)
                                 .font(FlintFont.text(15, weight: .semibold))
                                 .foregroundStyle(FlintBrand.bone)
-                            Text("┬╖ now")
+                            Text("· now")
                                 .font(FlintFont.text(15, weight: .medium))
                                 .foregroundStyle(FlintBrand.mist)
                         }
@@ -281,7 +281,7 @@ struct TodayView: View {
                             Text(current.name)
                                 .font(FlintFont.text(15, weight: .semibold))
                                 .foregroundStyle(FlintBrand.bone)
-                            Text("┬╖ now")
+                            Text("· now")
                                 .font(FlintFont.text(15, weight: .medium))
                                 .foregroundStyle(FlintBrand.mist)
                         }
@@ -492,7 +492,7 @@ struct TodayView: View {
             return ("No rules yet", FlintBrand.mist, FlintBrand.stone, nil)
         }
         let count = enabledRules.count
-        return ("Protected ┬╖ \(count) \(count == 1 ? "rule" : "rules")", FlintBrand.bone, FlintBrand.ember, nil)
+        return ("Protected · \(count) \(count == 1 ? "rule" : "rules")", FlintBrand.bone, FlintBrand.ember, nil)
     }
 
     private var focusedToday: TimeInterval? {
@@ -537,7 +537,7 @@ struct TodayView: View {
         if !active.isAllowList, vm.selectionCount > 0 {
             parts.append("\(vm.selectionCount) \(vm.selectionCount == 1 ? "app" : "apps") resting")
         }
-        return parts.joined(separator: " ┬╖ ")
+        return parts.joined(separator: " · ")
     }
 
     private func ruleLine(_ rule: FlintScheduleRule) -> String {
@@ -546,23 +546,23 @@ struct TodayView: View {
             let zone = FlintOneShotCopy.zone(rule)
             switch phase {
             case let .active(window):
-                parts.append("one time ┬╖ until \(FlintOneShotCopy.time(window.end, zone: zone))")
+                parts.append("one time · until \(FlintOneShotCopy.time(window.end, zone: zone))")
             case let .pending(window):
-                parts.append("one time ┬╖ \(FlintOneShotCopy.detail(window, zone: zone))")
+                parts.append("one time · \(FlintOneShotCopy.detail(window, zone: zone))")
             case .finished:
-                parts.append("one time ┬╖ finished")
+                parts.append("one time · finished")
             }
         } else if FlintTodaySchedule.current(in: rules, at: now)?.id == rule.id {
             parts.append("until \(FlintTodaySchedule.clock(rule.schedule.endHour, rule.schedule.endMinute))")
         } else {
-            parts.append("\(FlintTodaySchedule.clock(rule.schedule.startHour, rule.schedule.startMinute)) ΓÇö \(FlintTodaySchedule.clock(rule.schedule.endHour, rule.schedule.endMinute))")
+            parts.append("\(FlintTodaySchedule.clock(rule.schedule.startHour, rule.schedule.startMinute)) — \(FlintTodaySchedule.clock(rule.schedule.endHour, rule.schedule.endMinute))")
         }
         let count = rule.selection.applicationTokens.count + rule.selection.categoryTokens.count
             + rule.selection.webDomainTokens.count
         if count > 0 {
             parts.append(rule.allowListMode ? "allow list" : "\(count) \(count == 1 ? "item" : "items")")
         }
-        return parts.joined(separator: " ┬╖ ")
+        return parts.joined(separator: " · ")
     }
 
     private func levelName(_ level: BreakLevel) -> String {
@@ -665,7 +665,7 @@ struct TodayView: View {
         history.refresh()
     }
 
-    // MARK: Copy (real rules only ΓÇö nothing invented)
+    // MARK: Copy (real rules only — nothing invented)
 
     private var headline: String {
         if let current = FlintTodaySchedule.current(in: rules, at: now) {
@@ -700,8 +700,8 @@ struct TodayView: View {
             }
             parts.append("next, \(next.name) at \(start)")
         }
-        if parts.isEmpty { return rules.isEmpty ? "No schedules yet ΓÇö add one in Rules." : "Nothing else scheduled today." }
-        let line = parts.joined(separator: " ┬╖ ")
+        if parts.isEmpty { return rules.isEmpty ? "No schedules yet — add one in Rules." : "Nothing else scheduled today." }
+        let line = parts.joined(separator: " · ")
         return line.prefix(1).uppercased() + line.dropFirst()
     }
 
@@ -725,7 +725,7 @@ struct TodayView: View {
 }
 
 /// Which enabled rule is running now, and which starts next today. A date-specific (one-time)
-/// rule is decided by its own dated window on the trusted clock ΓÇö never by weekday math, which
+/// rule is decided by its own dated window on the trusted clock — never by weekday math, which
 /// would make it look current every week on that weekday.
 enum FlintTodaySchedule {
     static func current(in rules: [FlintScheduleRule], at date: Date,

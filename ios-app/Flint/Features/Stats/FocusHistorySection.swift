@@ -34,7 +34,7 @@ struct FocusHistorySection: View {
                     if let summary = history.summary, summary.availability == .degraded {
                         Text(FocusHistoryText.degraded).flintSecondary(13)
                     }
-                    if history.isPreview { Text("DEBUG ┬╖ Seeded preview events").flintSecondary(12) }
+                    if history.isPreview { Text("DEBUG · Seeded preview events").flintSecondary(12) }
                 }
             }
             .accessibilityIdentifier("history.section")
@@ -97,7 +97,7 @@ struct FocusHistorySection: View {
                     .accessibilityLabel(spokenSentence)
             }
         } else {
-            Text("Loading focus historyΓÇª")
+            Text("Loading focus history…")
                 .font(FlintFont.text(17, weight: .semibold))
                 .foregroundStyle(FlintBrand.mist)
         }

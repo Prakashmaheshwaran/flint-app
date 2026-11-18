@@ -272,7 +272,7 @@ fun TimerScreen(
                 TextButton(
                     enabled = !state.busy && state.rulesError == null,
                     onClick = { viewModel.cancelSession(session.id) },
-                ) { Text(if (state.busy) "EndingΓÇª" else "End timer") }
+                ) { Text(if (state.busy) "Ending…" else "End timer") }
             },
             dismissButton = {
                 TextButton(enabled = !state.busy, onClick = { cancellingId = null }) { Text("Keep focusing") }
@@ -333,7 +333,7 @@ internal fun TimerAppPicker(
     )
 }
 
-/** M03 ΓÇö Today. */
+/** M03 — Today. */
 @Composable
 private fun TodayScene(
     state: TimerUiState,
@@ -420,12 +420,12 @@ private fun TodayScene(
                     FlintStreakEmber(mood = emberMood, size = 24.dp)
                 }
                 Spacer(Modifier.width(8.dp))
-                // Fail closed: only a loaded rule set may claim "Protected ┬╖ N rules".
+                // Fail closed: only a loaded rule set may claim "Protected · N rules".
                 val pillText = when {
                     setupLabel != null -> "Setup needed"
                     rulesState is RulesUiState.Unavailable -> "Rules unavailable"
-                    ready == null -> "Checking rulesΓÇª"
-                    else -> "Protected ┬╖ ${authored.size} ${if (authored.size == 1) "rule" else "rules"}"
+                    ready == null -> "Checking rules…"
+                    else -> "Protected · ${authored.size} ${if (authored.size == 1) "rule" else "rules"}"
                 }
                 val healthy = setupLabel == null && ready != null
                 FlintStatusPill(
@@ -551,7 +551,7 @@ private fun TodayScene(
 
             Spacer(Modifier.height(20.dp))
             Text(
-                "Your next session ┬╖ ${timerDurationLabel(state.draft.durationMinutes)}",
+                "Your next session · ${timerDurationLabel(state.draft.durationMinutes)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = FlintPalette.Mist,
             )
@@ -599,7 +599,7 @@ private fun TodayStatsRow(focused: String, next: String?, restingApps: List<AppR
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            StatValue(next ?: "ΓÇö")
+            StatValue(next ?: "—")
             Spacer(Modifier.height(5.dp))
             StatLabel("NEXT")
         }
@@ -610,7 +610,7 @@ private fun TodayStatsRow(focused: String, next: String?, restingApps: List<AppR
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             if (restingApps.isEmpty()) {
-                Text("ΓÇö", style = MaterialTheme.typography.titleLarge.merge(FlintNumerals))
+                Text("—", style = MaterialTheme.typography.titleLarge.merge(FlintNumerals))
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     restingApps.take(3).forEachIndexed { index, app ->
@@ -642,7 +642,7 @@ private fun TodayStatsRow(focused: String, next: String?, restingApps: List<AppR
 }
 
 /**
- * A stat value: short values ("1h 30m", "9:00 AM", "ΓÇö") use the serif numeral; longer history
+ * A stat value: short values ("1h 30m", "9:00 AM", "—") use the serif numeral; longer history
  * states ("No focus sessions yet", "Focus history unavailable") are sentences, so they wrap in
  * body text instead of being clipped to one numeral line. Neither form is ever clipped.
  */
@@ -709,7 +709,7 @@ private fun TodayNowCard(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    "${rule.name} ┬╖ now",
+                    "${rule.name} · now",
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -813,7 +813,7 @@ private fun TodayNextRow(rule: BlockRule, nowMinute: Int, onClick: () -> Unit) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(rule.name, style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "${scheduleSummary(rule.schedule)} ┬╖ ${timerBreakLabel(rule.breakLevel)} ┬╖ ${targetsSummary(rule.targets)}",
+                "${scheduleSummary(rule.schedule)} · ${timerBreakLabel(rule.breakLevel)} · ${targetsSummary(rule.targets)}",
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                 color = FlintPalette.Mist,
                 maxLines = 1,
@@ -831,7 +831,7 @@ private fun TodayNextRow(rule: BlockRule, nowMinute: Int, onClick: () -> Unit) {
     }
 }
 
-/** E04 ΓÇö the Start focus sheet: how long, what rests, how hard it is to leave. */
+/** E04 — the Start focus sheet: how long, what rests, how hard it is to leave. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun StartFocusSheet(
@@ -967,7 +967,7 @@ internal fun StartFocusSheet(
                         )
                         Text(
                             when {
-                                state.appsState is InstalledAppsUiState.Loading && state.appsError == null -> "Loading appsΓÇª"
+                                state.appsState is InstalledAppsUiState.Loading && state.appsError == null -> "Loading apps…"
                                 draftApps.isEmpty() && allowListMode -> "Tap to choose the apps that stay available"
                                 draftApps.isEmpty() -> "Tap to choose the apps you want a break from"
                                 else -> "Tap to change apps"
@@ -1070,7 +1070,7 @@ internal fun StartFocusSheet(
                 timerPresets.filter { it.detox }.forEach { preset ->
                     FlintChip(onClick = { onPreset(preset.id) }, selected = state.draft.presetId == preset.id,
                         enabled = state.canEdit, height = 36.dp) {
-                        FlintChipText("${preset.name} ┬╖ ${timerDurationLabel(preset.minutes)}")
+                        FlintChipText("${preset.name} · ${timerDurationLabel(preset.minutes)}")
                     }
                 }
             }
@@ -1085,12 +1085,12 @@ internal fun StartFocusSheet(
         ) {
             val reason = state.error ?: state.startPrerequisite
             if (reason != null) {
-                val announcement = if (reason == "Checking protectionΓÇª") reason else "Not armed. $reason"
+                val announcement = if (reason == "Checking protection…") reason else "Not armed. $reason"
                 Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
                     liveRegion = LiveRegionMode.Polite
                     contentDescription = announcement
                 }) {
-                    if (reason != "Checking protectionΓÇª") {
+                    if (reason != "Checking protection…") {
                         Text("Not armed.", style = MaterialTheme.typography.titleSmall, color = FlintPalette.Danger)
                     }
                     Text(reason, style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist)
@@ -1123,8 +1123,8 @@ internal fun StartFocusSheet(
                 Column(Modifier.padding(bottom = 10.dp)) { HardcoreCommitmentDisclosure() }
             }
             EmberButton(
-                if (state.busy) "StartingΓÇª" else if (footerPlan != null)
-                    "Begin ┬╖ ${footerPlan.rounds} ├ù ${footerPlan.focusMinutes}m" else "Begin ${timerDurationLabel(minutes)}",
+                if (state.busy) "Starting…" else if (footerPlan != null)
+                    "Begin · ${footerPlan.rounds} × ${footerPlan.focusMinutes}m" else "Begin ${timerDurationLabel(minutes)}",
                 onStart,
                 enabled = state.canStart && state.startPrerequisite == null,
             )
@@ -1142,7 +1142,7 @@ internal fun StartFocusSheet(
     }
 }
 
-/** F01 ΓÇö the Pomodoro plan picker. Rests are disclosed as part of the commitment (┬º1/┬º6). */
+/** F01 — the Pomodoro plan picker. Rests are disclosed as part of the commitment (§1/§6). */
 @Composable
 private fun PomodoroDraftSection(
     draft: TimerDraft,
@@ -1236,7 +1236,7 @@ internal val POMODORO_REST_CHOICES: List<Int> = listOf(1, 2, 3, 5, 8, 10, 15, 20
 internal val POMODORO_LONG_REST_CHOICES: List<Int> = listOf(5, 10, 15, 20, 25, 30, 45, 60)
 
 /**
- * The start disclosure (┬º1, ┬º6): the plan, that rests are planned and part of the commitment,
+ * The start disclosure (§1, §6): the plan, that rests are planned and part of the commitment,
  * that the tier covers the whole chain, and that there is no skip or extend operation.
  */
 internal fun pomodoroDisclosure(plan: PomodoroPlan): String {
@@ -1247,7 +1247,7 @@ internal fun pomodoroDisclosure(plan: PomodoroPlan): String {
         "your break level applies to the whole chain ($total). You cannot skip, shorten or extend a round."
 }
 
-/** E06 ΓÇö a running timer: the ember travels its arc, breath rings around it. */
+/** E06 — a running timer: the ember travels its arc, breath rings around it. */
 @Composable
 internal fun SessionScene(
     session: BlockRule,
@@ -1325,9 +1325,9 @@ internal fun SessionScene(
                 Text(
                     if (session.pomodoro != null)
                         "chain ends at ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(deadline))}" +
-                            (start?.let { " ┬╖ ${sessionLengthLabel(it, deadline)} committed" } ?: "")
+                            (start?.let { " · ${sessionLengthLabel(it, deadline)} committed" } ?: "")
                     else "ends at ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(deadline))}" +
-                        (start?.let { " ┬╖ ${sessionLengthLabel(it, deadline)} session" } ?: ""),
+                        (start?.let { " · ${sessionLengthLabel(it, deadline)} session" } ?: ""),
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
                     color = FlintPalette.Mist,
                     textAlign = TextAlign.Center,
@@ -1410,7 +1410,7 @@ private fun SessionRestCard(
                 }
                 Spacer(Modifier.weight(1f))
                 Text(
-                    if (allowList) "Allow list ┬╖ ${apps.size} ${if (apps.size == 1) "app" else "apps"} allowed"
+                    if (allowList) "Allow list · ${apps.size} ${if (apps.size == 1) "app" else "apps"} allowed"
                     else "${apps.size} ${if (apps.size == 1) "app" else "apps"} ${if (armed) "resting" else "selected"}",
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                     color = FlintPalette.Mist,
@@ -1429,7 +1429,7 @@ private fun SessionRestCard(
                     style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp),
                 )
                 Text(
-                    if (session.breakLevel == BreakLevel.HARDCORE) "Flint canΓÇÖt be deleted while Hardcore runs."
+                    if (session.breakLevel == BreakLevel.HARDCORE) "Flint can’t be deleted while Hardcore runs."
                     else timerExitHint(session),
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                     color = FlintPalette.Mist,
@@ -1459,11 +1459,11 @@ internal fun TimerArmingNotice(arming: TimerArmingState, onRetry: () -> Unit, on
         when (arming) {
             TimerArmingState.Idle -> Text("Protection status unavailable", style = MaterialTheme.typography.titleSmall)
             is TimerArmingState.Applying -> {
-                Text("ApplyingΓÇª", style = MaterialTheme.typography.titleSmall)
+                Text("Applying…", style = MaterialTheme.typography.titleSmall)
                 Text("Timer saved. Waiting for the protection service to confirm it.", style = MaterialTheme.typography.bodySmall)
             }
             is TimerArmingState.Checking -> {
-                Text("Checking protectionΓÇª", style = MaterialTheme.typography.titleSmall)
+                Text("Checking protection…", style = MaterialTheme.typography.titleSmall)
                 Text("Waiting for a fresh service check.", style = MaterialTheme.typography.bodySmall)
             }
             is TimerArmingState.Armed -> {
@@ -1484,7 +1484,7 @@ internal fun TimerArmingNotice(arming: TimerArmingState, onRetry: () -> Unit, on
     }
 }
 
-/** E08 ΓÇö the ember has set. */
+/** E08 — the ember has set. */
 @Composable
 private fun CompleteScene(
     session: FocusSession,
@@ -1510,7 +1510,7 @@ private fun CompleteScene(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             FlintStatusPill(
-                "${session.name} ┬╖ Complete".uppercase(),
+                "${session.name} · Complete".uppercase(),
                 emphasized = false,
                 modifier = Modifier.padding(top = 54.dp),
             )
@@ -1526,7 +1526,7 @@ private fun CompleteScene(
                 color = FlintPalette.Mist,
                 modifier = Modifier.padding(top = 10.dp),
             )
-            // F01 ┬º7: the rounds this history proves ΓÇö a committed completion proves all of them.
+            // F01 §7: the rounds this history proves — a committed completion proves all of them.
             FocusHistoryText.rounds(session)?.let {
                 Text(
                     it,
@@ -1555,7 +1555,7 @@ private fun CompleteScene(
     }
 }
 
-/** M08's three quiet stat tiles ΓÇö only the facts this session actually recorded. */
+/** M08's three quiet stat tiles — only the facts this session actually recorded. */
 @Composable
 private fun CompleteStatsRow(session: FocusSession, summary: FocusSummary?) {
     val stats = buildList {
@@ -1599,7 +1599,7 @@ private val todayPresets: List<TimerPreset>
     get() = listOf("deep-study", "reading", "workout").mapNotNull { id -> timerPresets.firstOrNull { it.id == id } }
 
 private fun todayLabel(): String =
-    SimpleDateFormat("EEEE ┬╖ d MMMM", Locale.getDefault()).format(Date())
+    SimpleDateFormat("EEEE · d MMMM", Locale.getDefault()).format(Date())
 
 internal fun localMinuteOfDay(epochMs: Long): Int {
     val calendar = Calendar.getInstance().apply { timeInMillis = epochMs }
@@ -1646,7 +1646,7 @@ private fun nowCardSubtitle(rule: BlockRule, now: Int): String {
     if (end != null) parts += "until ${formatMinuteOfDay(end)}"
     val apps = rule.targets.apps.size
     if (apps > 0) parts += "$apps ${if (apps == 1) "app" else "apps"} resting"
-    return parts.joinToString(" ┬╖ ")
+    return parts.joinToString(" · ")
 }
 
 /** Timer rule ids carry no start time, so the arc derives it from the persisted rule when it can. */
@@ -1674,7 +1674,7 @@ private fun timerBreakLabel(level: BreakLevel): String = when (level) {
 private fun timerBreakHint(level: BreakLevel): String = when (level) {
     BreakLevel.EASY -> "Stop any time."
     BreakLevel.HARDER -> "No early stop. Breaks wait a few minutes."
-    BreakLevel.HARDCORE -> "No breaks, no stop, canΓÇÖt delete Flint until it ends."
+    BreakLevel.HARDCORE -> "No breaks, no stop, can’t delete Flint until it ends."
 }
 
 private fun timerBreakDisclosure(level: BreakLevel): String = when (level) {

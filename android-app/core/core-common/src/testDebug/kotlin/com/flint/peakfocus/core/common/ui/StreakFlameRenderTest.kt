@@ -97,8 +97,8 @@ class StreakFlameRenderTest {
     /**
      * Rendered silhouette aspect from pixels, thresholding the bloom halo out.
      *
-     * The contour spans Â±0.45 w over a 0.90 s tall body, so this measurement â€” not the
-     * nominal w/h constant â€” is the aspect the design signs off on.
+     * The contour spans Â±0.45 w over a 0.90 s tall body, so this measurement — not the
+     * nominal w/h constant — is the aspect the design signs off on.
      */
     private fun silhouetteAspect(image: ImageBitmap): Float {
         val bitmap = image.asAndroidBitmap()
