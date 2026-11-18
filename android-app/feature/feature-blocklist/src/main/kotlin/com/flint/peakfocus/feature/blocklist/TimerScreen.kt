@@ -396,7 +396,9 @@ private fun TodayScene(
                                 .testTag("today.streak.ember"),
                             contentAlignment = Alignment.Center,
                         ) {
-                            FlintStreakEmber(mood = emberMood, size = 24.dp)
+                            // Static streak icon on the landing header; the live GIF runs in
+                            // the streak sheet only.
+                            FlintStreakEmber(mood = emberMood, size = 24.dp, animate = false)
                         }
                         FlintMark(Modifier.size(20.dp))
                     }

@@ -286,6 +286,8 @@ struct FlintStreakEmber: View {
     var size: CGFloat = 96
     /// When true, keeps a gentle live/burning motion even for dormant (e.g. streak sheet).
     var forceAnimate: Bool = false
+    /// When false, the GIF remains a static streak icon (landing header).
+    var animate: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -313,7 +315,7 @@ struct FlintStreakEmber: View {
         .accessibilityHidden(true)
     }
 
-    private var shouldAnimate: Bool { !reduceMotion && (mood != .dormant || forceAnimate) }
+    private var shouldAnimate: Bool { animate && !reduceMotion && (mood != .dormant || forceAnimate) }
 
     @State private var startDate = Date()
     @State private var anchorSeconds = STATIC_FLAME_SECONDS

@@ -950,6 +950,8 @@ fun StreakFlame(
     milestoneFlash: Float = 0f,
     forceAnimate: Boolean = false,
     sideSparks: Boolean = false,
+    /** When false, the GIF stays on a single static frame (e.g. the landing header badge). */
+    animate: Boolean = true,
 ) {
     val reduced = rememberReducedMotion()
     val windowInfo = LocalWindowInfo.current
@@ -965,10 +967,11 @@ fun StreakFlame(
     }
     var onScreen by remember { mutableStateOf(true) }
     var elapsedMs by remember { mutableLongStateOf(0L) }
-    val animate = !reduced && windowFocused && onScreen && (state != StreakFlameState.Inactive || forceAnimate)
+    val shouldAnimate = animate && !reduced && windowFocused && onScreen &&
+        (state != StreakFlameState.Inactive || forceAnimate)
 
-    LaunchedEffect(animate) {
-        if (!animate) return@LaunchedEffect
+    LaunchedEffect(shouldAnimate) {
+        if (!shouldAnimate) return@LaunchedEffect
         val anchor = elapsedMs
         val start = withFrameNanos { it }
         var lastFrame = -1L
@@ -1109,6 +1112,8 @@ fun FlintStreakEmber(
     size: Dp = 160.dp,
     milestoneFlash: Float = 0f,
     forceAnimate: Boolean = false,
+    /** When false, the GIF remains a static streak icon (landing header). */
+    animate: Boolean = true,
 ) {
     // One renderer for every placement: the reference silhouette lives in StreakFlame.
     // This wrapper only keeps the existing mood-based call sites and silent semantics.
@@ -1120,6 +1125,7 @@ fun FlintStreakEmber(
         contentDescription = null,
         milestoneFlash = milestoneFlash,
         forceAnimate = forceAnimate,
+        animate = animate,
     )
 }
 
