@@ -1,6 +1,7 @@
 package com.flint.peakfocus.feature.stats
 
 import com.flint.peakfocus.core.common.ui.StreakEmberMood
+import com.flint.peakfocus.core.common.ui.emberMoodFor
 import com.flint.peakfocus.core.history.FocusDay
 import com.flint.peakfocus.core.history.FocusSummary
 import com.flint.peakfocus.core.history.HistoryAvailability
@@ -47,17 +48,12 @@ internal sealed class FocusStreakUi {
 
 internal object FocusStreakCopy {
     const val TITLE = "Focus streak"
-    /** Under-number label — streak sheet format (Opal-like composition, Flint copy). */
-    const val DAY_STREAK = "Day streak"
-    /** Sheet subtitle under the day-streak label. */
-    const val SHEET_SUBTITLE = "Days in a row you focused with Flint"
     const val FOOTNOTE = "One completed focus session makes a day count. Days use this device's current time zone."
     const val EMPTY = "Your first focus session starts your streak."
     const val NO_ACTIVE = "No active streak"
     const val RESTART = "A new streak starts with a completed focus session."
     const val COMPLETED_TODAY = "Completed today"
     const val NOT_COMPLETED_TODAY = "Not completed today"
-    const val BEST_LABEL = "Best recorded streak"
     const val WEEK_STRIP = "Focus days this week"
 
     fun daysInARow(streak: Int): String =
@@ -121,11 +117,7 @@ internal fun focusStreakUi(
         completedToday -> FocusStreakCopy.COMPLETED_TODAY
         else -> FocusStreakCopy.NOT_COMPLETED_TODAY
     }
-    val emberMood = when {
-        !active -> StreakEmberMood.Dormant
-        completedToday -> StreakEmberMood.Active
-        else -> StreakEmberMood.Warning
-    }
+    val emberMood = emberMoodFor(summary.streak, completedToday)
     return FocusStreakUi.Visible(
         streak = summary.streak,
         streakCaption = if (active) FocusStreakCopy.daysInARow(summary.streak) else FocusStreakCopy.NO_ACTIVE,

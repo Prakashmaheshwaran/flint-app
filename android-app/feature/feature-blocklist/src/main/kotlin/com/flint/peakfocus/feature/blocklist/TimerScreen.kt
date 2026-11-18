@@ -99,11 +99,12 @@ import com.flint.peakfocus.core.common.ui.FlintSegmented
 import com.flint.peakfocus.core.common.ui.FlintStatusPill
 import com.flint.peakfocus.core.common.ui.FlintStreakEmber
 import com.flint.peakfocus.core.common.ui.FocusStreakCelebrationSheet
-import com.flint.peakfocus.core.common.ui.FocusStreakSheetCopy
 import com.flint.peakfocus.core.common.ui.GhostButton
 import com.flint.peakfocus.core.common.ui.QuietButton
+import com.flint.peakfocus.core.common.ui.StreakFlamePlacement
 import com.flint.peakfocus.core.common.ui.SunArc
 import com.flint.peakfocus.core.common.ui.TodayHero
+import com.flint.peakfocus.core.common.ui.emberMoodFor
 import com.flint.peakfocus.core.history.FocusHistoryText
 import com.flint.peakfocus.core.history.FocusSession
 import com.flint.peakfocus.core.history.FocusSummary
@@ -355,7 +356,7 @@ private fun TodayScene(
     val streak = history?.streak ?: 0
     val historyKnown = history != null && history.availability != HistoryAvailability.UNAVAILABLE
     val completedToday = history?.days?.lastOrNull()?.completed?.let { it > 0 } == true
-    val emberMood = FocusStreakSheetCopy.moodFrom(streak, completedToday)
+    val emberMood = emberMoodFor(streak, completedToday)
 
     Box(modifier.fillMaxSize()) {
         // Clean horizon — streak candle lives in the top-right, not the center.
@@ -396,9 +397,9 @@ private fun TodayScene(
                                 .testTag("today.streak.ember"),
                             contentAlignment = Alignment.Center,
                         ) {
-                            // Static streak icon on the landing header; the live GIF runs in
+                            // Static streak icon on the landing header; the live flame runs in
                             // the streak sheet only.
-                            FlintStreakEmber(mood = emberMood, size = 24.dp, animate = false)
+                            FlintStreakEmber(mood = emberMood, size = StreakFlamePlacement.Badge, animate = false)
                         }
                         FlintMark(Modifier.size(20.dp))
                     }

@@ -67,6 +67,7 @@ import com.flint.peakfocus.core.common.ui.FocusStreakSheetCopy
 import com.flint.peakfocus.core.common.ui.StreakCoolDeep
 import com.flint.peakfocus.core.common.ui.StreakCoolTop
 import com.flint.peakfocus.core.common.ui.StreakEmberMood
+import com.flint.peakfocus.core.common.ui.StreakFlamePlacement
 import com.flint.peakfocus.core.common.ui.rememberReducedMotion
 import com.flint.peakfocus.core.history.FocusDay
 import com.flint.peakfocus.core.history.FocusHistoryBridge
@@ -238,24 +239,12 @@ private fun FocusStreakCard(summary: FocusSummary?) {
 @Composable
 private fun FocusStreakVisibleCard(ui: FocusStreakUi.Visible) {
     val reducedMotion = rememberReducedMotion()
-    var previousStreak by remember { mutableStateOf(ui.streak) }
-    var milestoneFlash by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(ui.streak) {
-        val grew = ui.streak > previousStreak
-        val milestone = grew && (ui.streak == 7 || ui.streak == 14 || ui.streak == 30 || ui.streak % 50 == 0)
-        previousStreak = ui.streak
-        if (milestone && !reducedMotion) {
-            milestoneFlash = 1f
-            delay(900)
-            milestoneFlash = 0f
-        }
-    }
     val numberColor = when (ui.emberMood) {
         StreakEmberMood.Active -> FlintPalette.Ember
         StreakEmberMood.Warning -> StreakCoolDeep
         StreakEmberMood.Dormant -> FlintPalette.Mist.copy(alpha = 0.72f)
     }
-    // Hero number — Opal sheet gradient: light top melting into the mood color.
+    // Hero number gradient: light top melting into the mood color.
     val numberBrush = when (ui.emberMood) {
         StreakEmberMood.Active -> Brush.verticalGradient(
             listOf(Color(0xFFFFE9B0), FlintPalette.Ember),
@@ -270,7 +259,7 @@ private fun FocusStreakVisibleCard(ui: FocusStreakUi.Visible) {
         StreakEmberMood.Warning -> StreakCoolDeep
         StreakEmberMood.Dormant -> FlintPalette.Mist
     }
-    // Bold sans hero number — Opal sheet uses SF Pro Bold; Hanken Semibold is Flint's sans weight.
+    // Bold sans hero number; Hanken Semibold is Flint's sans weight.
     val streakNumberStyle = TextStyle(
         fontFamily = FlintText,
         fontWeight = FontWeight.SemiBold,
@@ -281,7 +270,7 @@ private fun FocusStreakVisibleCard(ui: FocusStreakUi.Visible) {
 
     FlintCard(modifier = Modifier.testTag("history.streak")) {
         FlintSectionLabel(FocusStreakCopy.TITLE, modifier = Modifier.semantics { heading() })
-        // Streak sheet (Opal in-app composition): flame → number → DAY STREAK → subtitle.
+        // Streak composition: flame → number → DAY STREAK → motivation.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -314,8 +303,7 @@ private fun FocusStreakVisibleCard(ui: FocusStreakUi.Visible) {
             ) {
                 FlintStreakEmber(
                     mood = ui.emberMood,
-                    milestoneFlash = milestoneFlash,
-                    size = 160.dp,
+                    size = StreakFlamePlacement.Insights,
                 )
                 AnimatedContent(
                     targetState = ui.streak,

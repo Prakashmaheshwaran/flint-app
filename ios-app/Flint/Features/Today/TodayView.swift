@@ -25,8 +25,7 @@ struct TodayView: View {
     private var streak: Int { history.summary?.streak ?? 0 }
     private var streakCompletedToday: Bool { (history.summary?.days.last?.completed ?? 0) > 0 }
     private var streakMood: StreakEmberMood {
-        if streak <= 0 { return .dormant }
-        return streakCompletedToday ? .active : .warning
+        StreakEmberMood.forStreak(streak, completedToday: streakCompletedToday)
     }
     private var streakLabel: String {
         if history.summary == nil { return "Focus streak" }

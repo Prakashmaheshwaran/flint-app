@@ -49,7 +49,7 @@ struct FocusHistorySection: View {
 
     private func streakCard(_ summary: FlintHistorySummary) -> some View {
         let completedToday = (summary.days.last?.completed ?? 0) > 0
-        let mood: StreakEmberMood = summary.streak <= 0 ? .dormant : (completedToday ? .active : .warning)
+        let mood = StreakEmberMood.forStreak(summary.streak, completedToday: completedToday)
         return FlintCard(radius: 24, padding: EdgeInsets(top: 18, leading: 16, bottom: 16, trailing: 16)) {
             VStack(spacing: 6) {
                 FlintStreakEmber(mood: mood, size: 160)
