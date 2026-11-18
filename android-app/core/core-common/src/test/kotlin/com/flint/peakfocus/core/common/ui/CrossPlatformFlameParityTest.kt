@@ -13,7 +13,7 @@ class CrossPlatformFlameParityTest {
 
     private val root: File = repoRoot()
     private val android: String = read("android-app/core/core-common/src/main/kotlin/com/flint/peakfocus/core/common/ui/StreakFlame.kt")
-    private val androidWrapper: String = read("android-app/core/core-common/src/main/kotlin/com/flint/peakfocus/core/common/ui/FlintStreakEmber.kt")
+    private val androidWrapper: String = read("android-app/core/core-common/src/main/kotlin/com/flint/peakfocus/core/common/ui/StreakFlame.kt")
     private val ios: String = read("ios-app/Flint/Features/Stats/FlintStreakEmber.swift")
 
     @Test
@@ -68,10 +68,10 @@ class CrossPlatformFlameParityTest {
     fun `all six placements use the approved sizes`() {
         val androidToday = read("android-app/feature/feature-blocklist/src/main/kotlin/com/flint/peakfocus/feature/blocklist/TimerScreen.kt")
         val androidInsights = read("android-app/feature/feature-stats/src/main/kotlin/com/flint/peakfocus/feature/stats/FocusSessionsSection.kt")
-        val androidSheet = read("android-app/core/core-common/src/main/kotlin/com/flint/peakfocus/core/common/ui/FocusStreakCelebrationSheet.kt")
+        val androidSheet = read("android-app/core/core-common/src/main/kotlin/com/flint/peakfocus/core/common/ui/StreakFlame.kt")
         val iosToday = read("ios-app/Flint/Features/Today/TodayView.swift")
         val iosInsights = read("ios-app/Flint/Features/Stats/FocusHistorySection.swift")
-        val iosSheet = read("ios-app/Flint/Features/Stats/FocusStreakCelebrationSheet.swift")
+        val iosSheet = read("ios-app/Flint/Features/Stats/FlintStreakEmber.swift")
         assertTrue(Regex("""size\s*=\s*24\.dp\b""").containsMatchIn(androidToday))
         assertTrue(Regex("""size\s*=\s*160\.dp\b""").containsMatchIn(androidInsights) || Regex("""160\.dp\b""").containsMatchIn(androidInsights))
         assertTrue(Regex("""size\s*=\s*148\.dp\b""").containsMatchIn(androidSheet))
