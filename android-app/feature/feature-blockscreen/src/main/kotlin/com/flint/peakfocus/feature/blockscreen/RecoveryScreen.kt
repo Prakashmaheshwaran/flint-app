@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
+import com.flint.peakfocus.core.common.theme.FlintPalette
 
 data class RecoveryChoice(val key: String, val name: String, val canDisable: Boolean = true)
 internal fun canDisableRecoverySelection(choices: List<RecoveryChoice>, selected: Set<String>): Boolean =
@@ -31,7 +32,24 @@ data class RecoveryScreenState(
     val saving: Boolean = false,
     val activeOrdinaryBreaks: Int = 0,
     val activeOpenCredits: Int = 0,
+    /** Opened from Flint's PIN screen: no commitment names, and no per-commitment choices. */
+    val redacted: Boolean = false,
 )
+
+/**
+ * Shown when recovery was opened from the app-open PIN screen (ADR-012 §7, PC-50): the pass and
+ * resume actions stay available, but commitment names stay behind the PIN.
+ */
+const val REDACTED_RECOVERY_NOTE =
+    "Commitment names are hidden because recovery was opened from Flint's PIN screen."
+
+/** Per-commitment choices the screen may show: none when redacted, whatever the caller passed. */
+internal fun visibleRecoveryChoices(state: RecoveryScreenState): List<RecoveryChoice> =
+    if (state.redacted) emptyList() else state.choices
+
+/** End-confirmation names the screen may show: none when redacted. */
+internal fun visibleEndConfirmation(state: RecoveryScreenState): List<String>? =
+    if (state.redacted) null else state.endConfirmation
 
 /** Independent in-Flint recovery. Navigation and preview never consume a pass. */
 @Composable
@@ -49,18 +67,22 @@ fun RecoveryScreen(
     onResumeCredits: () -> Unit,
 ) {
     var selected by remember { mutableStateOf(emptySet<String>()) }
-    val allowed = state.choices.map { it.key }.toSet()
+    val choices = visibleRecoveryChoices(state)
+    val allowed = choices.map { it.key }.toSet()
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             TextButton(onClick = onBack) { Text("Back to Flint") }
-            Text("Protection recovery", style = MaterialTheme.typography.headlineMedium)
+            Text("PROTECTION RECOVERY", style = MaterialTheme.typography.labelMedium, color = FlintPalette.Mist)
+            Text("Use your Emergency Pass?", style = MaterialTheme.typography.headlineMedium)
+            Text("Protection recovery", style = MaterialTheme.typography.titleSmall)
             Text("One Emergency Pass becomes available seven days after you use it. It starts 60 minutes of recovery across all personal protection.")
             if (state.loading || state.saving) CircularProgressIndicator()
             if (state.unavailable) {
                 Text("Protection state unavailable", color = MaterialTheme.colorScheme.error)
-                Button(onClick = onRetry, enabled = !state.saving) { Text("Try again") }
+                com.flint.peakfocus.core.common.ui.EmberButton("Try again", onRetry, enabled = !state.saving)
             }
+            if (state.redacted) Text(REDACTED_RECOVERY_NOTE, color = FlintPalette.Mist)
             if (state.previousAccessEnded) Text("Access ended after restart; no extra credit was spent.")
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (state.activeOrdinaryBreaks > 0) {
@@ -75,10 +97,10 @@ fun RecoveryScreen(
                 Text("Recovery ends in ${formatDuration(state.remainingRecoveryMillis)}", style = MaterialTheme.typography.titleLarge)
                 state.resumeAt?.let { Text("Protection resumes: $it") }
                 Text("Only commitments still naturally active will resume. Counters and the next pass time stay unchanged.")
-                Button(onClick = onResume, enabled = !state.saving) { Text("Resume protection now") }
-                if (state.choices.isNotEmpty()) {
+                com.flint.peakfocus.core.common.ui.EmberButton("Resume protection now", onResume, enabled = !state.saving)
+                if (choices.isNotEmpty()) {
                     Text("Choose commitments to change before resuming. Time and Open limits can only be deleted.")
-                    state.choices.forEach { choice ->
+                    choices.forEach { choice ->
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = choice.key in selected,
                             enabled = !state.saving, role = Role.Checkbox,
                             onValueChange = { checked -> selected = if (checked) selected + choice.key else selected - choice.key })) {
@@ -87,7 +109,7 @@ fun RecoveryScreen(
                         }
                     }
                     val selection = selected.intersect(allowed)
-                    OutlinedButton(onClick = { onPreviewEnd(selection, false) }, enabled = canDisableRecoverySelection(state.choices, selection) && !state.saving) {
+                    OutlinedButton(onClick = { onPreviewEnd(selection, false) }, enabled = canDisableRecoverySelection(choices, selection) && !state.saving) {
                         Text("Disable selected rules and resume")
                     }
                     TextButton(onClick = { onPreviewEnd(selection, true) }, enabled = selection.isNotEmpty() && !state.saving) {
@@ -95,7 +117,7 @@ fun RecoveryScreen(
                     }
                 }
             } else if (state.available) {
-                Button(onClick = onPreview, enabled = !state.saving) { Text("Review Emergency Pass") }
+                com.flint.peakfocus.core.common.ui.EmberButton("Review Emergency Pass", onPreview, enabled = !state.saving)
             }
             state.nextPassAt?.let { Text("Next pass: $it") }
             if (state.timeUncertain) Text("Time is uncertain after a clock change or restart. Eligibility may be later than seven calendar days.")
@@ -107,6 +129,7 @@ fun RecoveryScreen(
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("End these active sessions and suspend these rule commitments:")
                     preview.names.forEach { Text("• $it") }
+                    if (state.redacted) Text(REDACTED_RECOVERY_NOTE)
                     Text("Estimated protection resume: ${preview.resumeAt}")
                     Text("Estimated next pass: ${preview.nextPassAt}")
                     Text("New schedule occurrences are also suspended during recovery. Counters are kept; the pass is not refunded.")
@@ -117,7 +140,7 @@ fun RecoveryScreen(
             confirmButton = { TextButton(onClick = onConfirm, enabled = !state.saving) { Text("Confirm 60 minutes of recovery") } },
             dismissButton = { TextButton(onClick = onCancelConfirmation, enabled = !state.saving) { Text("Cancel") } })
     }
-    state.endConfirmation?.let { names ->
+    visibleEndConfirmation(state)?.let { names ->
         AlertDialog(onDismissRequest = { if (!state.saving) onCancelConfirmation() }, title = { Text(if (state.endConfirmationDeletes) "Delete selected templates?" else "Disable selected rules?") },
             text = { Column(Modifier.verticalScroll(rememberScrollState())) {
                 names.forEach { Text("• $it") }

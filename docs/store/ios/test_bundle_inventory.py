@@ -12,11 +12,11 @@ class BundleInventoryTests(unittest.TestCase):
         def target(kind, identifier):
             return {"type": kind, "platform": "iOS", "settings": {
                 "base": {"PRODUCT_BUNDLE_IDENTIFIER": identifier}}}
-        targets = {"Flint": target("application", "com.flint.peakfocus")}
+        targets = {"Flint": target("application", "app.flint.focus")}
         for suffix in ["monitor", "report", "shield-config", "shield-action", "widgets"]:
-            targets[suffix] = target("app-extension", f"com.flint.peakfocus.{suffix}")
+            targets[suffix] = target("app-extension", f"app.flint.focus.{suffix}")
         targets["Flint"]["dependencies"] = [{"target": name} for name in targets if name != "Flint"]
-        targets["Tests"] = target("bundle.unit-test", "com.flint.peakfocus.tests")
+        targets["Tests"] = target("bundle.unit-test", "app.flint.focus.tests")
         return {"name": "Flint", "targets": targets}
 
     def write_bundle(self, directory, identifier):
@@ -27,7 +27,7 @@ class BundleInventoryTests(unittest.TestCase):
     def test_sixth_extension_is_derived_and_tests_excluded(self):
         targets = shipping_targets(self.spec())
         self.assertEqual(len(targets), 6)
-        self.assertEqual(targets["widgets"], "com.flint.peakfocus.widgets")
+        self.assertEqual(targets["widgets"], "app.flint.focus.widgets")
         self.assertNotIn("Tests", targets)
 
     def test_future_extension_needs_no_python_inventory_change(self):
@@ -65,15 +65,15 @@ class BundleInventoryTests(unittest.TestCase):
     def test_missing_widget_bundle_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             app = Path(temporary) / "Flint.app"
-            self.write_bundle(app, "com.flint.peakfocus")
+            self.write_bundle(app, "app.flint.focus")
             with self.assertRaisesRegex(ValueError, "Missing built bundles"):
                 built_bundles(app, shipping_targets(self.spec()))
 
     def test_duplicate_or_unexpected_built_id_is_rejected(self):
-        for identifier in ["com.flint.peakfocus", "unexpected"]:
+        for identifier in ["app.flint.focus", "unexpected"]:
             with tempfile.TemporaryDirectory() as temporary:
                 app = Path(temporary) / "Flint.app"
-                self.write_bundle(app, "com.flint.peakfocus")
+                self.write_bundle(app, "app.flint.focus")
                 self.write_bundle(app / "PlugIns" / "bad.appex", identifier)
                 with self.assertRaisesRegex(ValueError, "Unexpected or duplicate"):
                     built_bundles(app, shipping_targets(self.spec()))
@@ -91,7 +91,7 @@ class BundleInventoryTests(unittest.TestCase):
     def test_host_and_extension_identifiers_cannot_be_swapped(self):
         with tempfile.TemporaryDirectory() as temporary:
             app = Path(temporary) / "Flint.app"
-            self.write_bundle(app, "com.flint.peakfocus.widgets")
+            self.write_bundle(app, "app.flint.focus.widgets")
             with self.assertRaisesRegex(ValueError, "wrong host/extension location"):
                 built_bundles(app, shipping_targets(self.spec()))
 

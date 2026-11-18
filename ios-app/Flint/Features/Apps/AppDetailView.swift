@@ -11,12 +11,14 @@ struct AppDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                target.label
-                    .labelStyle(.titleAndIcon)
-                    .font(FlintFont.display(26))
-                    .foregroundStyle(FlintBrand.bone)
-                    .accessibilityAddTraits(.isHeader)
-                    .padding(.top, 8)
+                HStack(spacing: 12) {
+                    FlintAppTile(target: target, size: 44)
+                    target.label
+                        .labelStyle(.titleOnly)
+                        .flintTitle(26)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                .padding(.top, 8)
 
                 if let presentation {
                     headline(presentation.headline)
@@ -81,6 +83,7 @@ struct AppDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(FlintGroundBackground())
+        .flintTabBarInset()
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { presentation = AppDetailLoader.presentation(for: target.key) }
     }
@@ -123,12 +126,14 @@ enum AppDetailLoader {
         let ledgerPass = FlintProtectionLedger.appGroup().flatMap { try? $0.peek().get() }?.pass
         let inputs = FlintProtectionStatus.currentInputs(now: now, ledgerPass: ledgerPass)
         let store = FlintGroupStore()
-        // The running session's frozen selection, never the picker's next selection.
+        // The running session's frozen selection and its recorded mode, never the picker's next
+        // selection: an Allow List session's kept apps are not blocked by it.
         let sessionSelection = inputs.activeSession.flatMap {
             store?.loadSessionSelection(sessionID: $0.session.id)
         }
         let coverage = FlintProtectionStatus.coverageScopes(for: .init(
             protection: inputs, sessionSelection: sessionSelection,
+            sessionAllowListMode: inputs.activeSession?.session.isAllowList ?? false,
             schedules: store?.loadRules() ?? [], timeLimits: store?.loadLimits() ?? [],
             openLimits: FlintOpenLimitRule.loadAll()))
         let result = FlintProtectionStatus.contributors(

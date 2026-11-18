@@ -3,6 +3,8 @@ package com.flint.peakfocus.feature.blocklist
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.Schedule
+import java.time.LocalDate
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -130,5 +132,57 @@ class RuleLiveStatusTest {
         )
         val statuses = ruleLiveStatuses(rules, nowMillis = System.currentTimeMillis())
         assertEquals(setOf("r1", "r2"), statuses.keys)
+    }
+
+    // ---- One-time (dated) windows: pending → active → finished, never weekly ----
+
+    private val dated = LocalDate.parse("2026-11-20")
+    private val datedSchedule = Schedule(emptySet(), 9 * 60, 17 * 60, dated)
+    private val datedStart = dated.atStartOfDay(ZoneId.systemDefault()).plusMinutes(540).toInstant().toEpochMilli()
+    private val datedEnd = dated.atStartOfDay(ZoneId.systemDefault()).plusMinutes(1020).toInstant().toEpochMilli()
+
+    private fun datedStatus(nowMillis: Long, enabled: Boolean = true) =
+        ruleLiveStatus(rule(datedSchedule, enabled = enabled), dated.dayOfWeek.value, 600, nowMillis)
+
+    @Test
+    fun `a pending one time rule names its date and start`() {
+        val status = datedStatus(datedStart - 1)
+        assertFalse(status.activeNow)
+        assertEquals(OneTimePhase.PENDING, status.oneTimePhase)
+        assertTrue(status.nextChange!!.startsWith("Starts "))
+        assertTrue(status.nextChange!!.endsWith("09:00"))
+    }
+
+    @Test
+    fun `an active one time rule announces its end`() {
+        val status = datedStatus(datedStart)
+        assertTrue(status.activeNow)
+        assertEquals(OneTimePhase.ACTIVE, status.oneTimePhase)
+        assertEquals("Until 17:00", status.nextChange)
+    }
+
+    @Test
+    fun `a finished one time rule stays finished and never repeats`() {
+        for (now in listOf(datedEnd, datedEnd + 7 * 86_400_000L, datedEnd + 364 * 86_400_000L)) {
+            val status = datedStatus(now)
+            assertFalse(status.activeNow)
+            assertEquals(OneTimePhase.FINISHED, status.oneTimePhase)
+            assertEquals("Finished", status.nextChange)
+        }
+    }
+
+    @Test
+    fun `a disabled one time rule still reports where it stands`() {
+        // The list must be able to hide a finished switch even when the rule was turned off.
+        assertEquals(OneTimePhase.PENDING, datedStatus(datedStart - 1, enabled = false).oneTimePhase)
+        assertFalse(datedStatus(datedStart, enabled = false).activeNow)
+    }
+
+    @Test
+    fun `a weekly rule fixed at the same clock times is not a one time rule`() {
+        val weekly = Schedule(setOf(dated.dayOfWeek.value), 9 * 60, 17 * 60)
+        val status = ruleLiveStatus(rule(weekly), dated.dayOfWeek.value, 8 * 60, datedEnd)
+        assertNull(status.oneTimePhase)
+        assertEquals("Starts 09:00", status.nextChange)
     }
 }

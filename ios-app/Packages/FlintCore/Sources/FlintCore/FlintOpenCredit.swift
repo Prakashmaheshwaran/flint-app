@@ -58,12 +58,32 @@ public enum FlintOpenCredit {
     static func importLegacy(into state: inout FlintLedgerState, defaults: UserDefaults,
                              at now: FlintLedgerInstant, calendar: Calendar) {
         guard !state.migrations.contains(FlintLedgerState.legacyOpenCreditMigration) else { return }
+        // An unfinished fresh bootstrap hides every rule domain, so importing now would record
+        // an unavailable quota for the whole period (R2p2-N03). Defer: the quota stays
+        // `pendingImport` (closed) and the first transaction after completion imports it.
+        let receipt = FlintRuleInitialization.receipt(in: defaults)
+        guard receipt != .preparing else { return }
         let rules = FlintDesiredRules.load(FlintOpenLimitRule.self, key: .openLimits, from: defaults,
                                            at: now.wall, migrating: false)
         let raw = defaults.object(forKey: FlintLedgerState.legacyOpenCreditKey)
+        // R2p2-N03: initialization writes `[]` here before ledger creation, which the old
+        // presence check read as an established legacy setup and thereby made a never-used
+        // quota unavailable. An empty array counts as never used only with positive
+        // provenance: the completed fresh-install receipt, or the legacy never-used proof
+        // written with that array. A genuine legacy install whose user deleted their rules
+        // kept its own saved `[]` (no proof) and keeps the closed "lost established counter"
+        // refusal; a surviving counter still wins either way.
+        let openRules = defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue)
+        let provenNeverUsed = receipt == .complete
+            || defaults.data(forKey: FlintRuleStoreKey.openLimits.neverUsed) == FlintRuleInitialization.neverUsedProof
+        let bootstrappedEmpty = (openRules as? Data) == Data("[]".utf8)
+            && provenNeverUsed
+            && !FlintRuleInitialization.hasDomainEvidence(
+                FlintRuleStoreKey.openLimits, in: defaults, activities: [],
+                ledger: nil, directory: nil)
+        let established = raw != nil || (openRules != nil && !bootstrappedEmpty)
         state.importLegacyOpenCredits(raw.map(FlintLegacyValue.value) ?? .absent,
-            targetKeys: rules.map(targetKeys), established: rules == nil ||
-                defaults.object(forKey: FlintRuleStoreKey.openLimits.rawValue) != nil || raw != nil,
+            targetKeys: rules.map(targetKeys), established: established,
             at: now, calendar: calendar)
     }
 

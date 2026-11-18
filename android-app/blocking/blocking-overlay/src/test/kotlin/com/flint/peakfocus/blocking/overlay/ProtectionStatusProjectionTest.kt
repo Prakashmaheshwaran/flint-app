@@ -25,7 +25,8 @@ class ProtectionStatusProjectionTest {
         timeMeasurementUnavailable: Boolean = false, timeMeasurementStorageUnavailable: Boolean = false) =
         ProtectionStatusProjection.evaluate(focus, StorageState.Ready(rules), StorageState.Ready(times), StorageState.Ready(opens),
             editor, rules, floor, pathAConnected, stamp, usageAccessMissing = usageAccessMissing,
-            timeMeasurementUnavailable = timeMeasurementUnavailable, timeMeasurementStorageUnavailable = timeMeasurementStorageUnavailable)
+            timeMeasurementUnavailable = timeMeasurementUnavailable, timeMeasurementStorageUnavailable = timeMeasurementStorageUnavailable,
+            blockSurface = BlockSurfaceMountPublisher.Outcome.CLEAR)
 
     @Test fun PC_60_unknownMeasurementIsDegradedWithoutPretendingTheGrantIsMissingOrQuotaIsSpent() {
         val status = project(timeMeasurementUnavailable = true)
@@ -225,7 +226,8 @@ class ProtectionStatusProjectionTest {
             schedule = Schedule(daysOfWeek = setOf(3), startMinuteOfDay = 9 * 60, endMinuteOfDay = 11 * 60), expiresAtEpochMs = null)
         fun status(stamp: AccessClockStamp) = ProtectionStatusProjection.evaluate(StorageState.Ready(FocusSnapshot()),
             StorageState.Ready(listOf(rule)), StorageState.Ready(emptyList()), StorageState.Ready(emptyList()),
-            StorageState.Ready(sidecar), listOf(foreign), resolved, true, stamp, legacyZone = "UTC")
+            StorageState.Ready(sidecar), listOf(foreign), resolved, true, stamp, legacyZone = "UTC",
+            blockSurface = BlockSurfaceMountPublisher.Outcome.CLEAR)
         val active = status(now)
         assertEquals(ProtectionStatus.Readiness.READY, active.readiness)
         val legacy = active.activeCauses.single { it.ruleId == "blocklist" }

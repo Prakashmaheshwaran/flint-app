@@ -62,3 +62,7 @@ __pycache__/
 
 # ── Fleet coordination ledger (atomic claims; lives in the main checkout) ──
 .flint-fleet/
+
+# ── Android emulator e2e raw outputs ───────────────
+# Regenerable run outputs; curated evidence lives in docs/verification/.
+artifacts/

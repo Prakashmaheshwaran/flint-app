@@ -113,6 +113,14 @@ interface EditorCommitmentStore {
 /** A fresh resolution supplied by the adapter, never a permission bit or a visible shield. */
 data class EditorSafety(val resolved: Boolean, val excludedPackages: Set<String> = emptySet())
 
+/**
+ * One refusal for new (or newly broadened) allow-list protection while the safety floor could not
+ * be resolved (PC-53). The rule editor and Timer start share the exact same line so neither path
+ * invents a softer or stronger description of the same degraded health.
+ */
+internal const val ALLOW_LIST_SAFETY_UNRESOLVED_MESSAGE =
+    "Calling or Home safety could not be checked. Protection health is degraded; try again before starting allow-list protection."
+
 /** Publication boundaries must replace stale Ready state even when decoding throws unexpectedly. */
 fun editorPublicationFailure(cause: Throwable): StorageFailure = when (cause) {
     is StorageUnavailableException -> cause.reason
@@ -154,15 +162,32 @@ internal fun dailyOccurrence(zone: String, now: AccessClockStamp): EditorCause {
 internal fun ruleShape(rule: BlockRule, zone: String) = CommitmentPolicy.ProtectionShape(
     name = rule.name, tier = rule.breakLevel, allowListMode = rule.targets.allowListMode,
     apps = rule.targets.apps.map { it.packageName }.toSet(), domains = rule.targets.domains.map { it.domain }.toSet(),
-    window = rule.schedule?.let { CommitmentPolicy.Window(it.startMinuteOfDay, it.endMinuteOfDay, it.daysOfWeek, zone) },
+    window = rule.schedule?.let { CommitmentPolicy.Window(it.startMinuteOfDay, it.endMinuteOfDay, it.daysOfWeek, zone, it.date) },
     endsAtEpochMs = rule.expiresAtEpochMs,
+    pomodoro = rule.pomodoro,
 )
 
 internal fun limitShape(pkg: String, tier: BreakLevel, budget: Int, dailyZoneId: String? = null) = CommitmentPolicy.ProtectionShape(
     name = pkg, tier = tier, allowListMode = false, apps = setOf(pkg), domains = emptySet(), budget = budget, dailyZoneId = dailyZoneId,
 )
 
-internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClockStamp): String? {
+/** A one-time window is a new finite commitment: strictly shorter than 24 elapsed hours. */
+internal const val ONE_TIME_MAX_MS = 24 * 60 * 60 * 1000L
+
+/**
+ * Structural + commitment validation at commit time. [zone] is the rule's saved occurrence zone
+ * (the editor passes its materialized cause zone, else the default zone); a dated one-time start
+ * must not already be in the past *in that zone*, because the stored window is what the engine
+ * will arm and the trusted timeline cannot be rewound to reach it.
+ *
+ * [trustedWallEpochMs] is the editor's trusted "now" (the persisted timeline plus same-boot
+ * elapsed time, i.e. the same `logicalClock` value used to materialize occurrences). A same-boot
+ * wall-clock rewind must not make a start look authorable when the trusted timeline has already
+ * passed it — authoring and activation read one clock.
+ */
+internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClockStamp,
+                                zone: String = TimeZone.getDefault().id,
+                                trustedWallEpochMs: Long = now.wallEpochMs): String? {
     if (rule.name.isBlank()) return "Give this rule a name."
     if (rule.schedule == null && rule.expiresAtEpochMs == null && rule.breakLevel != BreakLevel.EASY &&
         (old == null || old.schedule != null || old.expiresAtEpochMs != null || old.breakLevel != rule.breakLevel || (!old.enabled && rule.enabled))) {
@@ -173,10 +198,42 @@ internal fun validateEditorRule(rule: BlockRule, old: BlockRule?, now: AccessClo
             return "Choose a duration of at most 24 hours."
         }
     }
+    // F01: a plan is frozen with its parent. A malformed plan is never silently dropped into
+    // an unrestricted Timer, and its whole chain must stay inside the session cap.
+    rule.pomodoro?.let { plan ->
+        PomodoroPlan.validationError(plan)?.let { return it }
+        // The phase table needs the parent's own finite end. A repeating window would replay
+        // the same plan as a second occurrence, so it never carries one.
+        if (rule.schedule != null || rule.expiresAtEpochMs == null) {
+            return "A Pomodoro chain needs a finite Timer, not a schedule."
+        }
+        if (old?.pomodoro != plan && !isValidNewSessionDuration(plan.totalMs)) {
+            return "Choose a duration of at most 24 hours."
+        }
+    }
     rule.schedule?.let {
         if (it.startMinuteOfDay !in 0..1439 || it.endMinuteOfDay !in 0..1439 ||
             it.startMinuteOfDay == it.endMinuteOfDay || it.daysOfWeek.any { day -> day !in 1..7 }) {
             return "Choose a valid schedule of at most 26 hours per occurrence."
+        }
+        val dated = it.date
+        if (dated != null) {
+            if (it.daysOfWeek.isNotEmpty()) return "A one-time session runs on its date only."
+            val occurrence = ScheduleOccurrences.onDate(it, ZoneId.of(zone), dated)
+                ?: return "Choose a valid schedule of at most 26 hours per occurrence."
+            // Only a new or date/start-moved window has to be in the future; a rename or a
+            // target edit of an existing one is an ordinary edit (PC-13). "Future" is the
+            // trusted editor timeline, never a rewindable wall clock.
+            val moved = old == null || old.schedule?.date != dated ||
+                old.schedule?.startMinuteOfDay != it.startMinuteOfDay
+            if (moved && occurrence.startsAtEpochMs < trustedWallEpochMs - 60_000) {
+                return "Choose a start time in the future."
+            }
+            // A new or changed one-time window is a new finite commitment: under 24 elapsed
+            // hours, like iOS. Only a DST fold can stretch a sub-24 h wall window past it.
+            if (old?.schedule != it && occurrence.endsAtEpochMs - occurrence.startsAtEpochMs >= ONE_TIME_MAX_MS) {
+                return "A one-time session must end within 24 hours of its start."
+            }
         }
     }
     return null

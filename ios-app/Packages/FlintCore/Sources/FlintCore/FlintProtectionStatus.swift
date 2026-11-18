@@ -8,7 +8,7 @@ import CoreFoundation
 
 public enum FlintProtectionStatus {
     public static let storageKey = "flint.status.v1"
-    public static let changedNotification = "com.flint.peakfocus.status.changed"
+    public static let changedNotification = "app.flint.focus.status.changed"
     public static let widgetKind = "FlintProtectionWidget"
 
     /// Injectable side effects let extensions and tests share the exact write-then-notify path.

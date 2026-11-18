@@ -2,6 +2,7 @@ package com.flint.peakfocus.blocking.engine
 
 import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.model.PomodoroPlan
 
 /**
  * ADR-012 §2: the single action × tier × active/inactive authority every entry point (editor,
@@ -129,9 +130,10 @@ class CommitmentPolicy {
 
     /**
      * Replacing a running session (§2/§3): allowed when [replacement] provably dominates [current]
-     * (not for Pomodoro parents: [ProtectionShape] has no round model, so route them elsewhere)
-     * (every target, at least the tier, at least the remaining interval); otherwise Easy allows an
-     * explicit exit, Harder waits, Hardcore denies (start independently or defer instead).
+     * (every target, at least the tier, at least the remaining interval). A plan-bearing Pomodoro
+     * parent is only dominated by an identical plan, so arbitration always treats the whole chain
+     * as enforcing and can only make dominance harder to prove; otherwise Easy allows an explicit
+     * exit, Harder waits, Hardcore denies (start independently or defer instead).
      */
     fun decideReplacement(current: ProtectionShape, replacement: ProtectionShape, activity: CauseActivity): Outcome {
         if (!activity.isActive) return Outcome.NOT_APPLICABLE
@@ -163,15 +165,27 @@ class CommitmentPolicy {
         val budget: Int? = null,
         /** Saved daily Time-Limit zone; changing its reset boundary is weakening (§9). */
         val dailyZoneId: String? = null,
+        /**
+         * F01: a Pomodoro parent's frozen plan. There is no plan-edit operation, so any change
+         * to it is unprovable and treated as weakening; it also keeps a plan-bearing parent
+         * from ever "dominating" a replacement (§3).
+         */
+        val pomodoro: PomodoroPlan? = null,
     )
 
-    /** A recurring window: minutes of day, ISO days (empty = every day) and saved IANA zone. */
-    data class Window(val startMinute: Int, val endMinute: Int, val days: Set<Int>, val zoneId: String)
+    /**
+     * Recurring window: minutes of day, ISO days (empty = every day) and saved IANA zone.
+     * [date] makes it a one-time window (see `Schedule.date`); its days are always empty, so the
+     * only way it can cover another window is the same date.
+     */
+    data class Window(val startMinute: Int, val endMinute: Int, val days: Set<Int>, val zoneId: String, val date: java.time.LocalDate? = null)
 
     enum class EditKind { COSMETIC, STRENGTHEN, WEAKEN }
 
     fun classifyEdit(before: ProtectionShape, after: ProtectionShape): EditKind {
         if (before.copy(name = after.name) == after) return EditKind.COSMETIC
+        // The plan is frozen at acceptance (§1); no path may add, shorten or lengthen it.
+        if (after.pomodoro != before.pomodoro) return EditKind.WEAKEN
         if (before.allowListMode != after.allowListMode) return EditKind.WEAKEN
         if (after.tier.ordinal < before.tier.ordinal) return EditKind.WEAKEN
         if (after.dailyZoneId != before.dailyZoneId) return EditKind.WEAKEN
@@ -198,10 +212,16 @@ class CommitmentPolicy {
         return EditKind.STRENGTHEN
     }
 
-    /** [after] provably covers every minute [before] did: same zone, superset of days, same-shape superset span. */
+    /**
+     * [after] provably covers every minute [before] did: same zone, superset of days, same-shape
+     * superset span. Moving a one-time window to another date is never covering (it protects a
+     * different day, so the old commitment is gone), while the same date with an equal-or-earlier
+     * start and equal-or-later end is.
+     */
     private fun windowCovers(after: Window?, before: Window?): Boolean {
         if (before == null || after == null) return before == after
         if (after.zoneId != before.zoneId) return false
+        if (after.date != before.date) return false
         val beforeDays = before.days.ifEmpty { (1..7).toSet() }
         val afterDays = after.days.ifEmpty { (1..7).toSet() }
         if (!afterDays.containsAll(beforeDays)) return false

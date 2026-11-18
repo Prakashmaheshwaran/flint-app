@@ -52,9 +52,9 @@ if name == 'xcrun' and args[:2] == ['simctl', 'launch']:
         domain = 'NSPOSIXErrorDomain' if mode == 'other' else 'FBSOpenApplicationServiceErrorDomain'
         code = 6 if mode == 'other-code' else 5
         print('An error was encountered processing the command (domain=' + domain + ', code=' + str(code) + '):', file=sys.stderr)
-        print('Simulator device failed to launch com.flint.peakfocus.', file=sys.stderr)
+        print('Simulator device failed to launch app.flint.focus.', file=sys.stderr)
         sys.exit(code)
-    print('com.flint.peakfocus: 43212')
+    print('app.flint.focus: 43212')
     sys.exit(0)
 if name == 'ps' and args == ['-axo', 'pid=,pgid=,lstart=,command='] and os.environ.get('AVD_BOOTED'):
     changed = ((os.environ.get('FOLLOWUP_RESTART_AFTER_BUILD') and pathlib.Path('built-android').exists()) or

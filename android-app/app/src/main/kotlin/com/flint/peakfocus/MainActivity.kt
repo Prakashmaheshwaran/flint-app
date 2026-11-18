@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.ManagedActivityResultLauncher
@@ -30,14 +31,19 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.sp
+import com.flint.peakfocus.blocking.overlay.BlockActivity
 import com.flint.peakfocus.blocking.overlay.TargetFloorIdentities
 import com.flint.peakfocus.core.common.RuntimeSafetySurfaces
 import com.flint.peakfocus.core.common.theme.FlintPalette
@@ -146,6 +152,9 @@ import com.flint.peakfocus.feature.onboarding.SetupGuidance
 import com.flint.peakfocus.feature.onboarding.SetupPlan
 import com.flint.peakfocus.feature.onboarding.SetupStep
 import com.flint.peakfocus.feature.settings.SettingsScreen
+import com.flint.peakfocus.feature.settings.applock.AppLock
+import com.flint.peakfocus.feature.settings.applock.AppLockController
+import com.flint.peakfocus.feature.settings.applock.AppLockGate
 import com.flint.peakfocus.feature.stats.StatsScreen
 import com.flint.peakfocus.permissions.AccessibilityPermission
 import com.flint.peakfocus.permissions.BatteryOptimization
@@ -163,19 +172,74 @@ data class AppEntry(val packageName: String, val label: String, val icon: ImageB
 private enum class Detail { QuickBlock, Account }
 
 class MainActivity : ComponentActivity() {
+
+    /** Shared with the You tab's App lock rows; the same process-wide instance gates the UI. */
+    private lateinit var appLock: AppLockController
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        appLock = AppLock.controller(applicationContext)
+        // Apply the capture policy synchronously, before the first frame can reach Recents.
+        applyWindowPolicy(AppLockWindowPolicy.decide(Build.VERSION.SDK_INT, appLock.state.value.pinStatus))
         // Ember & Mist is dark-only: light system-bar icons over the night sky.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         setContent {
+            val lockState by appLock.state.collectAsState()
+            LaunchedEffect(lockState.pinStatus) {
+                applyWindowPolicy(AppLockWindowPolicy.decide(Build.VERSION.SDK_INT, lockState.pinStatus))
+            }
             FlintTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    FlintApp()
+                    // Only this activity's content is gated: block screens, the accessibility
+                    // overlay, notifications, the widget and protection recovery stay open.
+                    // Recovery opened from the gate is redacted: no commitment names (PC-50).
+                    AppLockGate(
+                        controller = appLock,
+                        onOpenRecovery = { BlockActivity.launchRecovery(this@MainActivity, redacted = true) },
+                    ) {
+                        FlintApp()
+                    }
                 }
             }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // The record can change outside this process (storage cleared); never trust a stale read.
+        appLock.refresh()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        appLock.refresh()
+        // FlintApp's own resume pass is not composed while the gate shows. Its enforcement half
+        // (rule freshness, Path B reconciliation) must not wait for the PIN; FlintApp repeats the
+        // whole pass, including the UI-only parts, when it composes after unlock.
+        if (appLock.state.value.gateVisible) {
+            ActiveRulesBridge.republish(this)
+            PathBServiceGate.sync(this)
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Rotation is not a background visit: it must not re-lock. Process death is covered by
+        // the cold start, which reads the record and starts locked.
+        if (!isChangingConfigurations) appLock.onBackground()
+    }
+
+    private fun applyWindowPolicy(decision: AppLockWindowDecision) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            setRecentsScreenshotEnabled(decision.recentsScreenshotEnabled)
+        }
+        if (decision.secureFlag) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
     }
 }
@@ -326,6 +390,7 @@ private fun FlintApp() {
                                     subline = plan.body,
                                     setupLabel = plan.nextStep?.ctaLabel,
                                     onSetup = { plan.nextStep?.let(onSetupStep) },
+                                    onOpenRules = { tab = FlintTabGlyph.Rules },
                                 )
                                 FlintTabGlyph.Rules -> BlocklistScreen(
                                     quickBlockSummary = if (blockedCount == 0) "Apps blocked whenever Flint is on"
@@ -378,16 +443,16 @@ private enum class Stage { Welcome, Consent, Tabs }
 
 private const val KEY_WELCOMED = "welcomed"
 
-/** E01 — first run: the mark, the promise, one ember action. */
+/** M01 — first run: the mark, the promise, three privacy tiles and one ember action. */
 @Composable
 private fun WelcomeScreen(onBegin: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
-        EmberLandscape(horizonOffset = 20f, orbCenter = Offset(195f, 480f), orbRadius = 64f)
+        EmberLandscape(horizonOffset = 20f, orbCenter = Offset(195f, 470f), orbRadius = 64f)
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
                 .padding(WindowInsets.systemBars.asPaddingValues())
-                .padding(horizontal = FlintSpacing.gutter),
+                .padding(horizontal = 20.dp),
         ) {
             Column(
                 Modifier.fillMaxWidth()
@@ -396,33 +461,73 @@ private fun WelcomeScreen(onBegin: () -> Unit) {
                     .height(IntrinsicSize.Min),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.height(110.dp))
-                FlintMark(Modifier.size(40.dp))
+                Spacer(Modifier.weight(1f).heightIn(min = 96.dp))
+                FlintMark(Modifier.size(44.dp))
                 Spacer(Modifier.height(14.dp))
-                Text("Flint", style = MaterialTheme.typography.displaySmall.copy(fontSize = 48.sp, letterSpacing = (-0.8).sp),
-                    modifier = Modifier.semantics { heading() })
+                Text(
+                    "Flint",
+                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 44.sp, letterSpacing = (-1.0).sp),
+                    modifier = Modifier.semantics { heading() },
+                )
                 Spacer(Modifier.height(14.dp))
                 Text(
                     "Make time for what matters.",
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp, lineHeight = 27.sp),
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp, lineHeight = 28.sp),
                     color = FlintPalette.SoftBone,
                     textAlign = TextAlign.Center,
+                    modifier = Modifier.widthIn(max = 280.dp),
                 )
                 Spacer(Modifier.weight(1f).heightIn(min = FlintSpacing.lg))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    WelcomePromise(FlintGlyphs.lock, "Every feature free", Modifier.weight(1f))
+                    WelcomePromise(FlintGlyphs.personOff, "No account", Modifier.weight(1f))
+                    WelcomePromise(FlintGlyphs.device, "Stays on your phone", Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(14.dp))
+                EmberButton("Get started", onBegin)
+                Spacer(Modifier.height(14.dp))
                 Text(
-                    "No account  ·  No analytics  ·  Every feature free",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = FlintPalette.Mist,
+                    "Open source · built in the open",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = FlintPalette.Stone,
                     textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(18.dp))
-                EmberButton("Begin", onBegin)
-                Spacer(Modifier.height(18.dp))
-                Text("Open source · built in the open", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                    color = FlintPalette.Stone, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(12.dp))
             }
         }
+    }
+}
+
+/** One of the three welcome promises: ember glyph over a two-line 12/600 label. */
+@Composable
+private fun WelcomePromise(
+    glyph: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(FlintPalette.BoneFill.copy(alpha = 0.6f))
+            .border(1.dp, FlintPalette.Hairline, RoundedCornerShape(18.dp))
+            .padding(horizontal = 6.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(glyph, contentDescription = null, tint = FlintPalette.EmberText, modifier = Modifier.size(18.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            ),
+            color = FlintPalette.Bone,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

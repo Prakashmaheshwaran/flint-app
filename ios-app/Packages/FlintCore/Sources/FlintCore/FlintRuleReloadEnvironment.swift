@@ -55,6 +55,23 @@ enum FlintDesiredRules {
             }
             return nil
         }
+        // R-07: a persisted ADR-012 record with retained finite evidence but no time anchor
+        // (written before PC-54/55 support, or with the optional field selectively lost)
+        // proves no elapsed time. Its wall date must not end the occurrence or make a queue
+        // due. Treat it like an unavailable anchor: observation re-anchors once at the
+        // retained start, bounded by that saved duration, and records uncertainty. Legacy
+        // records (no protection yet) and in-memory new rules are unaffected. So is an
+        // unobserved legacy import: its occurrence was derived from wall time at import and
+        // carries legacy rights through exactly that end, so re-anchoring adds no trust.
+        for index in rules.indices {
+            guard var metadata = rules[index].protection, metadata.timeAnchor == nil,
+                  metadata.occurrence != nil || metadata.queuedChange != nil else { continue }
+            let legacyImport = metadata.usesLegacyActivityName && metadata.queuedChange == nil
+                && metadata.legacyRightsUntil != nil && metadata.legacyRightsUntil == metadata.occurrence?.end
+            if legacyImport { continue }
+            metadata.timeAnchor = .unavailable
+            rules[index].protection = metadata
+        }
         guard migrating else { return rules }
         var migrated = false
         for index in rules.indices where rules[index].protection == nil {

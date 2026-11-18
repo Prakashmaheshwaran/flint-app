@@ -99,7 +99,7 @@ class FlintSmokeTest : FlintE2EFixture() {
     @Test fun exhaustedDailyBudgetShowsTimeLimitShield() {
         // The existing DEBUG receiver seeds an already exhausted zero-minute legacy budget.
         // This proves adapter -> cause -> shield wiring, not elapsed UsageStats accounting.
-        val result = shell("am broadcast -n $app/.SetBlocklistReceiver --es limitPkg $target --ei limitMin 0")
+        val result = shell("am broadcast -n $app/$ns.SetBlocklistReceiver --es limitPkg $target --ei limitMin 0")
         assertTrue(result, result.contains("Broadcast completed"))
         enableService()
         launchTarget()
@@ -114,33 +114,38 @@ class FlintSmokeTest : FlintE2EFixture() {
             // use the native Timer without depending on the runner's local clock/zone.
             clickTab("Today")
             scrollTo("Start focus").click()
-            visible(By.desc("25 minutes")).click()
+            // Begin sits in the sheet's fixed footer: wait for it rather than scroll for it,
+            // which would move the stepper out of view while the sheet is still opening.
+            visible(By.text("Begin 30m"))
+            // v3 Start focus has no minute chips (M04): step the 30m default down once.
+            scrollTo(By.desc("Less time").enabled(true)).click()
+            visible(By.text("Begin 25m"))
             scrollTo("Choose what rests").click()
             visible(By.text("What rests"))
             scrollTo(target).click()
-            click("Add · 1")
+            click("Done · 1 app")
             scrollTo("Hardcore").click()
-            scrollTo("Begin 25m").click()
+            visible(By.text("Begin 25m")).click()
             visible(By.textStartsWith("ends at "))
             screenshot("saved-rule")
             return
         }
         clickTab("Rules")
         visible(By.desc("New block rule")).click()
-        visible(By.text("Rule name"))
+        visible(By.text("Name")) // v3 rule editor label
         visible(By.clazz("android.widget.EditText")).click()
         visible(By.clazz("android.widget.EditText").focused(true)).text = name
         waitForImeVisibility(true)
         device.pressBack() // exactly one Back, only after a visible keyboard is proven
         waitForImeVisibility(false)
-        visible(By.text("Rule name"))
+        visible(By.text("Name")) // v3 rule editor label
         visible(By.text("Choose apps"))
         click("Choose apps")
         // Wait for the destination before resolving its rows; the outgoing editor
         // also has an EditText. Select the unique package row, not search text.
         visible(By.text("Choose apps to block"))
         scrollTo(target).click()
-        click("Add · 1")
+        click("Done · 1 app")
         scrollTo("Save rule").click()
         click("Confirm")
         visible(By.desc("New block rule"))

@@ -5,8 +5,12 @@ import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BlockTargets
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.DomainRef
+import com.flint.peakfocus.core.model.SafetyFloor
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.Verdict
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,7 +19,7 @@ import org.junit.Test
 class BlockDecisionEngineTest {
 
     private val engine = BlockDecisionEngine()
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
 
     private fun rule(
         apps: Set<String> = emptySet(),
@@ -208,7 +212,7 @@ class BlockDecisionEngineTest {
 class SafetyFloorEngineMatrixTest {
 
     private val engine = BlockDecisionEngine()
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
     private val control = "com.instagram.android"
     // Every static floor package (ADR-012 §7) plus Flint itself — never a hand-kept subset.
     private val floor = com.flint.peakfocus.core.model.SafetyFloor.STATIC_PACKAGES.toList() + self
@@ -249,13 +253,37 @@ class SafetyFloorEngineMatrixTest {
         assertEquals(Verdict.Allow, engine.decide("com.android.settings", null, listOf(onlyDialer), self))
         assertTrue(engine.decide(control, null, listOf(onlyDialer), self) is Verdict.Block)
     }
+
+    @Test fun `an allow-list Timer blocks an unlisted app but never a floor dialer Home or recovery surface`() {
+        val start = 1_793_181_600_000L
+        // Exactly the rule the Android Timer start path writes: session id, app-only allow list,
+        // one finite deadline. No schedule, no domains.
+        val timer = BlockRule(
+            id = BlockRule.SESSION_ID_PREFIX + "timer-$start-allow",
+            name = "Focus timer",
+            targets = BlockTargets(apps = setOf(AppRef("com.spotify.music")), allowListMode = true),
+            expiresAtEpochMs = start + 300_000,
+        )
+        val during = start + 1_000
+        assertEquals("the allowed app stays reachable", Verdict.Allow,
+            engine.decide("com.spotify.music", null, listOf(timer), self, nowEpochMs = during))
+        assertTrue("everything else is blocked", engine.decide(control, null, listOf(timer), self, nowEpochMs = during) is Verdict.Block)
+        for (pkg in floor) {
+            assertEquals("Timer on $pkg", Verdict.Allow, engine.decide(pkg, null, listOf(timer), self, nowEpochMs = during))
+        }
+        // Both detectors ask the same floor question with the device's resolved default dialer and
+        // Home app before the engine sees an event; those runtime surfaces are protected too.
+        val runtimeSurfaces = setOf("com.oem.custom.dialer", "com.oem.custom.launcher")
+        for (pkg in runtimeSurfaces) assertTrue(SafetyFloor.isProtected(pkg, self, runtimeSurfaces))
+        // Expiry ends the Timer: no rule remains to block the control app.
+        assertEquals(Verdict.Allow, engine.decide(control, null, listOf(timer), self, nowEpochMs = start + 300_000))
+    }
 }
 
 /** The Open-Limit "dip" set stays narrower than the safety floor (no free re-entry bounces). */
 class OpenLimitDipSurfacesTest {
-
     private val policy = OpenLimitPolicy()
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
 
     @Test fun `every dip surface is on the safety floor`() {
         assertTrue(SYSTEM_SURFACE_PACKAGES.all { com.flint.peakfocus.core.model.SafetyFloor.isProtected(it, self) })
@@ -276,5 +304,67 @@ class OpenLimitDipSurfacesTest {
         for (via in listOf("com.android.settings", "com.android.systemui", "com.google.android.permissioncontroller")) {
             assertFalse(via, policy.countsAsOpen(via, "com.instagram.android", self))
         }
+    }
+}
+
+/**
+ * A dated `Schedule` is a one-time window. The engine's legacy fallback (no runtime) has only
+ * minutes-of-day and a weekday, so it must never read a dated window as a weekly one — and the
+ * instant path must still block inside the single occurrence.
+ */
+class DatedScheduleDecisionTest {
+    private val engine = BlockDecisionEngine()
+    private val self = "com.flint.peakfocus"
+    private val zone = ZoneId.systemDefault()
+
+    private fun dated(date: String, start: Int = 9 * 60, end: Int = 17 * 60) = BlockRule(
+        id = "dated",
+        name = "One time",
+        targets = BlockTargets(apps = setOf(AppRef("com.instagram.android"))),
+        schedule = Schedule(startMinuteOfDay = start, endMinuteOfDay = end, date = LocalDate.parse(date)),
+        breakLevel = BreakLevel.HARDCORE,
+    )
+
+    private fun stamp(date: String, minute: Int): Long =
+        LocalDate.parse(date).atStartOfDay(zone).plusMinutes(minute.toLong()).toInstant().toEpochMilli()
+
+    private fun verdict(rule: BlockRule, nowEpochMs: Long): Verdict {
+        val local = Instant.ofEpochMilli(nowEpochMs).atZone(zone)
+        return engine.decide("com.instagram.android", null, listOf(rule), self,
+            local.hour * 60 + local.minute, local.dayOfWeek.value, nowEpochMs)
+    }
+
+    @Test fun `dated window blocks only inside its own occurrence`() {
+        val rule = dated("2026-11-20")
+        assertTrue(verdict(rule, stamp("2026-11-20", 10 * 60)) is Verdict.Block)
+        assertEquals(Verdict.Allow, verdict(rule, stamp("2026-11-20", 8 * 60))) // before start
+        assertEquals(Verdict.Allow, verdict(rule, stamp("2026-11-20", 17 * 60))) // end is exclusive
+        assertEquals(Verdict.Allow, verdict(rule, stamp("2026-11-19", 10 * 60))) // yesterday
+    }
+
+    @Test fun `dated fallback never behaves weekly`() {
+        val rule = dated("2026-11-20") // Friday
+        assertEquals(5, LocalDate.parse("2026-11-20").dayOfWeek.value)
+        assertEquals(Verdict.Allow, verdict(rule, stamp("2026-11-27", 10 * 60)))
+        assertEquals(Verdict.Allow, verdict(rule, stamp("2026-12-04", 10 * 60)))
+    }
+
+    @Test fun `dated fallback without a clock is inactive`() {
+        // An unknown instant cannot prove a one-time window active; guessing "now" would block
+        // a future session early, so the fallback stays closed.
+        assertEquals(Verdict.Allow, engine.decide("com.instagram.android", null,
+            listOf(dated("2026-11-20")), self, 10 * 60, 5, -1L))
+    }
+
+    @Test fun `dated overnight tail blocks after midnight and stops at its end`() {
+        val rule = dated("2026-11-20", start = 22 * 60, end = 6 * 60)
+        assertTrue(verdict(rule, stamp("2026-11-21", 2 * 60)) is Verdict.Block)
+        assertEquals(Verdict.Allow, verdict(rule, stamp("2026-11-21", 6 * 60)))
+        assertEquals(Verdict.Allow, verdict(rule, stamp("2026-11-22", 2 * 60)))
+    }
+
+    @Test fun `minute of day path refuses to activate a dated window`() {
+        assertFalse(engine.scheduleActive(dated("2026-11-20").schedule, 10 * 60, 5))
+        assertTrue(engine.scheduleActive(Schedule(emptySet(), 9 * 60, 17 * 60), 10 * 60, 5))
     }
 }

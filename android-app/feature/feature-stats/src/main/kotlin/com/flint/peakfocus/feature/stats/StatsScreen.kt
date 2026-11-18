@@ -13,15 +13,19 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -60,9 +64,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -70,14 +79,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintNumerals
+import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.theme.FlintTheme
+import com.flint.peakfocus.core.common.ui.FlintAppTile
 import com.flint.peakfocus.core.common.ui.FlintCard
 import com.flint.peakfocus.core.common.ui.FlintMeterBar
 import com.flint.peakfocus.core.common.ui.FlintScreenHeader
 import com.flint.peakfocus.core.common.ui.FlintSectionLabel
+import com.flint.peakfocus.core.common.ui.FlintSegmented
 import com.flint.peakfocus.core.common.ui.FlintSkeletonBlock
 import com.flint.peakfocus.core.common.ui.FlintSkeletonRow
+import com.flint.peakfocus.core.common.ui.FlintTopGlow
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.model.UsageStat
 import com.flint.peakfocus.permissions.UsageAccess
@@ -184,14 +197,17 @@ fun StatsScreen(modifier: Modifier = Modifier) {
 
 @Composable
 private fun UsageError(onRetry: () -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(FlintSpacing.gutter)) {
-        FlintScreenHeader(title = "Insights", eyebrow = "Focus sessions and screen usage")
-        Spacer(Modifier.height(FlintSpacing.md))
-        FocusSessionsSection()
-        FlintCard {
-            Text("Screen usage unavailable", style = MaterialTheme.typography.titleMedium)
-            Text("Couldn't load screen usage. Try again.", modifier = Modifier.padding(vertical = FlintSpacing.sm))
-            Button(onClick = onRetry) { Text("Retry screen usage") }
+    Box(Modifier.fillMaxSize()) {
+        FlintTopGlow(height = 240.dp, emberAlpha = 0.12f)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+            Text("Insights", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp))
+            Spacer(Modifier.height(FlintSpacing.md))
+            FocusSessionsSection()
+            FlintCard {
+                Text("Screen usage unavailable", style = MaterialTheme.typography.titleMedium)
+                Text("Couldn't load screen usage. Try again.", modifier = Modifier.padding(vertical = FlintSpacing.sm))
+                com.flint.peakfocus.core.common.ui.EmberButton("Retry screen usage", onRetry)
+            }
         }
     }
 }
@@ -239,13 +255,15 @@ private fun LoadingState() {
 /** Friendly no-permission state; explains the grant in Flint's local-only, no-telemetry voice. */
 @Composable
 private fun UsageAccessPrompt(onOpenSettings: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(FlintSpacing.gutter),
-    ) {
-        FlintScreenHeader(title = "Insights", eyebrow = "See where your time goes")
+    Box(Modifier.fillMaxSize()) {
+        FlintTopGlow(height = 240.dp, emberAlpha = 0.12f)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+        ) {
+        Text("Insights", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 12.dp))
         Spacer(Modifier.height(FlintSpacing.md))
         FocusSessionsSection()
         FlintCard {
@@ -270,9 +288,8 @@ private fun UsageAccessPrompt(onOpenSettings: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(FlintSpacing.lg))
-            Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
-                Text("Allow usage access")
-            }
+            com.flint.peakfocus.core.common.ui.EmberButton("Allow usage access", onOpenSettings)
+        }
         }
     }
 }
@@ -307,41 +324,338 @@ private fun StatsReport(report: UsageReport) {
     // yields an equal report.
     var revealed by remember(report) { mutableStateOf(false) }
     LaunchedEffect(report) { revealed = true }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(FlintSpacing.gutter),
-    ) {
-        FlintScreenHeader(
-            title = "Insights",
-            eyebrow = "Focus sessions and screen usage",
-            modifier = Modifier.cardEntrance(revealed, 0),
-        )
-        Spacer(Modifier.height(FlintSpacing.md))
-        FocusSessionsSection()
-        TodayCard(
-            todayTotalMillis = report.todayTotalMillis,
-            shareOfTypical = report.todayShareOfTypical,
-            revealed = revealed,
-            modifier = Modifier.cardEntrance(revealed, 1),
-        )
-        Spacer(Modifier.height(FlintSpacing.cardGap))
-        WeekChartCard(
-            report = report,
-            period = period,
-            onSelectPeriod = { requestedPeriod = it },
-            modifier = Modifier.cardEntrance(revealed, 2),
-        )
-        if (report.weekTotalMillis > 0L) {
-            Spacer(Modifier.height(FlintSpacing.cardGap))
-            InsightsCard(report, modifier = Modifier.cardEntrance(revealed, 3))
+    Box(Modifier.fillMaxSize()) {
+        FlintTopGlow(height = 240.dp, emberAlpha = 0.12f)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Insights", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                FlintSegmented(
+                    options = listOf(UsagePeriod.Today to "Today", UsagePeriod.Week to "7 days"),
+                    selected = if (period == UsagePeriod.Today) UsagePeriod.Today else UsagePeriod.Week,
+                    onSelect = { requestedPeriod = it },
+                    compact = true,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            ComparisonCard(
+                todayTotalMillis = report.todayTotalMillis,
+                typicalDayMillis = report.typicalDayMillis,
+                revealed = revealed,
+                modifier = Modifier.cardEntrance(revealed, 1),
+            )
+            Spacer(Modifier.height(22.dp))
+            MostReachedSection(
+                insights = report.appInsights(period),
+                modifier = Modifier.cardEntrance(revealed, 2),
+            )
+            Spacer(Modifier.height(24.dp))
+            WeekStrip(
+                report = report,
+                selectedIndex = when (period) {
+                    UsagePeriod.Today -> report.days.indexOfLast { it.isToday }
+                    UsagePeriod.Week -> -1
+                    is UsagePeriod.Day -> report.days.indexOfFirst { it.startMillis == period.startMillis }
+                },
+                onSelect = { index ->
+                    if (index != -1) {
+                        val day = report.days[index]
+                        requestedPeriod = if (day.isToday) UsagePeriod.Today else UsagePeriod.Day(day.startMillis)
+                    }
+                },
+                modifier = Modifier.cardEntrance(revealed, 3),
+            )
+            Spacer(Modifier.height(24.dp))
+            FocusSessionsSection()
+            Spacer(Modifier.height(FlintSpacing.lg))
         }
-        Spacer(Modifier.height(FlintSpacing.cardGap))
-        TopAppsCard(
-            insights = report.appInsights(period),
-            modifier = Modifier.cardEntrance(revealed, 4),
+    }
+}
+
+/**
+ * M12's comparison card: one honest sentence built from today's measured total and the 7-day
+ * baseline, then two bars on a shared scale. No baseline means no comparison sentence.
+ */
+@Composable
+private fun ComparisonCard(
+    todayTotalMillis: Long,
+    typicalDayMillis: Long,
+    revealed: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val maxMillis = maxOf(todayTotalMillis, typicalDayMillis, 1L)
+    val todayFraction by animateFloatAsState(
+        targetValue = if (revealed) (todayTotalMillis.toFloat() / maxMillis).coerceIn(0f, 1f) else 0f,
+        animationSpec = tween(FlintMotion.DurationLong, easing = FlintMotion.EasingEmphasized),
+        label = "insightsTodayBar",
+    )
+    val typicalFraction by animateFloatAsState(
+        targetValue = if (revealed) (typicalDayMillis.toFloat() / maxMillis).coerceIn(0f, 1f) else 0f,
+        animationSpec = tween(FlintMotion.DurationLong, delayMillis = BarStaggerStepMillis, easing = FlintMotion.EasingEmphasized),
+        label = "insightsTypicalBar",
+    )
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(FlintPalette.Card)
+            .border(1.dp, FlintPalette.Hairline, RoundedCornerShape(24.dp))
+            .padding(horizontal = 16.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        val today = DurationFormat.format(todayTotalMillis)
+        val baseline = if (typicalDayMillis > 0L) {
+            val diff = todayTotalMillis - typicalDayMillis
+            val direction = if (diff >= 0) "more" else "less"
+            "You spent $today on screen today, ${DurationFormat.format(kotlin.math.abs(diff))} $direction than your 7-day average."
+        } else {
+            "You spent $today on screen today."
+        }
+        Text(
+            buildAnnotatedString {
+                val marker = today
+                val index = baseline.indexOf(marker)
+                if (index >= 0 && todayTotalMillis > 0) {
+                    append(baseline.substring(0, index))
+                    withStyle(androidx.compose.ui.text.SpanStyle(color = FlintPalette.EmberText)) {
+                        append(marker)
+                    }
+                    append(baseline.substring(index + marker.length))
+                } else {
+                    append(baseline)
+                }
+            },
+            style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, lineHeight = 24.sp),
         )
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(FlintPalette.Hairline))
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                ComparisonBar(
+                    label = DurationFormat.format(todayTotalMillis),
+                    caption = "Screen time today",
+                    fraction = todayFraction,
+                    ember = true,
+                    modifier = Modifier.weight(1f),
+                )
+                ComparisonBar(
+                    label = if (typicalDayMillis > 0L) DurationFormat.format(typicalDayMillis) else "—",
+                    caption = "Your 7-day average",
+                    fraction = typicalFraction,
+                    ember = false,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        Text(
+            "Measured on this phone. Nothing is uploaded.",
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = FlintPalette.Stone,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun ComparisonBar(
+    label: String,
+    caption: String,
+    fraction: Float,
+    ember: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(Modifier.height(140.dp).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+            Box(
+                Modifier
+                    .width(64.dp)
+                    .height((140.dp * fraction).coerceAtLeast(4.dp))
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(
+                        if (ember) {
+                            Brush.verticalGradient(
+                                listOf(
+                                    FlintPalette.EmberTop,
+                                    FlintPalette.Ember,
+                                    FlintPalette.Ember.copy(alpha = 0.25f),
+                                ),
+                            )
+                        } else {
+                            Brush.verticalGradient(
+                                listOf(
+                                    FlintPalette.Bone.copy(alpha = 0.22f),
+                                    FlintPalette.Bone.copy(alpha = 0.10f),
+                                    FlintPalette.Bone.copy(alpha = 0.03f),
+                                ),
+                            )
+                        },
+                    ),
+            )
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.titleLarge.merge(FlintNumerals),
+            color = if (ember) FlintPalette.Bone else FlintPalette.Mist,
+            maxLines = 1,
+        )
+        Text(
+            caption,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = FlintPalette.Mist,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** M12's "Most reached for": real app icons, a proportional hairline bar and measured time. */
+@Composable
+private fun MostReachedSection(insights: AppInsights, modifier: Modifier = Modifier) {
+    val topApps = insights.topApps
+    Column(modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.Bottom) {
+            Text("Most reached for", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text(
+                "time",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = FlintPalette.Mist,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        if (topApps.isEmpty()) {
+            Text(
+                "No app usage recorded for this period. Your device may not retain older usage records.",
+                style = MaterialTheme.typography.bodySmall,
+                color = FlintPalette.Mist,
+                modifier = Modifier.padding(vertical = 12.dp),
+            )
+        } else {
+            val maxMillis = topApps.maxOf { it.foregroundMillis }.coerceAtLeast(1L)
+            topApps.take(3).forEachIndexed { index, stat ->
+                if (index > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(FlintPalette.Hairline.copy(alpha = 0.7f)))
+                MostReachedRow(stat = stat, maxMillis = maxMillis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MostReachedRow(stat: UsageStat, maxMillis: Long) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        FlintAppTile(
+            packageName = stat.packageName,
+            label = stat.label,
+            size = 36.dp,
+            cornerRadius = 11.dp,
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(
+                stat.label ?: stat.packageName,
+                style = MaterialTheme.typography.titleSmall.copy(fontSize = 14.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(FlintPalette.Bone.copy(alpha = 0.08f)),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth((stat.foregroundMillis.toFloat() / maxMillis).coerceIn(0f, 1f))
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(FlintPalette.Ember),
+                )
+            }
+        }
+        Text(
+            DurationFormat.format(stat.foregroundMillis),
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp).merge(FlintNumerals),
+            color = FlintPalette.Mist,
+            maxLines = 1,
+        )
+    }
+}
+
+/** M12's compact week strip: seven bars on a shared scale; today is ember, empty days dashed. */
+@Composable
+private fun WeekStrip(
+    report: UsageReport,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val days = report.days
+    if (days.isEmpty()) return
+    val maxMillis = days.maxOf { it.totalMillis }.coerceAtLeast(1L)
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().height(44.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            days.forEachIndexed { index, day ->
+                val fraction = (day.totalMillis.toFloat() / maxMillis).coerceIn(0f, 1f)
+                val isToday = day.isToday
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .semantics { contentDescription = "${day.dateLabel}, ${DurationFormat.format(day.totalMillis)}" }
+                        .clickable { onSelect(index) },
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    if (day.totalMillis <= 0L) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .border(1.dp, FlintPalette.Bone.copy(alpha = 0.2f), RoundedCornerShape(2.dp)),
+                        )
+                    } else {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height((40.dp * fraction).coerceAtLeast(4.dp))
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (isToday) FlintPalette.Ember else FlintPalette.Bone.copy(alpha = 0.18f)),
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            days.forEachIndexed { index, day ->
+                Text(
+                    day.label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 11.sp,
+                        fontWeight = if (index == selectedIndex) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
+                    ),
+                    color = if (index == selectedIndex) FlintPalette.Bone else FlintPalette.Stone,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
     }
 }
 

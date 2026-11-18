@@ -51,10 +51,16 @@ internal object TimedOpenCreditPolicy {
         if (occurrenceActive(snapshot, input.packageName, snapshot.observedAt) == false) return unchanged(GrantResult.Denied)
         val credits = snapshot.openCredits ?: return unchanged(GrantResult.Unavailable())
         if (onSafetyFloor || GlobalRecoveryPolicy.remaining(ledger.recovery, snapshot.observedAt) > 0) return unchanged(GrantResult.Denied)
+        // R2p2-N01: re-derive Time contributors from the committed transaction snapshot. A Time
+        // Limit committed between the reviewed display and this commit must block the credit
+        // instead of charging against a stale `timeSpent = false` capture. The reviewed scope in
+        // [id] was frozen from the display input, so a newly committed Time cause changes the
+        // overload below and the credit is refused rather than charged.
+        val committedInput = input.copy(deriveTimeFromSnapshot = true)
         val stamp = id.issuedAtClock ?: return unchanged(GrantResult.Unavailable())
         if (trustedElapsedMs(stamp, snapshot.observedAt)?.let { it < GlobalRecoveryPolicy.REQUEST_LIFETIME_MS } != true ||
             runCatching { UUID.fromString(id.nonce).toString() == id.nonce }.getOrDefault(false).not()) return unchanged(GrantResult.Denied)
-        val view = view(snapshot, input, foreign, snapshot.observedAt) ?: return unchanged(GrantResult.Unavailable())
+        val view = view(snapshot, committedInput, foreign, snapshot.observedAt) ?: return unchanged(GrantResult.Unavailable())
         if (id.creditScope == null || id.creditScope != view.requestScope) return unchanged(GrantResult.Denied)
         if (ledger.pendingCreditEnds.size >= 128 && input.packageName !in credits.active) return unchanged(GrantResult.Unavailable())
         val operation = "p1-${id.nonce}"

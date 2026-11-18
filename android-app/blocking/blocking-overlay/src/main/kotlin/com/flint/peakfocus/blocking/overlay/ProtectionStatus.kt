@@ -2,6 +2,7 @@ package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.model.PomodoroPhase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,6 +81,15 @@ data class ProtectionStatus(
         val timeUncertain: Boolean,
         /** Exact materialized occurrence; a reusable rule ID is not session identity. */
         val occurrenceId: String? = null,
+        /**
+         * F01: the Pomodoro phase of this read, or null for every other cause. A planned rest
+         * is still an active commitment, so the cause stays listed with `phase` saying so.
+         */
+        val pomodoroPhase: PomodoroPhase? = null,
+        /** Planned rounds of the frozen plan, for "round k of N" labels. */
+        val pomodoroRounds: Int? = null,
+        /** Wall estimate of the phase end; readers must not show a phase past this instant. */
+        val pomodoroPhaseEndsAtEpochMs: Long? = null,
     )
 
     data class NextOccurrence(
@@ -124,6 +134,12 @@ data class ProtectionStatus(
             observedAt = null,
             validUntilElapsedRealtimeMs = null,
         )
+
+        /** The latest new block-surface mount delivered nothing (attach and any fallback failed). */
+        const val REASON_BLOCK_SURFACE_MOUNT_FAILED = "block-surface-mount-failed"
+
+        /** The overlay could not attach; only the best-effort full-screen Activity was requested. */
+        const val REASON_BLOCK_SURFACE_FALLBACK_ONLY = "block-surface-fallback-only"
 
         const val MAX_DISPLAY_NAME = 64
         private val DISPLAY_WHITESPACE = Regex("[\\p{Cntrl}\\s]+")
@@ -252,5 +268,8 @@ object ProtectionStatusHub {
         leaseUntilElapsedRealtimeMs: Long? = null,
     ) = publisher.publishPathBHealth(pathBState, degradedReasons, leaseUntilElapsedRealtimeMs)
 
-    internal fun resetForTests() = publisher.resetForTests()
+    internal fun resetForTests() {
+        BlockSurfaceMountHealth.publisher.resetForTests()
+        publisher.resetForTests()
+    }
 }

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Today</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+@keyframes m-glow{0%,100%{opacity:.7}50%{opacity:1}}
+.m-glow{animation:m-glow 6s ease-in-out infinite}
+@keyframes m-flick{0%,100%{opacity:1}30%{opacity:.55}60%{opacity:.9}}
+.m-flick{animation:m-flick 1.6s ease-in-out infinite}
+@keyframes m-spark{0%{transform:translate(0,0) scale(1);opacity:0}12%{opacity:1}100%{transform:translate(var(--dx),var(--dy)) scale(.3);opacity:0}}
+.m-spark{animation:m-spark 2.4s cubic-bezier(.2,.6,.3,1) infinite;transform-box:fill-box;transform-origin:center}
+@keyframes m-drift{0%,100%{transform:translateX(-14px)}50%{transform:translateX(14px)}}
+.m-drift{animation:m-drift 22s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){.m-glow,.m-flick,.m-spark,.m-drift{animation:none}.m-spark{opacity:.6}}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <svg aria-hidden="true" width="390" height="430" viewBox="0 0 390 430" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <linearGradient id="t3Sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0A0C11"></stop><stop offset="0.5" stop-color="#14151B"></stop><stop offset="0.62" stop-color="#2E241F"></stop><stop offset="0.7" stop-color="#4B3322"></stop><stop offset="0.82" stop-color="#1A1614"></stop><stop offset="1" stop-color="#0E0D0F"></stop></linearGradient>
+      <radialGradient id="t3Core" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#FFE7C2"></stop><stop offset="0.5" stop-color="#F7BE6A"></stop><stop offset="1" stop-color="#EF9F27"></stop></radialGradient>
+      <radialGradient id="t3Halo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#EF9F27" stop-opacity="0.45"></stop><stop offset="0.45" stop-color="#EF9F27" stop-opacity="0.12"></stop><stop offset="1" stop-color="#EF9F27" stop-opacity="0"></stop></radialGradient>
+      <linearGradient id="t3Fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E0D0F" stop-opacity="0"></stop><stop offset="1" stop-color="#0E0D0F"></stop></linearGradient>
+      <filter id="t3Grain"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"></feTurbulence><feColorMatrix type="saturate" values="0"></feColorMatrix></filter>
+    </defs>
+    <rect width="390" height="430" fill="url(#t3Sky)"></rect>
+    <circle cx="44" cy="120" r="0.9" fill="#EDE6DA" opacity="0.5"></circle>
+    <circle cx="318" cy="96" r="1" fill="#EDE6DA" opacity="0.45"></circle>
+    <circle cx="352" cy="200" r="0.8" fill="#EDE6DA" opacity="0.35"></circle>
+    <circle cx="80" cy="190" r="0.7" fill="#EDE6DA" opacity="0.3"></circle>
+    <circle cx="300" cy="150" r="0.7" fill="#EDE6DA" opacity="0.3"></circle>
+    <circle cx="140" cy="100" r="0.6" fill="#EDE6DA" opacity="0.3"></circle>
+    <circle class="m-glow" cx="212" cy="168" r="150" fill="url(#t3Halo)"></circle>
+    <path d="M0 300 C40 274 72 272 106 288 C140 304 162 262 206 250 C246 240 272 280 306 288 C336 295 362 268 390 262 L390 430 L0 430 Z" fill="#2C2522"></path>
+    <path d="M0 336 C36 318 62 300 96 308 C132 316 152 286 192 293 C232 300 252 328 292 320 C330 312 360 296 390 303 L390 430 L0 430 Z" fill="#1C1919"></path>
+    <path d="M0 364 C50 346 92 356 132 352 C176 348 202 330 246 337 C290 344 332 362 390 354 L390 430 L0 430 Z" fill="#131214"></path>
+    <rect width="390" height="430" filter="url(#t3Grain)" opacity="0.06"></rect>
+    <rect y="340" width="390" height="90" fill="url(#t3Fade)"></rect>
+    <polygon points="158.6,211.6 195,118 215.8,164.8 236.6,144 200.2,222" fill="#EDE6DA"></polygon>
+    <polygon class="m-flick" points="215.8,164.8 236.6,144 231.4,175.2" fill="#EF9F27"></polygon>
+    <polygon points="200.2,222 231.4,175.2 236.6,201.2" fill="#FAC775"></polygon>
+    <circle cx="236" cy="146" r="6" fill="url(#t3Core)"></circle>
+    <circle class="m-spark" cx="237" cy="145" r="2.4" fill="#FFE7C2" style="--dx: 26px; --dy: -36px"></circle>
+    <circle class="m-spark" cx="237" cy="145" r="1.9" fill="#F7BE6A" style="--dx: 44px; --dy: -12px; animation-delay: -0.3s"></circle>
+    <circle class="m-spark" cx="237" cy="145" r="2.6" fill="#F7BE6A" style="--dx: 10px; --dy: -50px; animation-delay: -0.6s"></circle>
+    <circle class="m-spark" cx="237" cy="145" r="1.7" fill="#FFE7C2" style="--dx: 38px; --dy: -30px; animation-delay: -0.9s"></circle>
+    <circle class="m-spark" cx="237" cy="145" r="2.1" fill="#F7BE6A" style="--dx: -10px; --dy: -42px; animation-delay: -1.2s"></circle>
+    <circle class="m-spark" cx="237" cy="145" r="1.9" fill="#FFE7C2" style="--dx: 50px; --dy: 4px; animation-delay: -1.5s"></circle>
+    <circle class="m-spark" cx="237" cy="145" r="2.3" fill="#F7BE6A" style="--dx: 22px; --dy: -20px; animation-delay: -1.8s"></circle>
+    <circle class="m-spark" cx="237" cy="145" r="1.6" fill="#FFE7C2" style="--dx: 32px; --dy: -46px; animation-delay: -2.1s"></circle>
+  </svg>
+  <div class="m-drift" aria-hidden="true" style="position: absolute; left: -40px; top: 300px; width: 470px; height: 40px; border-radius: 50%; background: rgba(237, 230, 218, 0.06); filter: blur(14px)"></div>
+
+  <header style="position: absolute; left: 20px; right: 20px; top: 58px; display: flex; justify-content: space-between; align-items: center">
+    <span style="display: flex; align-items: center; gap: 8px">
+      <svg width="22" height="22" viewBox="0 0 56 56" aria-hidden="true"><polygon points="14,44 28,8 36,26 44,18 30,48" fill="#EDE6DA"></polygon><polygon points="36,26 44,18 42,30" fill="#EF9F27"></polygon><polygon points="30,48 42,30 44,40" fill="#FAC775"></polygon></svg>
+      <span style="font-size: 20px; font-weight: 700; letter-spacing: -0.3px">Flint</span>
+    </span>
+    <a href="M13-Rules.dc.html" style="height: 34px; padding: 0 12px 0 10px; display: flex; align-items: center; gap: 7px; border-radius: 17px; background: rgba(237, 230, 218, 0.08); border: 1px solid rgba(237, 230, 218, 0.1); text-decoration: none; color: #EDE6DA; font-size: 12px; font-weight: 600">
+      <span style="width: 7px; height: 7px; border-radius: 4px; background: #EF9F27; box-shadow: 0 0 8px rgba(239, 159, 39, 0.8)"></span>
+      Protected · 3 rules
+    </a>
+  </header>
+
+  <h1 style="position: absolute; left: 0; right: 0; top: 240px; margin: 0; text-align: center; font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-weight: 400; font-size: 30px; line-height: 1.1; letter-spacing: -0.3px">Spark your life.</h1>
+
+  <a href="M04-StartFocus.dc.html" style="position: absolute; left: 20px; right: 20px; top: 290px; height: 52px; display: flex; align-items: center; justify-content: center; gap: 10px; border-radius: 26px; background: linear-gradient(180deg, #F6B860 0%, #EF9F27 100%); color: #3A2003; text-decoration: none; font-size: 15px; font-weight: 700; box-shadow: 0 10px 30px rgba(239, 159, 39, 0.3)">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-4.2-7"></path><circle cx="18.6" cy="6.4" r="1.8" fill="currentColor" stroke="none"></circle></svg>
+    Start focus
+  </a>
+
+  <div style="position: absolute; left: 20px; right: 20px; top: 362px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr))">
+    <span style="display: flex; flex-direction: column; align-items: center; gap: 5px">
+      <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 22px; line-height: 1; font-variant-numeric: tabular-nums">2h 40m</span>
+      <span style="font-size: 10.5px; font-weight: 600; letter-spacing: 1.6px; color: #B7AE9F">FOCUSED</span>
+    </span>
+    <span style="display: flex; flex-direction: column; align-items: center; gap: 5px; border-left: 1px solid rgba(237, 230, 218, 0.1); border-right: 1px solid rgba(237, 230, 218, 0.1)">
+      <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 22px; line-height: 1; font-variant-numeric: tabular-nums">3h 12m</span>
+      <span style="font-size: 10.5px; font-weight: 600; letter-spacing: 1.6px; color: #B7AE9F">SCREEN TIME</span>
+    </span>
+    <span style="display: flex; flex-direction: column; align-items: center; gap: 6px">
+      <span style="display: flex; align-items: center; height: 22px">
+        <span style="width: 22px; height: 22px; border-radius: 7px; background: #5C3344; border: 1.5px solid #0E0D0F; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #D8CFC0">I</span>
+        <span style="width: 22px; height: 22px; margin-left: -6px; border-radius: 7px; background: #2E2E33; border: 1.5px solid #0E0D0F; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #D8CFC0">T</span>
+        <span style="width: 22px; height: 22px; margin-left: -6px; border-radius: 7px; background: #5A2A2A; border: 1.5px solid #0E0D0F; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #D8CFC0">Y</span>
+        <span style="margin-left: 5px; font-size: 12px; font-weight: 600; color: #B7AE9F">+4</span>
+      </span>
+      <span style="font-size: 10.5px; font-weight: 600; letter-spacing: 1.6px; color: #B7AE9F">RESTING</span>
+    </span>
+  </div>
+
+  <section aria-label="Now" style="position: absolute; left: 20px; right: 20px; top: 426px; display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 24px; background: #17161A; border: 1px solid rgba(239, 159, 39, 0.3)">
+    <div style="display: flex; align-items: center; gap: 12px">
+      <span style="flex: 0 0 auto; width: 36px; height: 36px; border-radius: 18px; background: rgba(239, 159, 39, 0.14); display: flex; align-items: center; justify-content: center">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#EF9F27" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+      </span>
+      <span style="display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0">
+        <span style="font-size: 15px; font-weight: 600">Laser Focus <span style="color: #B7AE9F; font-weight: 500">· now</span></span>
+        <span style="font-size: 12px; color: #B7AE9F">Harder · until 12:00 · 7 apps resting</span>
+      </span>
+      <span style="height: 26px; padding: 0 10px; border-radius: 13px; background: rgba(239, 159, 39, 0.14); color: #F4C27E; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; display: flex; align-items: center">1h 02m left</span>
+    </div>
+    <div style="position: relative; height: 4px; border-radius: 2px; background: rgba(237, 230, 218, 0.1)">
+      <div style="position: absolute; left: 0; top: 0; height: 4px; width: 66%; border-radius: 2px; background: #EF9F27"></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px">
+      <sc-for list="{{resting}}" as="a" hint-placeholder-count="5">
+        <span aria-label="{{a.name}} resting" role="img" style="{{a.tile}}">
+          <span style="font-size: 13px; font-weight: 700; color: rgba(237, 230, 218, 0.26)">{{a.initial}}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#EDE6DA" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="position: absolute"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+        </span>
+      </sc-for>
+      <span style="width: 36px; height: 36px; border-radius: 11px; background: rgba(237, 230, 218, 0.06); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #B7AE9F">+2</span>
+      <a href="M13-Rules.dc.html" style="margin-left: auto; height: 36px; padding: 0 4px; display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; text-decoration: none; color: #EDE6DA">View<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg></a>
+    </div>
+  </section>
+
+  <div style="position: absolute; left: 20px; right: 20px; top: 576px; display: flex; flex-direction: column">
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 4px 8px 4px">
+      <span style="font-size: 15px; font-weight: 600">Up next</span>
+      <a href="M13-Rules.dc.html" style="font-size: 13px; font-weight: 500; text-decoration: none; color: #B7AE9F">All rules</a>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 14px; border-radius: 18px; background: rgba(237, 230, 218, 0.04); border: 1px solid rgba(237, 230, 218, 0.06)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14" rx="3"></rect><path d="M4 10h16M8.5 3.5v3M15.5 3.5v3"></path></svg>
+      <span style="display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto">
+        <span style="font-size: 14px; font-weight: 600">Gym Time</span>
+        <span style="font-size: 12px; color: #B7AE9F">17:30 — 19:00 · Harder · 7 apps</span>
+      </span>
+      <span style="font-size: 12px; font-weight: 600; color: #B7AE9F; font-variant-numeric: tabular-nums">in 6h</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px; height: 52px; margin-top: 8px; padding: 0 14px; border-radius: 18px; background: rgba(237, 230, 218, 0.04); border: 1px solid rgba(237, 230, 218, 0.06)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M20 15.5A8 8 0 0 1 8.5 4a6.5 6.5 0 1 0 11.5 11.5z"></path></svg>
+      <span style="display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto">
+        <span style="font-size: 14px; font-weight: 600">Sleep</span>
+        <span style="font-size: 12px; color: #B7AE9F">22:30 — 07:00 · Easy · wind-down 30 min</span>
+      </span>
+      <span style="font-size: 12px; font-weight: 600; color: #B7AE9F; font-variant-numeric: tabular-nums">in 11h</span>
+    </div>
+  </div>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 20px; right: 20px; bottom: 24px; height: 68px; padding: 6px; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; border-radius: 34px; background: rgba(22, 21, 24, 0.9); border: 1px solid rgba(237, 230, 218, 0.1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px)">
+    <a href="M03-Today.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 28px; background: rgba(237, 230, 218, 0.1); text-decoration: none; color: #EDE6DA; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-4.2-7"></path><circle cx="18.6" cy="6.4" r="1.6" fill="#EF9F27" stroke="none"></circle></svg>
+      Today
+    </a>
+    <a href="M13-Rules.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 28px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+      Rules
+    </a>
+    <a href="M12-Insights.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 28px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 19v-6M12 19V6M18 19v-9"></path></svg>
+      Insights
+    </a>
+    <a href="M16-You.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 28px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="9" r="3.5"></circle><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"></path></svg>
+      You
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const apps = [['Instagram', 'I', '#5C3344'], ['TikTok', 'T', '#2E2E33'], ['YouTube', 'Y', '#5A2A2A'], ['Reddit', 'R', '#6B3D2A'], ['X', 'X', '#26262A']];
+    const resting = apps.map(([name, initial, bg]) => ({
+      name, initial,
+      tile: 'position: relative; width: 36px; height: 36px; border-radius: 11px; background: ' + bg + '; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 1.5px rgba(239,159,39,0.5);'
+    }));
+    return { resting };
+  }
+}
+</script>
+</body>
+</html>

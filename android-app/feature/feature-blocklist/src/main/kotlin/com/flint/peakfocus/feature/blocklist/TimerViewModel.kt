@@ -24,9 +24,11 @@ import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.EnforcementSignals
+import com.flint.peakfocus.core.model.PomodoroPlan
 import com.flint.peakfocus.blocking.overlay.ProtectionStatus
 import com.flint.peakfocus.blocking.overlay.ProtectionStatusHub
 import com.flint.peakfocus.permissions.AccessibilityPermission
+import com.flint.peakfocus.permissions.OverlayPermission
 import com.flint.peakfocus.permissions.UsageAccess
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -171,6 +173,10 @@ internal class TimerViewModel(
             return
         }
         refreshClock()
+        // Wake the detectors on arrival so the safety-floor prerequisite is
+        // current. A floor that went stale since the last evaluation would
+        // otherwise disable Begin the moment the sheet opens.
+        requestEvaluation()
         refreshHealth()
         if (ticker?.isActive == true) return
         ticker = viewModelScope.launch {
@@ -209,6 +215,7 @@ internal class TimerViewModel(
         }
         val statusDiagnostic = "readiness=${status.readiness} pathA=${livePathA()} " +
             "accessibility=${permissions.accessibilityEnabled} usageAccess=${permissions.usageAccess} " +
+            "overlay=${permissions.overlayGranted} " +
             "pathB=${status.detectors.pathB} startReady=${prerequisite == null} " +
             "reason=${prerequisite ?: "none"} arming=${arming.javaClass.simpleName}"
         if (statusDiagnostic != lastDiagnostic) {
@@ -259,6 +266,7 @@ internal class TimerViewModel(
 
     fun selectDuration(minutes: Int) {
         if (!state.value.canEdit || minutes !in timerDurationChoices) return
+        if (state.value.draft.pomodoro) return
         state.update { it.copy(draft = it.draft.copy(durationMinutes = minutes, presetId = null)) }
     }
 
@@ -266,12 +274,90 @@ internal class TimerViewModel(
         if (!state.value.canEdit) return
         val preset = timerPresets.firstOrNull { it.id == id } ?: return
         state.update {
-            it.copy(draft = it.draft.copy(durationMinutes = preset.minutes, presetId = preset.id))
+            // A preset is one plain Timer: choosing one leaves Pomodoro mode.
+            it.copy(draft = it.draft.copy(durationMinutes = preset.minutes, presetId = preset.id,
+                pomodoro = false, longRestMinutes = null, longRestEvery = null))
         }
     }
 
     fun selectBreakLevel(level: BreakLevel) {
         if (state.value.canEdit) state.update { it.copy(draft = it.draft.copy(breakLevel = level)) }
+    }
+
+    /** F01: switch between one plain Timer and a repeated focus/rest chain. */
+    fun selectPomodoro(enabled: Boolean) {
+        if (!state.value.canEdit) return
+        state.update {
+            it.copy(draft = it.draft.copy(pomodoro = enabled,
+                presetId = if (enabled) null else it.draft.presetId,
+                longRestMinutes = if (enabled) it.draft.longRestMinutes else null,
+                longRestEvery = if (enabled) it.draft.longRestEvery else null))
+        }
+    }
+
+    fun selectFocusMinutes(minutes: Int) {
+        if (!state.value.canEdit || !state.value.draft.pomodoro || minutes !in PomodoroPlan.focusChoices) return
+        state.update { it.copy(draft = it.draft.copy(focusMinutes = minutes)) }
+    }
+
+    fun selectRestMinutes(minutes: Int) {
+        if (!state.value.canEdit || !state.value.draft.pomodoro ||
+            minutes !in PomodoroPlan.MIN_REST_MINUTES..PomodoroPlan.MAX_REST_MINUTES) return
+        state.update { current ->
+            val long = current.draft.longRestMinutes?.coerceAtLeast(minutes)
+            current.copy(draft = current.draft.copy(restMinutes = minutes, longRestMinutes = long))
+        }
+    }
+
+    fun selectRounds(rounds: Int) {
+        if (!state.value.canEdit || !state.value.draft.pomodoro || rounds !in PomodoroPlan.roundChoices) return
+        state.update { current ->
+            val draft = current.draft
+            val longSet = draft.longRestMinutes != null
+            // An interval that no longer fits the round count is dropped; a long rest without a
+            // valid interval would leave an invalid plan that cannot be cleared once rounds ≤ 2.
+            val every = draft.longRestEvery?.takeIf { it in 2 until rounds } ?: 2.takeIf { longSet && rounds > 2 }
+            current.copy(draft = draft.copy(rounds = rounds, longRestEvery = every,
+                longRestMinutes = if (every == null) null else draft.longRestMinutes))
+        }
+    }
+
+    /** Optional long rest; both long-rest fields are set together or not at all (§2). */
+    fun selectLongRest(enabled: Boolean) {
+        if (!state.value.canEdit || !state.value.draft.pomodoro) return
+        state.update { current ->
+            val draft = current.draft
+            val every = 2.takeIf { draft.rounds > 2 }
+            val updated = if (enabled && every != null) draft.copy(
+                longRestMinutes = draft.restMinutes.coerceAtLeast(15).coerceIn(
+                    PomodoroPlan.MIN_LONG_REST_MINUTES, PomodoroPlan.MAX_LONG_REST_MINUTES),
+                longRestEvery = every,
+            ) else draft.copy(longRestMinutes = null, longRestEvery = null)
+            current.copy(draft = updated)
+        }
+    }
+
+    fun selectLongRestMinutes(minutes: Int) {
+        if (!state.value.canEdit || state.value.draft.longRestMinutes == null) return
+        val draft = state.value.draft
+        if (minutes !in PomodoroPlan.MIN_LONG_REST_MINUTES..PomodoroPlan.MAX_LONG_REST_MINUTES ||
+            minutes < draft.restMinutes) return
+        state.update { it.copy(draft = it.draft.copy(longRestMinutes = minutes)) }
+    }
+
+    fun selectLongRestEvery(every: Int) {
+        if (!state.value.canEdit || state.value.draft.longRestMinutes == null) return
+        if (every !in 2 until state.value.draft.rounds) return
+        state.update { it.copy(draft = it.draft.copy(longRestEvery = every)) }
+    }
+
+    /**
+     * Flip the selection's meaning without dropping it: the picked apps become the ones kept
+     * available. Same rule as the rule editor, and only while the draft is editable.
+     */
+    fun selectAllowListMode(allowListMode: Boolean) {
+        if (!state.value.canEdit) return
+        state.update { it.copy(draft = it.draft.copy(allowListMode = allowListMode)) }
     }
 
     fun start() {
@@ -505,7 +591,8 @@ internal class TimerViewModel(
                     loadPermissions = {
                         TimerPermissions(AccessibilityPermission.isEnabled(appContext,
                             "com.flint.peakfocus.blocking.accessibility.FlintAccessibilityService"),
-                            UsageAccess.isGranted(appContext))
+                            UsageAccess.isGranted(appContext),
+                            OverlayPermission.isGranted(appContext))
                     },
                     livePathA = { EnforcementSignals.detectors.pathAConnected },
                     requestEvaluation = { EnforcementSignals.detectors.requestEvaluation() },

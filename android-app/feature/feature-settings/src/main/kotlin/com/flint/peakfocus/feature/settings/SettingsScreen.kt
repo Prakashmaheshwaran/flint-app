@@ -10,15 +10,26 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
@@ -30,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,12 +49,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -56,14 +71,20 @@ import com.flint.peakfocus.core.common.Oem
 import com.flint.peakfocus.core.common.OemUtil
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintNumerals
+import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.theme.FlintTheme
 import com.flint.peakfocus.core.common.ui.FlintBadge
 import com.flint.peakfocus.core.common.ui.FlintCard
-import com.flint.peakfocus.core.common.ui.FlintScreenHeader
-import com.flint.peakfocus.core.common.ui.FlintSectionLabel
+import com.flint.peakfocus.core.common.ui.FlintGlyphs
+import com.flint.peakfocus.core.common.ui.FlintSectionTitle
 import com.flint.peakfocus.core.common.ui.FlintStatusDot
+import com.flint.peakfocus.core.common.ui.FlintStatusPill
+import com.flint.peakfocus.core.common.ui.FlintTopGlow
 import com.flint.peakfocus.core.common.ui.rememberReducedMotion
+import com.flint.peakfocus.feature.settings.applock.AppLock
+import com.flint.peakfocus.feature.settings.applock.AppLockSettingsSection
+import com.flint.peakfocus.feature.settings.applock.AppLockSettingsUi
 import com.flint.peakfocus.permissions.BatteryOptimization
 import com.flint.peakfocus.permissions.NotificationPermission
 import com.flint.peakfocus.permissions.OverlayPermission
@@ -88,6 +109,9 @@ fun SettingsScreen(
     val context = LocalContext.current
     var health by remember { mutableStateOf(PermissionHealthChecker.check(context)) }
     var exits by remember { mutableStateOf(ExitReasonReporter.lastExits(context)) }
+    // One process-wide controller: the gate in MainActivity and this section share it.
+    val appLockController = remember { AppLock.controller(context) }
+    val appLockState by appLockController.state.collectAsState()
 
     // Re-check on every resume: the user returns here from Settings hand-offs, and grants can
     // be revoked behind Flint's back at any time (same pattern as StatsScreen / MainActivity).
@@ -97,6 +121,8 @@ fun SettingsScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 health = PermissionHealthChecker.check(context)
                 exits = ExitReasonReporter.lastExits(context)
+                // The PIN record can change outside this screen; never show stale lock state.
+                appLockController.refresh()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -121,6 +147,7 @@ fun SettingsScreen(
                     health = PermissionHealthChecker.check(context)
                     openHelp()
                 },
+                appLock = AppLockSettingsUi.from(appLockController, appLockState),
                 onFix = { kind ->
                     routePermissionFix(kind, discloseAccessibility = onEnableAccessibility) { otherKind ->
                         val intent = when (otherKind) {
@@ -152,45 +179,205 @@ internal fun SettingsContent(
     onAccount: (() -> Unit)? = null,
     onOpenLegal: (LegalDocument) -> Unit = {},
     onOpenHelp: () -> Unit = {},
+    appLock: AppLockSettingsUi? = null,
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(FlintSpacing.gutter),
-        ) {
-            FlintScreenHeader(title = "You", eyebrow = "Keep blocking alive")
-            Spacer(Modifier.height(FlintSpacing.md))
-            if (onAccount != null) {
-                OutlinedButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) {
-                    Text("Connected sandbox (debug)")
+        Box(Modifier.fillMaxSize()) {
+            FlintTopGlow(height = 240.dp, emberAlpha = 0.12f)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("You", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                    FlintStatusPill("No account", emphasized = false)
                 }
+                Spacer(Modifier.height(16.dp))
+                if (onAccount != null) {
+                    OutlinedButton(onClick = onAccount, modifier = Modifier.fillMaxWidth()) {
+                        Text("Connected sandbox (debug)")
+                    }
+                    Spacer(Modifier.height(FlintSpacing.md))
+                }
+                ProtectionCard(health, BlockingHealthUi.banner(health))
+                Spacer(Modifier.height(12.dp))
+                NotificationEnableCard()
                 Spacer(Modifier.height(FlintSpacing.md))
-            }
-            HealthBannerCard(BlockingHealthUi.banner(health))
-            Spacer(Modifier.height(FlintSpacing.md))
-            ClearFocusHistoryRow()
-            Spacer(Modifier.height(FlintSpacing.md))
-            BlockingHealthUi.rows(health).forEach { row ->
-                PermissionCard(row = row, onFix = { onFix(row.kind) })
+                ClearFocusHistoryRow()
+                Spacer(Modifier.height(FlintSpacing.md))
+                if (appLock != null) {
+                    FlintSectionTitle("App lock")
+                    Spacer(Modifier.height(FlintSpacing.sm))
+                    AppLockSettingsSection(appLock)
+                    Spacer(Modifier.height(FlintSpacing.md))
+                }
+                FlintSectionTitle("Permissions")
+                Spacer(Modifier.height(FlintSpacing.sm))
+                BlockingHealthUi.rows(health).forEach { row ->
+                    PermissionCard(row = row, onFix = { onFix(row.kind) })
+                    Spacer(Modifier.height(FlintSpacing.cardGap))
+                }
+                Spacer(Modifier.height(FlintSpacing.sm))
+                FlintSectionTitle("Troubleshooting")
+                Spacer(Modifier.height(FlintSpacing.sm))
+                OemGuidanceCard(oemGuidance)
                 Spacer(Modifier.height(FlintSpacing.cardGap))
+                ExitDiagnosticsCard(
+                    exits = exits,
+                    supported = exitsSupported,
+                    nowMillis = nowMillis,
+                )
+                Spacer(Modifier.height(FlintSpacing.lg))
+                HelpSettingsLink(onOpen = onOpenHelp)
+                Spacer(Modifier.height(FlintSpacing.lg))
+                LegalSettingsLinks(onOpen = onOpenLegal)
+                Spacer(Modifier.height(FlintSpacing.lg))
             }
-            Spacer(Modifier.height(FlintSpacing.sm))
-            FlintSectionLabel("Troubleshooting")
-            Spacer(Modifier.height(FlintSpacing.sm))
-            OemGuidanceCard(oemGuidance)
-            Spacer(Modifier.height(FlintSpacing.cardGap))
-            ExitDiagnosticsCard(
-                exits = exits,
-                supported = exitsSupported,
-                nowMillis = nowMillis,
+        }
+    }
+}
+
+/** M16's protection card: a breathing ember dot, the health banner and three real grant states. */
+@Composable
+private fun ProtectionCard(health: HealthStatus, banner: BannerUi) {
+    val accent = when (banner.level) {
+        HealthLevel.HEALTHY -> FlintPalette.Ember
+        HealthLevel.DEGRADED -> FlintPalette.Mist
+        HealthLevel.BROKEN -> FlintPalette.Danger
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .background(FlintPalette.Card)
+            .border(1.dp, FlintPalette.Hairline, RoundedCornerShape(24.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).background(FlintPalette.EmberChip),
+                contentAlignment = Alignment.Center,
+            ) {
+                FlintStatusDot(accent, pulsing = banner.level == HealthLevel.HEALTHY, modifier = Modifier.size(10.dp))
+            }
+            Text(banner.headline, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        }
+        // Full width and never ellipsized: the body carries the recovery guidance and the
+        // website-coverage disclosure for this state, which can run long at large font scales.
+        Text(
+            banner.body,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+            color = FlintPalette.Mist,
+        )
+        Box(Modifier.fillMaxWidth().height(1.dp).background(FlintPalette.Hairline))
+        val grants = listOf(
+            "Accessibility" to health.accessibilityEnabled,
+            "Usage access" to health.usageAccessGranted,
+            "Battery" to health.batteryExemptionGranted,
+        )
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val measurer = rememberTextMeasurer()
+            val density = LocalDensity.current
+            val widest = grants.maxOf { (label, _) ->
+                measurer.measure(AnnotatedString(label), grantLabelStyle(), softWrap = false).size.width
+            }
+            // Three columns only while every label fits whole; large font scales get a list.
+            if (with(density) { widest.toDp() } <= maxWidth / grants.size - 4.dp) {
+                Row(Modifier.fillMaxWidth()) {
+                    grants.forEach { (label, granted) -> GrantStat(label, granted, Modifier.weight(1f)) }
+                }
+            } else {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    grants.forEach { (label, granted) ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(label, style = grantLabelStyle(), modifier = Modifier.weight(1f))
+                            GrantValue(granted)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun grantLabelStyle() = MaterialTheme.typography.labelSmall.copy(
+    fontSize = 12.sp,
+    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+)
+
+@Composable
+private fun GrantValue(granted: Boolean) {
+    Text(
+        if (granted) "Allowed" else "Off",
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+        color = if (granted) FlintPalette.Mist else FlintPalette.Danger,
+    )
+}
+
+@Composable
+private fun GrantStat(label: String, granted: Boolean, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(label, style = grantLabelStyle(), maxLines = 1)
+        GrantValue(granted)
+    }
+}
+
+/** The one notification grant that actually reaches Flint's session-end nudge. */
+@Composable
+private fun NotificationEnableCard() {
+    val context = LocalContext.current
+    val granted = NotificationPermission.isGranted(context)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(FlintPalette.Card)
+            .border(1.dp, FlintPalette.Hairline, RoundedCornerShape(22.dp))
+            .padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(
+            FlintGlyphs.bell,
+            contentDescription = null,
+            tint = FlintPalette.EmberText,
+            modifier = Modifier.size(26.dp),
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            // Android only notifies when a focus session ends; nothing fires before rules start.
+            Text("Heads-up when focus ends?", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "A quiet nudge when a focus session ends.",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                color = FlintPalette.Mist,
             )
-            Spacer(Modifier.height(FlintSpacing.lg))
-            HelpSettingsLink(onOpen = onOpenHelp)
-            Spacer(Modifier.height(FlintSpacing.lg))
-            LegalSettingsLinks(onOpen = onOpenLegal)
-            Spacer(Modifier.height(FlintSpacing.lg))
+        }
+        if (granted) {
+            FlintStatusPill("On", emphasized = false)
+        } else {
+            Surface(
+                onClick = {
+                    context.startActivity(
+                        NotificationPermission.settingsIntent(context).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                },
+                shape = CircleShape,
+                color = FlintPalette.EmberChip,
+                contentColor = FlintPalette.EmberText,
+            ) {
+                Text(
+                    "Enable",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                )
+            }
         }
     }
 }

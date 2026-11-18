@@ -52,6 +52,31 @@ class GlobalRecoveryPolicyTest {
         assertEquals(ProtectionLifecycleKind.PASS_COMMITTED, event.kind)
     }
 
+    @Test fun F01_aPlannedRestIsStillAnActiveCommitmentAndThePassEndsEveryFutureRound() {
+        val plan = PomodoroPlan(focusMinutes = 25, restMinutes = 5, rounds = 4)
+        val parent = session.copy(id = "session-timer-v2-pomodoro", name = "Pomodoro",
+            pomodoro = plan, expiresAtEpochMs = now.wallEpochMs + plan.totalMs)
+        // 26 elapsed minutes: focus round 1 is over, the chain is inside its first rest.
+        val restRemaining = plan.totalMs - 26 * 60_000L
+        val restCause = EditorCause(parent.id,
+            AnchoredInterval(now, restRemaining, now.wallEpochMs + restRemaining), "UTC")
+        val base = snapshot()
+        val s = base.copy(rules = base.rules + parent,
+            editor = base.editor.copy(causes = base.editor.causes + (ruleCauseKey(parent.id) to restCause)))
+        // The engine itself does not enforce during the rest, yet the commitment is live.
+        assertFalse(RuleClockProjection.project(parent.copy(runtime = RuleRuntime(parent.id, now, restRemaining,
+            now.wallEpochMs + restRemaining, "UTC", now)), now).runtime!!.evaluation!!.active)
+        val preview = GlobalRecoveryPolicy.preview(s, emptyList(), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!!
+        assertTrue(ruleCauseKey(parent.id) in preview.affected.map { it.causeKey })
+        val mutation = GlobalRecoveryPolicy.consume(s, preview, emptyList())
+        assertTrue(mutation.result is RecoveryResult.Accepted)
+        // The whole parent is gone, so no future round can resume from the frozen plan.
+        assertFalse(mutation.rules!!.any { it.id == parent.id })
+        assertEquals(listOf(schedule), mutation.rules!!)
+        assertTrue(parent.id in mutation.focus.protection!!.recovery!!.endedTransientIds)
+        assertFalse(ruleCauseKey(parent.id) in mutation.editor!!.causes)
+    }
+
     @Test fun PC_44_PC_45_retrySameOperationReturnsOriginalRecoveryAndDifferentOperationCannotExtendIt() {
         val s = snapshot(); val preview = GlobalRecoveryPolicy.preview(s, emptyList(), "p1-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")!!
         val mutation = GlobalRecoveryPolicy.consume(s, preview, emptyList())

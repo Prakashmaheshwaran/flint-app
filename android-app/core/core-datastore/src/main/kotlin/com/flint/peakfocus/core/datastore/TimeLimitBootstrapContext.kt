@@ -16,11 +16,14 @@ internal val TIME_BOOTSTRAP_CONTEXT = stringPreferencesKey("time_limit_bootstrap
 internal data class TimeLimitBootstrapContext(val zoneId: String, val capturedAt: AccessClockStamp,
     val legacyTargets: Set<String>)
 
-internal fun timeLimitBootstrapMigrations(context: Context): List<DataMigration<Preferences>> = listOf(
+internal fun timeLimitBootstrapMigrations(context: Context): List<DataMigration<Preferences>> =
+    listOf(timeLimitBootstrapMigration(context))
+
+/** The same production inputs serve the open-time migration and its in-process retry. */
+internal fun timeLimitBootstrapMigration(context: Context) =
     TimeLimitBootstrapMigration(ProtectionClock::now, { TimeZone.getDefault().id }, {
         captureLegacyTimeLimitTargets(context.applicationContext.getSharedPreferences("flint_limits", Context.MODE_PRIVATE).all)
-    }),
-)
+    })
 
 internal fun captureLegacyTimeLimitTargets(raw: Map<String, *>): Set<String> {
     timeUsageRequire(raw.values.all { it is Int })
@@ -51,7 +54,7 @@ internal class TimeLimitBootstrapMigration(
     override suspend fun migrate(currentData: Preferences): Preferences {
         if (!shouldMigrate(currentData)) return currentData
         // Device/clock discovery is transient. Never make a failed first read a permanent
-        // Time-only latch; a later DataStore open may capture valid inputs.
+        // Time-only latch; TimeLimitBootstrapRetry or a later DataStore open may capture.
         val inputs = try {
             val rawZone = deviceZone()
             val parsed = ZoneId.of(rawZone)

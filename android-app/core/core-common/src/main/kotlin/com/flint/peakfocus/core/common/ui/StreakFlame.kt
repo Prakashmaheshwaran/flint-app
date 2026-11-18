@@ -130,10 +130,10 @@ internal fun haloAlpha(breath01: Float, flash: Float): Float =
 
 /** Flame geometry aligned to fill the icon box like 🔥 (with small optical padding). */
 internal class FlameGeometry(val s: Float) {
-    val w: Float = s * 0.76f
-    val h: Float = s * 0.90f
-    val cx: Float = s * 0.5f
-    val baseY: Float = s * 0.95f
+    val w: Float = s * 0.74f
+    val h: Float = s * 0.92f
+    val cx: Float = s * 0.50f
+    val baseY: Float = s * 0.96f
 }
 
 internal class FlameBrushSet(
@@ -288,13 +288,14 @@ internal class StreakFlamePainter(
     private var layerSize: Size = Size.Unspecified
     private var layerRect: Rect = Rect.Zero
 
-    fun draw(scope: DrawScope, state: StreakFlameState, elapsed: Double, flashIn: Float) {
+    fun draw(scope: DrawScope, state: StreakFlameState, elapsed: Double, flashIn: Float, forceAnimate: Boolean = false) {
         val flash = flashIn.coerceIn(0f, 1f)
         val brush = brushes.getOrPut(state) { brushSet(state, geometry) }
         val geo = geometry
-        val animate = state != StreakFlameState.Inactive
+        val animate = state != StreakFlameState.Inactive || forceAnimate
         val t = if (animate) elapsed else STATIC_FLAME_SECONDS
-        val rate = if (animate) flickerRate(state) else 0f
+        val baseRate = if (state == StreakFlameState.Inactive) 0.45f else flickerRate(state)
+        val rate = if (animate) baseRate else 0f
         val intensity = flameIntensity(state)
 
         val tipDx = if (animate) tipFlickerDx(t, rate, geo.w * 0.5f) * intensity else 0f
@@ -364,11 +365,11 @@ internal class StreakFlamePainter(
         }
     }
 
-    fun drawCrossFade(scope: DrawScope, from: StreakFlameState, to: StreakFlameState, elapsed: Double, flashIn: Float, progress: Float) {
+    fun drawCrossFade(scope: DrawScope, from: StreakFlameState, to: StreakFlameState, elapsed: Double, flashIn: Float, progress: Float, forceAnimate: Boolean = false) {
         val p = progress.coerceIn(0f, 1f)
-        if (from == to || p >= 1f) { draw(scope, to, elapsed, flashIn); return }
-        withLayerAlpha(scope, 1f - p) { draw(scope, from, elapsed, flashIn) }
-        withLayerAlpha(scope, p) { draw(scope, to, elapsed, flashIn) }
+        if (from == to || p >= 1f) { draw(scope, to, elapsed, flashIn, forceAnimate); return }
+        withLayerAlpha(scope, 1f - p) { draw(scope, from, elapsed, flashIn, forceAnimate) }
+        withLayerAlpha(scope, p) { draw(scope, to, elapsed, flashIn, forceAnimate) }
     }
 
     private inline fun withLayerAlpha(scope: DrawScope, alpha: Float, block: () -> Unit) {
@@ -416,8 +417,8 @@ internal class StreakFlamePainter(
 private fun twoPi(): Float = 2f * PI.toFloat()
 
 /**
- * Emoji-like 🔥 outer silhouette: pointed tip, dominant right shoulder, smaller left lobe,
- * rounded stable base. Reads clearly at 40dp.
+ * Emoji/Snapchat-like 🔥 outer silhouette: wide rounded base, dominant right flame,
+ * smaller left lobe, and a clean pointed tip. Reads clearly at 40dp.
  */
 private fun buildOuter(
     path: Path,
@@ -437,24 +438,24 @@ private fun buildOuter(
     fun y(ft: Float) = baseY - ft * h * heightScale
 
     path.reset()
-    // Tip (slightly right of center, like 🔥)
-    path.moveTo(x(0.04f, 1.00f), y(1.00f))
-    // Tip down right upper edge to dominant right shoulder
-    path.cubicTo(x(0.14f, 0.90f), y(0.90f), x(0.30f, 0.72f) + lickR * 0.5f, y(0.72f), x(0.36f, 0.58f) + lickR * 0.7f, y(0.58f))
-    path.cubicTo(x(0.42f, 0.46f), y(0.46f), x(0.46f, 0.34f), y(0.34f), x(0.40f, 0.22f), y(0.22f))
-    // Right side down to base
-    path.cubicTo(x(0.46f, 0.14f), y(0.14f), x(0.38f, 0.04f), y(0.04f), x(0.22f, 0.00f), y(0.00f))
-    path.cubicTo(x(0.08f, -0.01f), y(-0.01f), x(-0.08f, -0.01f), y(-0.01f), x(-0.22f, 0.00f), y(0.00f))
+    // Pointed tip, slightly right of center.
+    path.moveTo(x(0.06f, 1.00f), y(1.00f))
+    // Tip to right shoulder (main flame body)
+    path.cubicTo(x(0.18f, 0.90f), y(0.90f), x(0.34f, 0.74f) + lickR * 0.5f, y(0.74f), x(0.40f, 0.58f) + lickR * 0.8f, y(0.58f))
+    path.cubicTo(x(0.46f, 0.44f), y(0.44f), x(0.48f, 0.32f), y(0.32f), x(0.40f, 0.18f), y(0.18f))
+    // Right side down to rounded base
+    path.cubicTo(x(0.46f, 0.10f), y(0.10f), x(0.38f, 0.01f), y(0.01f), x(0.18f, -0.01f), y(-0.01f))
+    path.cubicTo(x(0.02f, -0.015f), y(-0.015f), x(-0.10f, -0.01f), y(-0.01f), x(-0.24f, 0.01f), y(0.01f))
     // Base to left side and left lobe
-    path.cubicTo(x(-0.38f, 0.04f), y(0.04f), x(-0.44f, 0.16f), y(0.16f), x(-0.38f, 0.28f), y(0.28f))
-    path.cubicTo(x(-0.34f, 0.38f), y(0.38f), x(-0.30f, 0.46f) + lickL * 0.4f, y(0.46f), x(-0.24f, 0.56f) + lickL * 0.7f, y(0.56f))
-    // Left lobe up toward tip
-    path.cubicTo(x(-0.18f, 0.68f) + lickL * 0.4f, y(0.68f), x(-0.08f, 0.82f), y(0.82f), x(-0.02f, 0.92f), y(0.92f))
-    path.cubicTo(x(0.00f, 0.96f), y(0.96f), x(0.02f, 0.985f), y(0.985f), x(0.04f, 1.00f), y(1.00f))
+    path.cubicTo(x(-0.40f, 0.04f), y(0.04f), x(-0.46f, 0.16f), y(0.16f), x(-0.40f, 0.28f), y(0.28f))
+    path.cubicTo(x(-0.36f, 0.36f), y(0.36f), x(-0.32f, 0.44f) + lickL * 0.4f, y(0.44f), x(-0.27f, 0.54f) + lickL * 0.7f, y(0.54f))
+    // Left lobe up toward tip (smooth valley/notch implied)
+    path.cubicTo(x(-0.20f, 0.66f) + lickL * 0.4f, y(0.66f), x(-0.10f, 0.80f), y(0.80f), x(-0.02f, 0.90f), y(0.90f))
+    path.cubicTo(x(0.01f, 0.95f), y(0.95f), x(0.04f, 0.985f), y(0.985f), x(0.06f, 1.00f), y(1.00f))
     path.close()
 }
 
-/** Inner yellow/orange flame tongue (smaller, pointed), like 🔥 inner layer. */
+/** Inner yellow/orange flame tongue (bright, prominent), like 🔥 inner layer. */
 private fun buildCore(
     path: Path,
     geo: FlameGeometry,
@@ -468,17 +469,18 @@ private fun buildCore(
     val h = geo.h
     val cx = geo.cx
     val baseY = geo.baseY
-    fun x(fx: Float, ft: Float) = cx + fx * w * widen * 0.92f + sway * ft * ft + tipDx * ft * ft * 0.75f
+    fun x(fx: Float, ft: Float) = cx + fx * w * widen + sway * ft * ft + tipDx * ft * ft * 0.70f
     fun y(ft: Float) = baseY - ft * h * heightScale
-    val tipY = min(top, 0.90f)
+    val tipY = min(top, 0.84f)
 
     path.reset()
+    // Inner flame: rounded tip, sits inside main body with visible outer rim.
     path.moveTo(x(0.03f, tipY), y(tipY))
-    path.cubicTo(x(0.10f, tipY - 0.10f), y(tipY - 0.10f), x(0.18f, 0.56f), y(0.56f), x(0.18f, 0.42f), y(0.42f))
-    path.cubicTo(x(0.20f, 0.30f), y(0.30f), x(0.14f, 0.18f), y(0.18f), x(0.04f, 0.12f), y(0.12f))
-    path.cubicTo(x(-0.04f, 0.10f), y(0.10f), x(-0.12f, 0.16f), y(0.16f), x(-0.14f, 0.28f), y(0.28f))
-    path.cubicTo(x(-0.16f, 0.40f), y(0.40f), x(-0.12f, 0.52f), y(0.52f), x(-0.06f, 0.64f), y(0.64f))
-    path.cubicTo(x(-0.02f, 0.74f), y(0.74f), x(0.00f, tipY - 0.08f), y(tipY - 0.08f), x(0.03f, tipY), y(tipY))
+    path.cubicTo(x(0.10f, tipY - 0.12f), y(tipY - 0.12f), x(0.16f, 0.58f), y(0.58f), x(0.16f, 0.44f), y(0.44f))
+    path.cubicTo(x(0.17f, 0.32f), y(0.32f), x(0.12f, 0.20f), y(0.20f), x(0.03f, 0.14f), y(0.14f))
+    path.cubicTo(x(-0.05f, 0.12f), y(0.12f), x(-0.12f, 0.18f), y(0.18f), x(-0.13f, 0.30f), y(0.30f))
+    path.cubicTo(x(-0.14f, 0.42f), y(0.42f), x(-0.10f, 0.54f), y(0.54f), x(-0.05f, 0.64f), y(0.64f))
+    path.cubicTo(x(-0.01f, 0.74f), y(0.74f), x(0.00f, tipY - 0.08f), y(tipY - 0.08f), x(0.03f, tipY), y(tipY))
     path.close()
 }
 
@@ -512,6 +514,9 @@ fun StreakFlame(
     size: Dp = 96.dp,
     contentDescription: String? = "Day streak: $streakCount",
     milestoneFlash: Float = 0f,
+    /** When true, keeps a gentle live/burning motion even for [StreakFlameState.Inactive]
+     *  (e.g. streak detail sheet). Reduce-motion still disables animation. */
+    forceAnimate: Boolean = false,
 ) {
     val reduced = rememberReducedMotion()
     val windowInfo = LocalWindowInfo.current
@@ -533,7 +538,7 @@ fun StreakFlame(
 
     var onScreen by remember { mutableStateOf(true) }
     var elapsed by remember { mutableDoubleStateOf(STATIC_FLAME_SECONDS) }
-    val animate = !reduced && state != StreakFlameState.Inactive && windowFocused && onScreen
+    val animate = !reduced && windowFocused && onScreen && (state != StreakFlameState.Inactive || forceAnimate)
 
     LaunchedEffect(animate) {
         if (!animate) { if (reduced) elapsed = STATIC_FLAME_SECONDS; return@LaunchedEffect }
@@ -595,9 +600,9 @@ fun StreakFlame(
         Canvas(Modifier.fillMaxSize()) {
             val from = outgoing
             if (from != null) {
-                painter.drawCrossFade(this, from, shown, elapsed, milestoneFlash + crossflash, fade.value)
+                painter.drawCrossFade(this, from, shown, elapsed, milestoneFlash + crossflash, fade.value, forceAnimate)
             } else {
-                painter.draw(this, shown, elapsed, milestoneFlash + crossflash)
+                painter.draw(this, shown, elapsed, milestoneFlash + crossflash, forceAnimate)
             }
         }
     }

@@ -20,13 +20,14 @@ import androidx.compose.ui.unit.sp
 import com.flint.peakfocus.core.common.R
 
 /**
- * Flint's "Ember & Mist" palette. Mirror of design/tokens.json — keep in sync
+ * Flint's "Modern Ember" palette. Mirror of design/tokens.json — keep in sync
  * (tokens.json is the single source; this file is its hand-maintained Compose binding).
  * One night palette for every screen; there is no light variant.
  */
 object FlintPalette {
     val Night = Color(0xFF0C0E13)
     val Ground = Color(0xFF0E0D0F)
+    val Card = Color(0xFF17161A)
     val Sheet = Color(0xFF151417)
     val Ridge = Color(0xFF2C2522)
     val Dusk = Color(0xFF4B3322)
@@ -34,6 +35,8 @@ object FlintPalette {
     val Mist = Color(0xFFB7AE9F)
     val Stone = Color(0xFF9C9486)
     val Ember = Color(0xFFEF9F27)
+    /** Accent text on dark surfaces (pills, chips, "left" values). */
+    val EmberText = Color(0xFFF4C27E)
     val Glow = Color(0xFFFFE7C2)
     val Flame = Color(0xFFF7BE6A)
     val SparkHighlight = Color(0xFFFAC775)
@@ -51,11 +54,13 @@ object FlintPalette {
     val BoneFaint = Color(0xFF151416)   // 0.03 — quiet card fill
     val BoneTrack = Color(0xFF191819)   // 0.05 — segmented track
     val BoneFill = Color(0xFF1B1A1B)    // 0.06 — chip fill
-    val Hairline = Color(0xFF201E1F)    // 0.08 — row dividers
-    val Divider = Color(0xFF242323)     // 0.10 — card borders
+    val Hairline = Color(0xFF201E1F)    // 0.08 — row dividers, card borders
+    val Divider = Color(0xFF242323)     // 0.10 — dividers, tab bar border
     val SwitchOff = Color(0xFF2D2B2B)   // 0.14 — switch track off
     val Border = Color(0xFF32302F)      // 0.16 — chip / ghost borders
     val EmberWash = Color(0xFF291F12)   // ember 0.12 — selected card fill
+    val EmberChip = Color(0xFF33260F)   // ember 0.14 — status pill / icon tile fill
+    val TabBar = Color(0xE6161518)      // rgba(22,21,24,0.90) floating tab bar
 }
 
 // surfaceTint == surface on purpose: tonal elevation must not wash amber over surfaces —
@@ -83,7 +88,7 @@ private val EmberMist = darkColorScheme(
     surfaceBright = FlintPalette.Segment,
     surfaceDim = FlintPalette.Night,
     surfaceContainerLowest = FlintPalette.Night,
-    surfaceContainerLow = FlintPalette.BoneFaint,
+    surfaceContainerLow = FlintPalette.Card,
     surfaceContainer = FlintPalette.Sheet,
     surfaceContainerHigh = FlintPalette.BoneFill,
     surfaceContainerHighest = FlintPalette.SwitchOff,
@@ -94,23 +99,24 @@ private val EmberMist = darkColorScheme(
     errorContainer = Color(0xFF3A1F1B),
     onErrorContainer = Color(0xFFF3C1BA),
     outline = FlintPalette.Border,
-    outlineVariant = FlintPalette.Divider,
+    outlineVariant = FlintPalette.Hairline,
 )
 
-/** Shippori Mincho 400: titles, timers, numbers. Digits are fixed-width in the bundled cut. */
+/** Shippori Mincho 400: numbers that matter (timers, stats, the minute dial) and the hero tagline. */
 val FlintDisplay = FontFamily(Font(R.font.shippori_mincho_regular, FontWeight.Normal))
 
-/** Hanken Grotesk 400/500/600: body, rows, buttons, eyebrows. */
+/** Hanken Grotesk 400/500/600/700: every title, row, button and body line. */
 val FlintText = FontFamily(
     Font(R.font.hanken_grotesk_regular, FontWeight.Normal),
     Font(R.font.hanken_grotesk_medium, FontWeight.Medium),
     Font(R.font.hanken_grotesk_semibold, FontWeight.SemiBold),
+    Font(R.font.hanken_grotesk_bold, FontWeight.Bold),
 )
 
 /**
  * tokens.json type roles on Material3 slots. Display/headline/titleLarge are the serif
- * (timers 84/68/50, titles 34/30/26, numbers 22); everything smaller is Hanken Grotesk.
- * labelMedium is the eyebrow (11/500/+2 — callers uppercase the string).
+ * (timers 84/68/50, numbers 22); every title and row is Hanken Grotesk — screen titles
+ * 32/700, sections 16/600, rows 15/600, buttons 16/700.
  */
 private fun display(size: Int, line: Int, tracking: Double = 0.0) = TextStyle(
     fontFamily = FlintDisplay, fontWeight = FontWeight.Normal,
@@ -126,17 +132,17 @@ val FlintTypography = Typography(
     displayLarge = display(84, 88, -2.0),
     displayMedium = display(68, 72, -1.5),
     displaySmall = display(50, 56, -0.8),
-    headlineLarge = display(34, 41, -0.3),
-    headlineMedium = display(30, 37, -0.3),
-    headlineSmall = display(26, 32),
+    headlineLarge = text(34, 40, FontWeight.Bold, -0.7),
+    headlineMedium = text(32, 38, FontWeight.Bold, -0.6),
+    headlineSmall = text(26, 32, FontWeight.Bold, -0.4),
     titleLarge = display(22, 28),
-    titleMedium = text(16, 22, FontWeight.Medium),
-    titleSmall = text(15, 20, FontWeight.Medium),
+    titleMedium = text(16, 22, FontWeight.SemiBold),
+    titleSmall = text(15, 20, FontWeight.SemiBold),
     bodyLarge = text(16, 24),
     bodyMedium = text(15, 22),
     bodySmall = text(13, 19),
-    labelLarge = text(16, 20, FontWeight.SemiBold),
-    labelMedium = text(11, 16, FontWeight.Medium, tracking = 2.0),
+    labelLarge = text(16, 20, FontWeight.Bold),
+    labelMedium = text(11, 16, FontWeight.SemiBold, tracking = 2.0),
     labelSmall = text(11, 14, FontWeight.Medium),
 )
 

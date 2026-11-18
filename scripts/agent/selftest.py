@@ -346,6 +346,7 @@ class AgentCommands(unittest.TestCase):
         self.init_repo()
         scenarios = [
             (["ios-app/Foo.swift"], ["verify-ios"]),
+            (["docs/privacy-policy.md"], ["verify-ios"]),
             (["android-app/Foo.kt"], ["verify-android"]),
             (["scripts/new.sh"], ["selftest"]),
             (["Makefile"], ["selftest"]),
@@ -426,9 +427,9 @@ class AgentCommands(unittest.TestCase):
                          [["claim", "ios", "11111111-2222-3333-4444-555555555555", "--booted", '--incarnation', 'v1:' + 'a' * 64, '--helper-pid', '12345']])
         calls = self.calls("xcrun")
         self.assertIn(["simctl", "install", "11111111-2222-3333-4444-555555555555", "ios-app/Custom Data/Build/Products/Debug-iphonesimulator/Flint.app"], calls)
-        self.assertIn(["simctl", "launch", "11111111-2222-3333-4444-555555555555", "com.flint.peakfocus"], calls)
+        self.assertIn(["simctl", "launch", "11111111-2222-3333-4444-555555555555", "app.flint.focus"], calls)
         self.assertFalse(any("booted" in args for _, args in self.calls()))
-        self.assertIn("bundle=com.flint.peakfocus", result.stdout)
+        self.assertIn("bundle=app.flint.focus", result.stdout)
 
     def test_ios_build_failure_never_attaches(self):
         result = self.make("ios-run", FAIL_TOOL="xcodebuild")
@@ -465,7 +466,7 @@ class AgentCommands(unittest.TestCase):
             ["emulator", "devices", "--json"],
             ["emulator", "attach", serial, "--worktree", f"path:{self.root}", "--json"],
             ["emulator", "install", str(self.root / "android-app/app/build/outputs/apk/debug/app-debug.apk"), "--reinstall", *scope],
-            ["emulator", "launch", "com.flint.peakfocus", "--activity", ".MainActivity", *scope],
+            ["emulator", "launch", "app.flint.focus", "--activity", "com.flint.peakfocus.MainActivity", *scope],
         ])
         self.assertEqual(self.calls("fake-make"), [["android"]])
         claim, = [a for a in self.calls('flint-devices.sh') if a[0] == 'claim']

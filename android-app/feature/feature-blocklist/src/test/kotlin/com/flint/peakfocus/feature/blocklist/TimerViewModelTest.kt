@@ -79,6 +79,27 @@ class TimerViewModelTest {
         assertTrue(vm.uiState.value.canStart)
     }
 
+    @Test fun `opening the sheet requests a fresh protection evaluation`() = runTest(dispatcher) {
+        var evaluations = 0
+        val store = InMemoryBlockRulesStore()
+        val vm = TimerViewModel(store, { listOf(app, otherApp) },
+            EditorTestStore(store, now = { clock }), TestHarderWaitStore(),
+            now = { clock }, newId = { "test-id" }, ioDispatcher = dispatcher,
+            protectionClock = { com.flint.peakfocus.core.model.AccessClockStamp(clock, dispatcher.scheduler.currentTime, "boot") },
+            safety = { com.flint.peakfocus.core.datastore.EditorSafety(true) },
+            protectionStatus = MutableStateFlow(readyTimerStatus(com.flint.peakfocus.core.model.AccessClockStamp(clock, dispatcher.scheduler.currentTime, "boot"))),
+            loadPermissions = { TimerPermissions(accessibilityEnabled = true) }, livePathA = { true },
+            requestEvaluation = { evaluations++ })
+        ViewModelStore().also { it.put("timer", vm); owners += it }
+        runCurrent()
+        evaluations = 0
+        vm.setVisible(true)
+        runCurrent()
+        assertEquals("Arrival must wake the detectors so a stale floor cannot disable Begin",
+            1, evaluations)
+        vm.setVisible(false)
+    }
+
     @Test fun `start persists a frozen preset and tier without replacing unrelated rules`() = runTest(dispatcher) {
         val work = session("work-rule").copy(expiresAtEpochMs = null)
         val store = ControlledStore(listOf(work))
@@ -102,6 +123,42 @@ class TimerViewModelTest {
         vm.selectBreakLevel(BreakLevel.EASY)
         assertEquals(saved, vm.uiState.value.sessions.single())
         assertEquals(BreakLevel.HARDER, vm.uiState.value.draft.breakLevel)
+    }
+
+    @Test fun `allow-list start commits the inverted rule and keeps the picked apps`() = runTest(dispatcher) {
+        val store = ControlledStore()
+        val vm = model(store)
+        runCurrent()
+        vm.selectApps(listOf(app, otherApp))
+        vm.selectAllowListMode(true)
+        assertTrue(vm.uiState.value.draft.allowListMode)
+        vm.start()
+        runCurrent()
+        val saved = vm.uiState.value.sessions.single()
+        assertTrue(saved.targets.allowListMode)
+        assertEquals(
+            setOf(AppRef(app.packageName, app.label), AppRef(otherApp.packageName, otherApp.label)),
+            saved.targets.apps,
+        )
+        assertTrue(saved.targets.domains.isEmpty())
+        assertTrue(store.rules.first().single().targets.allowListMode)
+    }
+
+    @Test fun `the mode cannot change while a Timer runs and toggling keeps the draft apps`() = runTest(dispatcher) {
+        val saved = session("session-running")
+        val store = ControlledStore(listOf(saved))
+        val vm = model(store)
+        runCurrent()
+        vm.selectAllowListMode(true)
+        assertFalse("a running Timer owns the mode", vm.uiState.value.draft.allowListMode)
+
+        val idle = model(ControlledStore())
+        runCurrent()
+        idle.selectApps(listOf(app))
+        idle.selectAllowListMode(true)
+        idle.selectAllowListMode(false)
+        assertEquals(setOf(AppRef(app.packageName, app.label)), idle.uiState.value.draft.apps)
+        assertEquals(0, store.startCalls)
     }
 
     @Test fun `pending picker edits leave the draft untouched until confirmation`() = runTest(dispatcher) {
@@ -485,6 +542,39 @@ class TimerViewModelTest {
         assertNull(restored.uiState.value.exit)
         assertEquals(listOf(timer), restored.uiState.value.sessions)
         assertEquals(0, store.endCalls)
+    }
+
+    @Test fun `lowering rounds clears a long rest that no longer fits instead of dead-ending`() = runTest(dispatcher) {
+        val vm = model(InMemoryBlockRulesStore())
+        runCurrent()
+        vm.selectApps(listOf(app))
+        vm.selectPomodoro(true)
+        vm.selectRounds(4)
+        vm.selectLongRest(true)
+        vm.selectLongRestMinutes(15)
+        vm.selectLongRestEvery(3)
+        assertEquals(15, vm.uiState.value.draft.longRestMinutes)
+        assertEquals(3, vm.uiState.value.draft.longRestEvery)
+        assertNotNull(draftPomodoroPlan(vm.uiState.value.draft))
+
+        // Rounds 2 has no interval for a long rest: both fields are cleared together, so the
+        // plan stays valid and Begin is still available.
+        vm.selectRounds(2)
+        val draft = vm.uiState.value.draft
+        assertNull("no interval survives two rounds", draft.longRestEvery)
+        assertNull("the long rest is cleared with it", draft.longRestMinutes)
+        assertTrue(validTimerDraft(draft))
+        assertTrue(vm.uiState.value.canStart)
+        assertNull(pomodoroDraftError(draft))
+
+        // Back at four rounds a long rest can be added again, and it can always be removed.
+        vm.selectRounds(4)
+        vm.selectLongRest(true)
+        assertEquals(2, vm.uiState.value.draft.longRestEvery)
+        assertTrue(longRestToggleEnabled(vm.uiState.value.draft))
+        vm.selectLongRest(false)
+        assertNull(vm.uiState.value.draft.longRestMinutes)
+        assertNull(vm.uiState.value.draft.longRestEvery)
     }
 
     private class ControlledStore(initial: List<BlockRule> = emptyList()) : BlockRulesStore {

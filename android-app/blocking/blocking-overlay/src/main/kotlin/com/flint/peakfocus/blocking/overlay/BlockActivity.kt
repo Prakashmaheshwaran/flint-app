@@ -73,6 +73,8 @@ class BlockActivity : ComponentActivity() {
      *  recreate(), so the glow and breathing mark run continuously across re-used instances. */
     private var target by mutableStateOf<BlockedTarget?>(null)
     private var recoveryMode by mutableStateOf(false)
+    /** Recovery opened from the app-open PIN screen: commitment names never reach the screen. */
+    private var recoveryRedacted by mutableStateOf(false)
     private var recoveryHandoffId by mutableStateOf<String?>(null)
     private var recoveryTarget: String? = null
     private var recoveryFrameDrawn = false
@@ -86,6 +88,8 @@ class BlockActivity : ComponentActivity() {
     private var recoveryFocusRevoked = false
     /** Recovery is a Flint settings surface, not a fallback shield owned by Path B. */
     internal val isRecoverySurface: Boolean get() = recoveryMode
+    /** Recovery opened from the app-open PIN screen (names withheld). */
+    internal val isRedactedRecovery: Boolean get() = recoveryMode && recoveryRedacted
 
     /** Refusal counter fed to `BlockScreen`'s nudge parameter — increments animate. */
     private var nudge by mutableIntStateOf(0)
@@ -97,6 +101,7 @@ class BlockActivity : ComponentActivity() {
         // too (the shared screen already safeDrawingPadding()s its content).
         enableEdgeToEdge()
         recoveryMode = intent.getBooleanExtra(EXTRA_RECOVERY, false)
+        recoveryRedacted = recoveryMode && intent.getBooleanExtra(EXTRA_RECOVERY_REDACTED, false)
         recoveryHandoffId = intent.getStringExtra(EXTRA_RECOVERY_HANDOFF)
         recoveryTarget = intent.getStringExtra(EXTRA_RECOVERY_TARGET)
         val initial = intent.toBlockedTarget()
@@ -222,6 +227,7 @@ class BlockActivity : ComponentActivity() {
         // the breathing mark never restart. A malformed re-launch keeps the current block.
         setIntent(intent)
         recoveryMode = intent.getBooleanExtra(EXTRA_RECOVERY, false)
+        recoveryRedacted = recoveryMode && intent.getBooleanExtra(EXTRA_RECOVERY_REDACTED, false)
         recoveryHandoffId = intent.getStringExtra(EXTRA_RECOVERY_HANDOFF)
         recoveryTarget = intent.getStringExtra(EXTRA_RECOVERY_TARGET)
         recoveryFrameDrawn = false
@@ -353,6 +359,8 @@ class BlockActivity : ComponentActivity() {
                 ruleId = getStringExtra(EXTRA_RULE_ID),
                 displayEnd = if (getBooleanExtra(EXTRA_HAS_DISPLAY_END, false))
                     BlockDisplayEnd(getLongExtra(EXTRA_DISPLAY_END, NO_END).takeIf { it > 0L }) else null,
+                pomodoroNote = getStringExtra(EXTRA_POMODORO_NOTE),
+                pomodoroPhaseEndsAtEpochMs = getLongExtra(EXTRA_POMODORO_PHASE_END, NO_END).takeIf { it > 0L },
             ),
         )
     }
@@ -424,8 +432,9 @@ class BlockActivity : ComponentActivity() {
                 finally { saving = false }
             }
         }
+        val redacted = recoveryRedacted
         val confirmation = preview?.let { p -> RecoveryConfirmation(p.affected.map {
-            "${it.displayName} · ${if (it.transient) "ends now" else "suspended"}"
+            recoveryAffectedLabel(it.displayName, it.transient, redacted)
         }, date((now?.wallEpochMs ?: p.issuedAt.wallEpochMs) + ProtectionContract.PASS_RECOVERY_MS),
             date((now?.wallEpochMs ?: p.issuedAt.wallEpochMs) + ProtectionContract.PASS_COOLDOWN_MS)) }
         RecoveryScreen(
@@ -436,11 +445,13 @@ class BlockActivity : ComponentActivity() {
                 nextPassAt = (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.let { date(it.nextEligibleEstimateEpochMs) },
                 timeUncertain = (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.clockUncertain == true,
                 previousAccessEnded = ledger?.previousAccessEnded == true || snapshot?.openCredits?.accessEndedAfterRestart == true,
-                choices = snapshot?.let { snapshot ->
+                redacted = redacted,
+                // Redacted recovery never receives commitment names, not even hidden ones.
+                choices = if (redacted) emptyList() else snapshot?.let { snapshot ->
                     val canDisable = GlobalRecoveryPolicy.recoveryChoices(snapshot, deleteTemplates = false).keys
                     GlobalRecoveryPolicy.recoveryChoices(snapshot).map { (key, name) -> RecoveryChoice(key, name, key in canDisable) }
                 }.orEmpty(),
-                confirmation = confirmation, endConfirmation = endPreview?.displayNames,
+                confirmation = confirmation, endConfirmation = if (redacted) null else endPreview?.displayNames,
                 endConfirmationDeletes = endPreview?.deleteTemplates == true, error = error, saving = saving,
                 activeOrdinaryBreaks = ledger?.ordinaryGrants?.values?.count { now != null && it.lifetime.remainingMs(now)?.let { ms -> ms > 0 } == true } ?: 0,
                 activeOpenCredits = snapshot?.openCredits?.active?.values?.count { now != null && com.flint.peakfocus.blocking.engine.OpenCreditPolicy().remainingMs(it.grant, now) > 0 } ?: 0),
@@ -485,21 +496,47 @@ class BlockActivity : ComponentActivity() {
         const val EXTRA_RULE_ID = "flint.rule_id"
         internal const val EXTRA_HAS_DISPLAY_END = "flint.has_display_end"
         internal const val EXTRA_DISPLAY_END = "flint.display_end"
+        internal const val EXTRA_POMODORO_NOTE = "flint.pomodoro_note"
+        internal const val EXTRA_POMODORO_PHASE_END = "flint.pomodoro_phase_end"
         const val EXTRA_RECOVERY = "flint.protection_recovery"
         private const val NO_END = -1L
 
         /** App-shell entry independent of a blocked target. Opening it never spends a pass. */
         internal const val EXTRA_RECOVERY_HANDOFF = "flint.recovery_handoff"
         internal const val EXTRA_RECOVERY_TARGET = "flint.recovery_target"
+        /** Set only by the app-open PIN screen; this activity is not exported. */
+        internal const val EXTRA_RECOVERY_REDACTED = "flint.recovery_redacted"
 
-        fun launchRecovery(context: Context, handoffId: String? = null, targetPackage: String? = null): Boolean = runCatching {
+        /**
+         * Opens protection recovery. [redacted] (the app-open PIN screen) keeps the pass and resume
+         * actions but replaces commitment names with generic labels and drops per-commitment
+         * choices, so recovery behind the PIN discloses no private content (ADR-012 §7, PC-50).
+         */
+        fun launchRecovery(
+            context: Context,
+            handoffId: String? = null,
+            targetPackage: String? = null,
+            redacted: Boolean = false,
+        ): Boolean = runCatching {
             context.startActivity(Intent(context, BlockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra(EXTRA_RECOVERY, true).putExtra(EXTRA_RECOVERY_HANDOFF, handoffId)
-                .putExtra(EXTRA_RECOVERY_TARGET, targetPackage))
+                .putExtra(EXTRA_RECOVERY_TARGET, targetPackage)
+                .putExtra(EXTRA_RECOVERY_REDACTED, redacted))
         }.isSuccess
 
-        /** Launch the fallback block screen for [packageName] with a resolved [cause]. */
-        fun launch(context: Context, packageName: String, label: String?, cause: BlockCause) {
+        /** One affected commitment in the pass confirmation; generic when [redacted]. */
+        internal fun recoveryAffectedLabel(displayName: String, transient: Boolean, redacted: Boolean): String {
+            val name = if (redacted) (if (transient) "Active session" else "Rule commitment") else displayName
+            return "$name · ${if (transient) "ends now" else "suspended"}"
+        }
+
+        /**
+         * Launch the fallback block screen for [packageName] with a resolved [cause].
+         * False only when the launch request threw. True is *not* delivery proof: Android's
+         * background-activity-launch limits can drop it silently, so callers report this
+         * surface as fallback-only, never as a mounted shield.
+         */
+        fun launch(context: Context, packageName: String, label: String?, cause: BlockCause): Boolean =
             // Best-effort: without SYSTEM_ALERT_WINDOW, background-activity-launch limits may
             // block this too — Path B degrades honestly (strategy doc §3).
             runCatching {
@@ -513,9 +550,10 @@ class BlockActivity : ComponentActivity() {
                         .putExtra(EXTRA_ENDS_AT_EPOCH_MS, cause.endsAtEpochMs ?: NO_END)
                         .putExtra(EXTRA_HAS_DISPLAY_END, cause.displayEnd != null)
                         .putExtra(EXTRA_DISPLAY_END, cause.displayEnd?.endsAtEpochMs ?: NO_END)
+                        .putExtra(EXTRA_POMODORO_NOTE, cause.pomodoroNote)
+                        .putExtra(EXTRA_POMODORO_PHASE_END, cause.pomodoroPhaseEndsAtEpochMs ?: NO_END)
                         .putExtra(EXTRA_RULE_ID, cause.ruleId),
                 )
-            }
-        }
+            }.isSuccess
     }
 }

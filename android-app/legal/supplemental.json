@@ -38,10 +38,10 @@
   ],
   "fonts": [
     {
-      "name": "Hanken Grotesk (static instances, weights 400/500/600)",
+      "name": "Hanken Grotesk (static instances, weights 400/500/600/700)",
       "source": "https://github.com/google/fonts/tree/main/ofl/hankengrotesk",
       "license": "design/fonts/HankenGrotesk-OFL.txt",
-      "files": ["hanken_grotesk_regular.ttf", "hanken_grotesk_medium.ttf", "hanken_grotesk_semibold.ttf"]
+      "files": ["hanken_grotesk_regular.ttf", "hanken_grotesk_medium.ttf", "hanken_grotesk_semibold.ttf", "hanken_grotesk_bold.ttf"]
     },
     {
       "name": "Shippori Mincho (Latin subset, tabular digits and adjusted vertical metrics)",

@@ -9,6 +9,10 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
     case appGroupUnavailable
     case notAuthorized
     case emptySelection
+    /// An Allow List session must name the apps to keep available. An empty allow list would
+    /// shield everything Screen Time can shield, including Flint's own recovery reachability
+    /// (ADR-012 §7, PC-53), so it is refused before anything is written.
+    case emptyAllowList
     case tooManyTokens(count: Int, cap: Int)
     case durationTooShort(minimumMinutes: Int)
     case durationTooLong(maximumMinutes: Int)
@@ -44,6 +48,7 @@ public enum FlintSessionError: Error, LocalizedError, Equatable {
         case .appGroupUnavailable: return "Flint's shared storage is unavailable (App Group misconfigured)."
         case .notAuthorized: return "Allow Screen Time access for Flint first — without it iOS won't block anything."
         case .emptySelection: return "Pick at least one app or website to block first."
+        case .emptyAllowList: return FlintSelectionIssue.emptyAllowList.message
         case let .tooManyTokens(count, cap): return "Too many items selected (\(count)). The system limit is \(cap) — use a category instead."
         case let .durationTooShort(minimum): return "Sessions need to be at least \(minimum) \(minimum == 1 ? "minute" : "minutes")."
         case let .durationTooLong(maximum): return "Sessions can run for up to \(maximum / 60) hours \(maximum % 60) minutes."
@@ -158,8 +163,23 @@ public protocol FlintSessionShielding: AnyObject {
     /// identifies a target set without storing tokens.
     func fingerprint(of selection: FamilyActivitySelection) -> String
     func applyBlockList(_ selection: FamilyActivitySelection) throws
+    /// Applies an Allow List shield: everything Screen Time can shield except the selection's
+    /// applications. A shield adapter that cannot write an allow list must throw rather than
+    /// fall back to a block list, so an allow-list session never starts on a weaker shield.
+    func applyAllowList(_ selection: FamilyActivitySelection) throws
     /// Releases session-owned settings. Removal denial belongs to the derived guard adapter.
     func clear()
+    /// True when the session-owned store still holds restrictions. Before the first session
+    /// generation exists, this contradicts an absent record, so it is not idle proof (R-20).
+    func retainsAppliedSettings() -> Bool
+}
+
+public extension FlintSessionShielding {
+    /// Fail closed: an adapter without an allow-list writer (a test double, or a platform seam
+    /// that can't express one) refuses instead of leaving a block-list shield in place.
+    func applyAllowList(_ selection: FamilyActivitySelection) throws {
+        throw FlintSessionError.protectionStateUnavailable
+    }
 }
 
 /// `DeviceActivityCenter` for the session's one-shot auto-clear.
@@ -186,6 +206,9 @@ public protocol FlintSessionStateStoring: AnyObject {
     func saveSessionSelection(_ selection: FamilyActivitySelection, sessionID: String)
     func loadSessionSelection(sessionID: String) -> FamilyActivitySelection?
     func clearSessionSelection()
+    /// The session ID the stored target snapshot belongs to; nil when none is stored or it
+    /// doesn't decode.
+    func sessionSelectionOwner() -> String?
     /// Positive evidence the shared state was read, not an empty locked or unavailable
     /// container. A readable suite still needs the latest generation's tombstone to prove idle.
     func isProtectionStateReadable() -> Bool
@@ -193,6 +216,7 @@ public protocol FlintSessionStateStoring: AnyObject {
 
 public extension FlintSessionStateStoring {
     func isProtectionStateReadable() -> Bool { true }
+    func sessionSelectionOwner() -> String? { nil }
 }
 
 extension FlintGroupStore: FlintSessionStateStoring {
@@ -221,6 +245,12 @@ extension FlintGroupStore: FlintSessionStateStoring {
               let saved = try? JSONDecoder().decode(SessionSelection.self, from: data),
               saved.sessionID == sessionID else { return nil }
         return saved.selection
+    }
+
+    public func sessionSelectionOwner() -> String? {
+        guard let data = UserDefaults.flintGroup?.data(forKey: Self.sessionSelectionKey),
+              let saved = try? JSONDecoder().decode(SessionSelection.self, from: data) else { return nil }
+        return saved.sessionID
     }
 }
 
@@ -386,6 +416,10 @@ public final class FlintSessionController {
 
     /// Prefix of every session activity name; also the exact name older builds registered.
     public static let monitorName = "flint.session"
+    /// Prefix of every planned Pomodoro rest carrier (F01): `flint.pomo.<parentToken>.<restIndex>`.
+    /// Deliberately outside `isSessionActivity`, so a rest carrier is never mistaken for the
+    /// parent's own end registration.
+    public static let pomodoroCarrierPrefix = "flint.pomo."
 
     /// Re-registrations allowed per session after its start (time-zone changes, an end iOS
     /// delivered early, a registration iOS dropped). Each one briefly holds an extra slot in the
@@ -437,7 +471,15 @@ public final class FlintSessionController {
     /// A start preview may therefore finish applying an already-accepted pending session.
     public func prepareAcceptedInstallationForScope() {
         guard env.transitionLock() != nil else { return }
-        _ = withTransition { persistence.drainAcceptedInstallation() }
+        _ = withTransition {
+            persistence.drainAcceptedInstallation()
+            // Crash recovery re-registers a chain's parent end; its rest carriers come back here
+            // too, so a recovered chain never runs without its disclosed rests.
+            if let store = env.store(), let session = store.loadActiveSession(), let plan = session.pomodoro,
+               session.naturalEndObservedAt == nil, !isOver(session) {
+                repairPomodoroCarriers(session, plan: plan, in: store, now: env.clock.now(), wallMoved: false)
+            }
+        }
     }
 
     /// Whether the session's commitment is over by its logical (monotonic-governed) time.
@@ -472,7 +514,9 @@ public final class FlintSessionController {
     public func prepareStartToken(selection: FamilyActivitySelection, duration: TimeInterval,
         breakLevel: BreakLevel, name: String = "Focus", source: FlintSessionSource = .manual,
         origin: FlintSessionOrigin, ownerID: String? = nil, replacing: Bool = true,
-        route: String, operationID: String? = nil, untilDeactivation: Bool = false) throws -> FlintSessionStartToken {
+        route: String, operationID: String? = nil, untilDeactivation: Bool = false,
+        pomodoro: FlintPomodoroPlan? = nil,
+        allowList: Bool = false) throws -> FlintSessionStartToken {
         guard let token = try withTransition({ () throws -> FlintSessionStartToken in
             prepareAcceptedInstallationForScope()
             try validateStartGate(origin: origin, ownerID: ownerID)
@@ -486,8 +530,10 @@ public final class FlintSessionController {
             guard let authority = persistence.authority(in: store), env.ledger() != nil else {
                 throw FlintSessionError.protectionStateUnavailable
             }
-            let fingerprint = startFingerprint(selection: selection, duration: duration, breakLevel: breakLevel,
-                name: name, source: source, origin: origin, ownerID: ownerID, replacing: replacing)
+            let fingerprint = startFingerprint(selection: allowList ? Self.applicationOnly(selection) : selection,
+                duration: duration, breakLevel: breakLevel,
+                name: name, source: source, origin: origin, ownerID: ownerID, replacing: replacing,
+                pomodoro: pomodoro, allowList: allowList)
             if let operationID, !operationID.isEmpty {
                 if let old = authority.acceptedStart(operationID), old.fingerprint != fingerprint {
                     throw FlintSessionError.conflictingStartRequest
@@ -515,10 +561,13 @@ public final class FlintSessionController {
 
     private func startFingerprint(selection: FamilyActivitySelection, duration: TimeInterval,
         breakLevel: BreakLevel, name: String, source: FlintSessionSource,
-        origin: FlintSessionOrigin, ownerID: String?, replacing: Bool) -> String {
+        origin: FlintSessionOrigin, ownerID: String?, replacing: Bool,
+        pomodoro: FlintPomodoroPlan? = nil, allowList: Bool = false) -> String {
         FlintSessionStartParameters(duration: duration, tier: breakLevel,
             selection: env.shield.fingerprint(of: selection), name: name, source: source,
-            origin: origin.rawValue, ownerID: ownerID, replacing: replacing).fingerprint
+            origin: origin.rawValue, ownerID: ownerID, replacing: replacing,
+            pomodoro: pomodoro,
+            mode: allowList ? FlintSessionStartParameters.allowListMode : nil).fingerprint
     }
 
     private func validateStartGate(origin: FlintSessionOrigin, ownerID: String?) throws {
@@ -542,15 +591,223 @@ public final class FlintSessionController {
         name == monitorName || name.hasPrefix(monitorName + ".")
     }
 
+    /// True for a planned Pomodoro rest carrier (`flint.pomo.<token>.<restIndex>`).
+    public static func isPomodoroCarrier(_ name: String) -> Bool {
+        name.hasPrefix(pomodoroCarrierPrefix) && pomodoroToken(of: name) != nil
+    }
+
+    /// The chain token a rest carrier carries. A rest carrier only affects the parent whose
+    /// token it carries; everything else must be treated as stale.
+    static func pomodoroToken(of name: String) -> String? {
+        guard name.hasPrefix(pomodoroCarrierPrefix) else { return nil }
+        let rest = name.dropFirst(pomodoroCarrierPrefix.count)
+        guard let dot = rest.firstIndex(of: ".") else { return nil }
+        let token = rest[rest.startIndex..<dot]
+        let index = rest[rest.index(after: dot)...]
+        guard !token.isEmpty, !index.isEmpty, index.allSatisfy(\.isNumber) else { return nil }
+        return String(token)
+    }
+
+    /// The parent's stable chain token, derived from its immutable session id. It deliberately
+    /// does not follow the parent's `monitorName`: a re-armed parent end (time-zone change,
+    /// premature end, dropped registration) gets a new name, and its already-registered rest
+    /// carriers must keep reconciling the same chain instead of turning stale.
+    static func pomodoroChainToken(for session: FlintActiveSession) -> String {
+        SHA256.hash(data: Data(session.id.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func pomodoroCarrierName(sessionToken: String, restIndex: Int) -> String {
+        "\(pomodoroCarrierPrefix)\(sessionToken).\(restIndex)"
+    }
+
+    /// Every rest carrier the parent's frozen plan registers.
+    static func pomodoroCarrierNames(for session: FlintActiveSession) -> [String] {
+        guard let plan = session.pomodoro else { return [] }
+        return pomodoroCarrierNames(chainToken: pomodoroChainToken(for: session), plan: plan)
+    }
+
+    static func pomodoroCarrierNames(chainToken token: String, plan: FlintPomodoroPlan) -> [String] {
+        plan.rests.map { pomodoroCarrierName(sessionToken: token, restIndex: $0.index) }
+    }
+
+    /// A rest carrier's registration: the rest's own wall span. A rest under DeviceActivity's
+    /// 15-minute floor is padded to 15 minutes with `warningTime` landing on the logical rest end
+    /// (the §4 deadline adapter), so the shield returns at the rest's real end.
+    ///
+    /// A rest always uses `.endWarning`, whatever strategy ordinary sessions use: padding a short
+    /// rest without a warning would silently lengthen a disclosed planned rest to 15 minutes.
+    static func pomodoroCarrierPlan(rest: FlintPomodoroPlan.Rest, start: Date, calendar: Calendar) -> FlintSessionAutoClearPlan {
+        FlintSessionAutoClearPlan.make(start: start.addingTimeInterval(rest.start),
+                                       end: start.addingTimeInterval(rest.end),
+                                       calendar: calendar, strategy: .endWarning)
+    }
+
     static func makeMonitorName() -> String {
         let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16).lowercased()
         return "\(monitorName).\(token)"
+    }
+
+    // MARK: Pomodoro phase enforcement
+
+    /// Stop everything one start attempt registered: the parent end and every rest carrier it
+    /// pre-registered. Used by every failure exit after a registration (design §4).
+    private func stopStartAttempt(monitorName: String, restCarriers: [String]) {
+        env.registrar.stopMonitoring([monitorName] + restCarriers)
+    }
+
+    /// Stop the parent's own end registration and all of its planned rest carriers.
+    private func stopSessionRegistrations(_ session: FlintActiveSession, also: [String] = []) {
+        env.registrar.stopMonitoring([session.monitorName] + Self.pomodoroCarrierNames(for: session) + also)
+    }
+
+    /// Write the session store to match the parent's current phase: a planned rest clears the
+    /// whole session store (its Safari restrictions live there too) and focus reapplies the
+    /// session's frozen selection. Callers hold the transition lock.
+    private func writePhaseShield(_ session: FlintActiveSession, in store: FlintSessionStateStoring?) {
+        guard let store, let selection = sessionSelection(for: session, in: store) else {
+            // Without the frozen targets focus could never be restored after a rest, so a rest is
+            // not started at all (fail-closed: the shield stays as it is).
+            if session.isInPomodoroRest(clock: env.clock) {
+                FlintSessionHealth.update(in: env.healthDefaults()) {
+                    $0.lastArmFailure = .init(sessionName: session.name,
+                        reason: "pomodoro_rest_without_targets", at: env.clock.now())
+                }
+            }
+            return
+        }
+        if session.isInPomodoroRest(clock: env.clock) {
+            env.shield.clear()
+            return
+        }
+        try? Self.applyShield(selection, for: session, shield: env.shield)
+        var current = session
+        if session.pomodoro != nil, session.endsAt != nil,
+           !env.registrar.registeredActivityNames().contains(session.monitorName) {
+            // A rest cleared this cause's Safari keys, and restoring them needs a dependable end:
+            // repair the parent's end registration first, as host reconcile would (design §4).
+            _ = rearm(session, in: store, now: env.clock.now(), reason: .repair)
+            if let updated = store.loadActiveSession(), updated.id == session.id { current = updated }
+        }
+        if current.endsAt == nil || env.registrar.registeredActivityNames().contains(current.monitorName) {
+            env.webRestrictions.reconcile(current, clock: env.clock)
+        }
+    }
+
+    /// Report the planned-rest boundaries the chain has crossed, once each. The marker lives on
+    /// the session record under the transition lock, so a duplicate callback from the monitor or
+    /// the host cannot emit the same rest twice (design §7).
+    ///
+    /// A terminal transition passes `persist: false`: it reports every boundary the chain crossed
+    /// up to its logical end (all of them for a finished chain) just before its terminal event,
+    /// and the record it would mark is about to be retired.
+    private func observePlannedRests(_ session: FlintActiveSession, plan: FlintPomodoroPlan,
+                                     in store: FlintSessionStateStoring?, now: Date, persist: Bool = true) {
+        guard let position = session.pomodoroPhase(clock: env.clock) else { return }
+        let current = position.phase?.index ?? plan.phases.count
+        let emitted = session.pomodoroObservedPhase ?? 0
+        guard current > emitted else { return }
+        let start = session.startedAt
+        let confidence: FlintEventTimeConfidence? = session.remainingCheckpoint?.timeUncertain == true
+            ? FlintEventTimeConfidence.uncertain(reason: "time_uncertain") : nil
+        // ADR-012 §11 origin: the monitor extension observes host-dead boundaries; the host
+        // observes them while reconciling.
+        let origin = Bundle.main.bundleURL.pathExtension == "appex" ? "monitor" : "startup_reconciliation"
+        // Entering phase `index` starts the rest at `index` (if it is one) and ends the rest at
+        // `index - 1` (if that was one). Both boundaries are recorded against the logical wall
+        // equivalent, so a late observation is inferred rather than silently placed at "now".
+        for index in (emitted + 1)...current {
+            if let rest = plan.rests.first(where: { $0.phaseIndex == index }) {
+                let boundary = start.addingTimeInterval(rest.start)
+                FlintSessionLifecycle.didObservePlannedRest(session, index: rest.index, kind: .started,
+                    logicalAt: boundary, breakEnd: start.addingTimeInterval(rest.end), origin: origin, observedAt: now,
+                    inferred: now.timeIntervalSince(boundary) > Self.plannedRestInferenceWindow,
+                    timeConfidence: confidence)
+            }
+            if let rest = plan.rests.first(where: { $0.phaseIndex == index - 1 }) {
+                let boundary = start.addingTimeInterval(rest.end)
+                FlintSessionLifecycle.didObservePlannedRest(session, index: rest.index, kind: .ended,
+                    logicalAt: boundary, breakEnd: nil, origin: origin, observedAt: now,
+                    inferred: now.timeIntervalSince(boundary) > Self.plannedRestInferenceWindow,
+                    timeConfidence: confidence)
+            }
+        }
+        guard persist else { return }
+        let updated = session.observingPomodoroPhase(current)
+        // The marker and its ledger checkpoint move together, or not at all.
+        guard let store, store.loadActiveSession() == session else { return }
+        store.saveActiveSession(updated)
+        _ = env.ledger()?.transaction { state in
+            try? state.sessionAuthority?.checkpoint(updated)
+        }
+    }
+
+    /// How late a rest boundary observation may be and still count as observed rather than
+    /// inferred (design §7: "more than about 2 s after the boundary").
+    static let plannedRestInferenceWindow: TimeInterval = 2
+
+    /// Derive the phase and make the shield match it, then report crossed rest boundaries.
+    private func reconcilePomodoroPhase(_ session: FlintActiveSession, in store: FlintSessionStateStoring?, now: Date) {
+        guard let plan = session.pomodoro else { return }
+        writePhaseShield(session, in: store)
+        // The shield write may have re-armed the parent (a new monitor name): observe against
+        // the record as it now stands so the marker persists.
+        let current = store?.loadActiveSession().flatMap { $0.id == session.id ? $0 : nil } ?? session
+        observePlannedRests(current, plan: plan, in: store, now: now)
+    }
+
+    /// A planned-rest carrier callback. Its name is only a wake-up: the logical phase decides,
+    /// so an early callback during focus never releases the shield, and a late one can only
+    /// delay a rest (fail-closed). A carrier whose token is not the current parent's is stale
+    /// and is stopped without touching anything else (design §4).
+    public func handlePomodoroCarrier(_ event: FlintSessionMonitorEvent, activity: String) {
+        guard Self.isPomodoroCarrier(activity) else { return }
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        // Busy past the monitor timeout: change nothing. Unlike a session end, a dropped rest-end
+        // wake-up leaves the rest open until the carrier's next callback or a host reconcile
+        // (documented limit in docs/architecture/pomodoro-chain.md §4).
+        guard let transition = beginTransition(timeout: env.monitorLockTimeout) else { return }
+        defer { endTransition(transition) }
+        defer { env.reconcileOrdinaryBreaks() }
+        defer { env.reconcileRemovalGuard() }
+        defer { env.publishStatus() }
+        guard env.reconcileEmergencyPass(), env.recoveryGate().permitsApplication else {
+            _ = finishNaturalEndWithoutOutcome()
+            return
+        }
+        let store = env.store()
+        let resolved = persistence.resolve(in: store)
+        guard resolved.available else { return }
+        guard let session = resolved.session else {
+            env.registrar.stopMonitoring([activity])
+            return
+        }
+        let now = env.clock.now()
+        if Self.pomodoroToken(of: activity) != Self.pomodoroChainToken(for: session) {
+            // Not this chain's carrier: retire it. Its wake-up still reconciles the current
+            // parent's phase, which is derived from logical time alone and is idempotent.
+            env.registrar.stopMonitoring([activity])
+            if session.pomodoro != nil, !isOver(session) { reconcilePomodoroPhase(session, in: store, now: now) }
+            return
+        }
+        if isOver(session) {
+            // The chain's end, observed through a rest carrier: classify it exactly like the
+            // parent's own end callback, so a late observation is never an on-time completion.
+            handleMonitorEvent(.intervalWillEndWarning, activity: session.monitorName)
+            return
+        }
+        reconcilePomodoroPhase(session, in: store, now: now)
     }
 
     // MARK: Start
 
     /// Start an immediate block. `duration <= 0` means open-ended (until manually stopped),
     /// which only Easy may use (ADR-012 §1).
+    ///
+    /// `allowList: true` starts an Allow List session instead: everything Screen Time can shield
+    /// stays blocked except the selection's applications. Its exceptions are applications only —
+    /// category and website picks are dropped before validation, and an allow list that names no
+    /// application is refused before anything is written (ADR-012 §7, PC-53). Tier rights,
+    /// confirmation, waits and replacement arbitration are the block list's, unchanged.
     ///
     /// While another session runs: `replacing: false` (an additive start, e.g. a Focus turning on)
     /// is refused with `capacityUnavailable` — iOS Flint runs one session at a time; with
@@ -573,7 +830,9 @@ public final class FlintSessionController {
         requestID: String? = nil,
         expectedRevision: UInt64? = nil,
         replacing: Bool = true,
-        confirmed: Bool = false
+        confirmed: Bool = false,
+        pomodoro: FlintPomodoroPlan? = nil,
+        allowList: Bool = false
     ) throws -> FlintActiveSession {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard let transition = beginTransition() else { throw FlintSessionError.protectionStateUnavailable }
@@ -586,18 +845,33 @@ public final class FlintSessionController {
 
         guard let store = env.store() else { throw FlintSessionError.appGroupUnavailable }
         guard env.isAuthorized() else { throw FlintSessionError.notAuthorized }
-        guard duration.isFinite else { throw FlintSessionError.protectionStateUnavailable }
+        // A Pomodoro chain commits its whole frozen plan (design §1/§2): the parent's duration,
+        // its fingerprint and its rest carriers all derive from it, never from the caller.
+        let committedDuration = pomodoro?.totalDuration ?? duration
+        guard committedDuration.isFinite else { throw FlintSessionError.protectionStateUnavailable }
 
-        let counts = env.shield.counts(of: selection)
-        guard counts.total > 0 else { throw FlintSessionError.emptySelection }
-        if counts.applications > FlintShieldLimits.tokenCap {
-            throw FlintSessionError.tooManyTokens(count: counts.applications, cap: FlintShieldLimits.tokenCap)
+        // An Allow List session's exceptions are individually picked applications; category and
+        // website picks cannot be expressed as exceptions, so they are dropped before anything
+        // is measured or written.
+        let sessionTargets = allowList ? Self.applicationOnly(selection) : selection
+        if allowList {
+            switch FlintSelectionValidation.issue(for: sessionTargets, context: .allowList) {
+            case .emptyAllowList?: throw FlintSessionError.emptyAllowList
+            case let .tooManyTokens(count, cap)?: throw FlintSessionError.tooManyTokens(count: count, cap: cap)
+            case .emptySelection?, nil: break
+            }
+        } else {
+            let counts = env.shield.counts(of: sessionTargets)
+            guard counts.total > 0 else { throw FlintSessionError.emptySelection }
+            if counts.applications > FlintShieldLimits.tokenCap {
+                throw FlintSessionError.tooManyTokens(count: counts.applications, cap: FlintShieldLimits.tokenCap)
+            }
+            if counts.webDomains > FlintShieldLimits.tokenCap {
+                throw FlintSessionError.tooManyTokens(count: counts.webDomains, cap: FlintShieldLimits.tokenCap)
+            }
         }
-        if counts.webDomains > FlintShieldLimits.tokenCap {
-            throw FlintSessionError.tooManyTokens(count: counts.webDomains, cap: FlintShieldLimits.tokenCap)
-        }
-        if duration > 0 {
-            switch FlintSessionAutoClearPlan.issue(forDuration: duration, strategy: env.shortSessionStrategy) {
+        if committedDuration > 0 {
+            switch FlintSessionAutoClearPlan.issue(forDuration: committedDuration, strategy: env.shortSessionStrategy) {
             case .tooShort?:
                 let floor = env.shortSessionStrategy == .floor
                     ? FlintSessionAutoClearPlan.minimumInterval : FlintSessionAutoClearPlan.minimumDuration
@@ -610,7 +884,7 @@ public final class FlintSessionController {
         }
 
         let kind: FlintCauseState.Kind = source == .pomodoro ? .pomodoro : .session
-        switch FlintProtectionPolicy.issue(forNew: kind, tier: breakLevel, duration: duration > 0 ? duration : nil) {
+        switch FlintProtectionPolicy.issue(forNew: kind, tier: breakLevel, duration: committedDuration > 0 ? committedDuration : nil) {
         case .needsFiniteEnd?: throw FlintSessionError.needsFiniteEnd
         case .tooLong?: throw FlintSessionError.durationTooLong(maximumMinutes: Int(FlintSessionAutoClearPlan.maximumDuration / 60))
         case .nonPositive?: throw FlintSessionError.durationTooShort(minimumMinutes: 1)
@@ -622,7 +896,7 @@ public final class FlintSessionController {
         let wallNow = env.clock.now()
         let monotonicNow = env.clock.monotonic()
         let now = FlintSessionAutoClearPlan.wholeSecond(atOrAfter: wallNow)
-        let endsAt = duration > 0 ? now.addingTimeInterval(duration.rounded(.up)) : nil
+        let endsAt = committedDuration > 0 ? now.addingTimeInterval(committedDuration.rounded(.up)) : nil
 
         // Arbitrate against a running session before anything changes (ADR-012 §2/§3). A record
         // that exists but can't be read is unknown protection: never overwrite it (§8).
@@ -636,8 +910,9 @@ public final class FlintSessionController {
             current = nil
         }
         let operationID = requestID ?? UUID().uuidString
-        let fingerprint = startFingerprint(selection: selection, duration: duration, breakLevel: breakLevel,
-            name: name, source: source, origin: origin, ownerID: ownerID, replacing: replacing)
+        let fingerprint = startFingerprint(selection: sessionTargets, duration: committedDuration, breakLevel: breakLevel,
+            name: name, source: source, origin: origin, ownerID: ownerID, replacing: replacing,
+            pomodoro: pomodoro, allowList: allowList)
         if let accepted = acceptedStartResult(operationID) {
             guard accepted.fingerprint == fingerprint else { throw FlintSessionError.conflictingStartRequest }
             if accepted.outcome == .running, let current, current.id == accepted.sessionID { return current }
@@ -646,7 +921,7 @@ public final class FlintSessionController {
         guard let beforeAuthority = persistence.authority(in: store) else { throw FlintSessionError.protectionStateUnavailable }
         if let expectedRevision, beforeAuthority.revision != expectedRevision { throw FlintSessionError.staleStartRevision }
         if case .allow(confirm: true) = FlintProtectionPolicy.decideStart(
-            kind: kind, newTier: breakLevel, duration: duration > 0 ? duration : nil, capacityAvailable: true), !confirmed {
+            kind: kind, newTier: breakLevel, duration: committedDuration > 0 ? committedDuration : nil, capacityAvailable: true), !confirmed {
             throw FlintSessionError.needsConfirmation
         }
         let removalGuard = breakLevel == .hardcore && env.captureRemovalGuard()
@@ -663,14 +938,17 @@ public final class FlintSessionController {
             if running.removalGuard == true, !removalGuard {
                 throw FlintSessionError.replacementDenied(until: running.stableLogicalEnd(clock: env.clock))
             }
-            let targets = env.shield.targets(of: selection)
-            let new = FlintProtectionSnapshot(mode: .blockList(
-                applications: targets.applications, categories: targets.categories,
-                webDomains: targets.webDomains), tier: breakLevel, end: endsAt)
+            let targets = env.shield.targets(of: sessionTargets)
+            let mode: FlintProtectionSnapshot<AnyHashable>.Mode = allowList
+                ? .allowList(allowedApplications: targets.applications)
+                : .blockList(applications: targets.applications, categories: targets.categories,
+                             webDomains: targets.webDomains)
+            let new = FlintProtectionSnapshot(mode: mode, tier: breakLevel, end: endsAt)
             let cause = causeState(of: running, at: now)
-            // Dominance needs the running session's own frozen targets. Without them (a session
-            // from an older build, or a lost snapshot) it can't be proven — the picker selection
-            // is the user's current draft, not what is blocked — so the replacement is weakening.
+            // Dominance needs the running session's own frozen targets **and its mode**. Without
+            // them (a session from an older build, or a lost snapshot) it can't be proven — the
+            // picker selection is the user's current draft, not what is enforced — so the
+            // replacement is weakening.
             let decision: FlintProtectionDecision
             if let oldSelection = store.loadSessionSelection(sessionID: running.id) {
                 decision = FlintProtectionPolicy.decideReplace(new, over: snapshot(of: running, selection: oldSelection), for: cause)
@@ -686,8 +964,9 @@ public final class FlintSessionController {
                 // (`decide` never defers a replacement; treated as a denial if it ever did.)
                 throw FlintSessionError.replacementDenied(until: running.stableLogicalEnd(clock: env.clock))
             case .wait:
-                let scope = Self.replacementScope(tier: breakLevel, duration: duration,
-                                                  targets: env.shield.fingerprint(of: selection))
+                let scope = Self.replacementScope(tier: breakLevel, duration: committedDuration,
+                                                  targets: env.shield.fingerprint(of: sessionTargets),
+                                                  allowList: allowList)
                 switch harderGate(for: running, kind: "replace", scope: scope,
                                   confirmed: confirmed && origin == .appUI) {
                 case .proceed: break
@@ -720,15 +999,25 @@ public final class FlintSessionController {
             ownerID: ownerID,
             plannedDuration: endsAt.map { $0.timeIntervalSince(wallNow) },
             startRequestID: operationID,
-            removalGuard: removalGuard
+            removalGuard: removalGuard,
+            pomodoro: pomodoro,
+            pomodoroObservedPhase: pomodoro.map { _ in 0 },
+            allowListMode: allowList ? true : nil
         ).checkpointed(clock: env.clock)
         let previous = current
         let previousSelection = previous.flatMap { store.loadSessionSelection(sessionID: $0.id) }
         guard env.webRestrictions.prepareReplacement(session, replacing: previous, clock: env.clock) else {
             throw FlintSessionError.protectionStateUnavailable
         }
+        let restCarrierNames = pomodoro.map {
+            Self.pomodoroCarrierNames(chainToken: Self.pomodoroChainToken(for: session), plan: $0)
+        } ?? []
 
-        // 1. The out-of-app end, before anything changes.
+        // 1. The out-of-app end, before anything changes. A Pomodoro chain also pre-registers a
+        //    carrier for every planned rest here, before acceptance commits (design §4): an
+        //    unarmed rest would be a consistency failure, so the whole start is refused instead.
+        //    Pool headroom is sampled before this attempt registers anything.
+        let registeredBeforeAttempt = pomodoro == nil ? 0 : env.registrar.registeredActivityNames().count
         if let plan {
             do {
                 try env.registrar.startMonitoring(monitorName, plan: plan)
@@ -741,6 +1030,46 @@ public final class FlintSessionController {
                 throw FlintSessionError.armingFailed(reason: reason)
             }
         }
+        if let frozen = pomodoro {
+            // Headroom: keep room for break, credit and recovery carriers (design §4).
+            let needed = restCarrierNames.count + 1
+            guard registeredBeforeAttempt + needed <= FlintArmingHealth.observedActivityThreshold - 2 else {
+                stopStartAttempt(monitorName: monitorName, restCarriers: restCarrierNames)
+                let reason = "insufficient_activity_capacity"
+                FlintSessionHealth.update(in: env.healthDefaults()) {
+                    $0.lastArmFailure = .init(sessionName: name, reason: reason, at: now)
+                }
+                FlintSessionLifecycle.didFailToArm(session, reason: reason, at: now)
+                throw FlintSessionError.armingFailed(reason: reason)
+            }
+            for rest in frozen.rests {
+                let carrier = restCarrierNames[rest.index - 1]
+                do {
+                    try env.registrar.startMonitoring(carrier, plan: Self.pomodoroCarrierPlan(
+                        rest: rest, start: now, calendar: env.clock.calendar()))
+                } catch {
+                    let reason = String(describing: error)
+                    stopStartAttempt(monitorName: monitorName, restCarriers: restCarrierNames)
+                    FlintSessionHealth.update(in: env.healthDefaults()) {
+                        $0.lastArmFailure = .init(sessionName: name, reason: reason, at: now)
+                    }
+                    FlintSessionLifecycle.didFailToArm(session, reason: reason, at: now)
+                    throw FlintSessionError.armingFailed(reason: reason)
+                }
+            }
+            // Registered is not observed (design §4): iOS must actually hold the parent end and
+            // every rest carrier before the chain is accepted, or none of it is.
+            let held = env.registrar.registeredActivityNames()
+            guard ([monitorName] + restCarrierNames).allSatisfy(held.contains) else {
+                let reason = "registration_not_observed"
+                stopStartAttempt(monitorName: monitorName, restCarriers: restCarrierNames)
+                FlintSessionHealth.update(in: env.healthDefaults()) {
+                    $0.lastArmFailure = .init(sessionName: name, reason: reason, at: now)
+                }
+                FlintSessionLifecycle.didFailToArm(session, reason: reason, at: now)
+                throw FlintSessionError.armingFailed(reason: reason)
+            }
+        }
 
         // Acceptance and the recoverable generation commit together before the projection or
         // shield. A crash here is replay of this installation, never a second start.
@@ -750,7 +1079,7 @@ public final class FlintSessionController {
             try ledger.transaction { state in
                 guard var authority = state.sessionAuthority else { throw FlintSessionAuthorityError.generationMismatch }
                 do {
-                    try authority.install(session, selection: JSONEncoder().encode(selection), source: source,
+                    try authority.install(session, selection: JSONEncoder().encode(sessionTargets), source: source,
                         operationID: operationID, fingerprint: fingerprint, expectedRevision: expectedRevision,
                         at: FlintLedgerInstant(clock: env.clock),
                         previousSelection: try previousSelection.map { try JSONEncoder().encode($0) })
@@ -761,7 +1090,8 @@ public final class FlintSessionController {
                 state.sessionAuthority = authority
             }.get()
         } catch {
-            if plan != nil { env.registrar.stopMonitoring([monitorName]) }
+            // Nothing this attempt registered may outlive it (design §4 pre-registration).
+            stopStartAttempt(monitorName: monitorName, restCarriers: restCarrierNames)
             switch commitFailure {
             case .staleRevision: throw FlintSessionError.staleStartRevision
             case .conflictingReuse: throw FlintSessionError.conflictingStartRequest
@@ -783,19 +1113,21 @@ public final class FlintSessionController {
         // 2. Persist before anything else changes, so the monitor always finds the record that
         //    matches the registration and shield it can see. The id-keyed target snapshot goes
         //    first: a monitor that already sees the new record can only find its own targets.
-        store.saveSessionSelection(selection, sessionID: session.id)
+        store.saveSessionSelection(sessionTargets, sessionID: session.id)
         store.saveActiveSession(session)
-        store.saveSelection(selection)
+        // Today's picker default stays the block-list selection: an Allow List session's
+        // exceptions must never become what the next ordinary session blocks.
+        if !allowList { store.saveSelection(sessionTargets) }
         guard store.loadActiveSession() == session else { throw FlintSessionError.protectionStateUnavailable }
 
         // 3. Apply before retiring the previous dependable end. If the host dies here, the
         // installing generation can recover while the last-good predecessor remains finite.
         do {
-            try env.shield.applyBlockList(selection)
+            try Self.applyShield(sessionTargets, for: session, shield: env.shield)
         } catch {
             // Unreachable after the count checks above, but never leave a half-started session:
-            // drop the new registration and give the previous session back its record and end.
-            if plan != nil { env.registrar.stopMonitoring([monitorName]) }
+            // drop the new registrations and give the previous session back its record and end.
+            stopStartAttempt(monitorName: monitorName, restCarriers: restCarrierNames)
             _ = env.ledger()?.transaction { state in
                 if beforeAuthority.latest == nil, var failed = state.sessionAuthority {
                     try failed.terminate(session, outcome: .failedToApply, route: "failed_to_apply", at: env.clock.now())
@@ -828,7 +1160,8 @@ public final class FlintSessionController {
 
         guard persistence.markApplied(session) else { throw FlintSessionError.protectionStateUnavailable }
         if let previous, previous.monitorName != monitorName {
-            env.registrar.stopMonitoring([previous.monitorName])
+            // The superseded parent's own end and every planned rest carrier retire with it.
+            stopSessionRegistrations(previous)
         }
         try env.afterStartApplied()
         env.reconcileOrdinaryBreaks()
@@ -843,6 +1176,24 @@ public final class FlintSessionController {
         guard persistence.emitStartIfPending(session) else { throw FlintSessionError.protectionStateUnavailable }
         env.publishStatus()
         return session
+    }
+
+    // MARK: Shield
+
+    /// The one session shield write. The session's own recorded mode decides which adapter call
+    /// runs, so the start, the reconcile, the monitor's interval start and crash recovery can
+    /// never write a different kind of shield than the record promises.
+    static func applyShield(_ selection: FamilyActivitySelection, for session: FlintActiveSession,
+                            shield: FlintSessionShielding) throws {
+        if session.isAllowList { try shield.applyAllowList(selection) } else { try shield.applyBlockList(selection) }
+    }
+
+    /// An Allow List's exceptions are individually picked applications; category and website
+    /// picks cannot be expressed as exceptions.
+    static func applicationOnly(_ selection: FamilyActivitySelection) -> FamilyActivitySelection {
+        var result = FamilyActivitySelection()
+        result.applicationTokens = selection.applicationTokens
+        return result
     }
 
     // MARK: Stop
@@ -972,6 +1323,11 @@ public final class FlintSessionController {
         let observation = FlintLedgerInstant(clock: env.clock)
         let endedAt = route == .completed ? observation.wall : now
         guard persistence.emitStartIfPending(session) else { return false }
+        // Rest boundaries the chain crossed before this end are reported before its terminal
+        // event, even when no callback or reconcile observed them in time (design §7).
+        if let plan = session.pomodoro {
+            observePlannedRests(session, plan: plan, in: store, now: observation.wall, persist: false)
+        }
         guard let changed = persistence.terminate(session, outcome: route == .completed ? .completed : .stopped,
                                     route: route.rawValue, at: endedAt) else { return false }
         if changed, session.naturalEndObservedAt == nil { env.shield.clear() }
@@ -986,7 +1342,7 @@ public final class FlintSessionController {
         // one to "complete" or re-arm.
         store.clearActiveSession()
         store.clearSessionSelection()
-        env.registrar.stopMonitoring([session.monitorName])
+        stopSessionRegistrations(session)
         env.reconcileOrdinaryBreaks()
         env.reconcileRemovalGuard()
         // The session's Harder count ends with it (a new session starts from zero, §4); its
@@ -1022,7 +1378,7 @@ public final class FlintSessionController {
         guard store.loadActiveSession() == session else { return false }
         env.shield.clear()
         // Keep this exact positive record until the generation tombstone can be written.
-        env.registrar.stopMonitoring([session.monitorName])
+        stopSessionRegistrations(session)
         env.reconcileRemovalGuard()
         env.publishStatus()
         return true
@@ -1045,9 +1401,9 @@ public final class FlintSessionController {
             // A repaired registration may have changed its name; retire that actual owner.
             guard self.end(current ?? committed, route: .emergencyPass, at: acceptedAt, in: store,
                           allowMissingProjection: true) else { return false }
-            if let current, current.monitorName != committed.monitorName {
-                self.env.registrar.stopMonitoring([committed.monitorName])
-            }
+            // A repaired registration may have changed the parent's name; the pass ends the
+            // chain, so every planned rest carrier of the committed record stops too.
+            self.stopSessionRegistrations(committed)
             return true
         } ?? false
     }
@@ -1073,9 +1429,13 @@ public final class FlintSessionController {
 
     private func snapshot(of session: FlintActiveSession, selection: FamilyActivitySelection?) -> FlintProtectionSnapshot<AnyHashable> {
         let targets = selection.map(env.shield.targets(of:)) ?? FlintSessionTargets()
-        return FlintProtectionSnapshot(mode: .blockList(applications: targets.applications,
-                                                        categories: targets.categories,
-                                                        webDomains: targets.webDomains),
+        // The mode is part of what the running session enforces: comparing a block list against
+        // an allow list is never provable, so a mode change counts as weakening.
+        let mode: FlintProtectionSnapshot<AnyHashable>.Mode = session.isAllowList
+            ? .allowList(allowedApplications: targets.applications)
+            : .blockList(applications: targets.applications, categories: targets.categories,
+                         webDomains: targets.webDomains)
+        return FlintProtectionSnapshot(mode: mode,
                                        // Logical: a forward jump must not shorten what it protects (§9).
                                        tier: session.breakLevel, end: session.stableLogicalEnd(clock: env.clock))
     }
@@ -1096,10 +1456,15 @@ public final class FlintSessionController {
     public static let legacyFocusFilterName = "Focus Filter"
 
     /// What a replacement request is, as a stable scope: a different request — other targets,
-    /// tier or duration — needs a new wait (ADR-012 §4). `targets` is the shield's launch-stable
-    /// fingerprint of the requested selection.
-    static func replacementScope(tier: BreakLevel, duration: TimeInterval, targets: String) -> [String] {
-        ["tier:\(tier.rawValue)", "duration:\(Int(duration))", "targets:\(targets)"]
+    /// tier, duration or mode — needs a new wait (ADR-012 §4). `targets` is the shield's
+    /// launch-stable fingerprint of the requested selection. The block-list scope is unchanged
+    /// from before allow lists existed (persisted waits still match); the mode is named only by
+    /// an Allow List request, so switching modes restarts the wait.
+    static func replacementScope(tier: BreakLevel, duration: TimeInterval, targets: String,
+                                 allowList: Bool = false) -> [String] {
+        var parts = ["tier:\(tier.rawValue)", "duration:\(Int(duration))", "targets:\(targets)"]
+        if allowList { parts.append("mode:\(FlintSessionStartParameters.allowListMode)") }
+        return parts
     }
 
     private enum HarderGate: Equatable {
@@ -1182,6 +1547,8 @@ public final class FlintSessionController {
         guard let session = resolved.session else {
             if !resolved.releaseAlreadyObserved { env.shield.clear() }
             store?.clearSessionSelection()
+            // No parent means every planned-rest carrier is an orphan.
+            stopOrphanPomodoroCarriers(keepingToken: nil)
             FlintSessionHealth.update(in: env.healthDefaults()) { $0.unauthorizedSince = nil }
             return FlintSessionReconcileReport(outcome: .noSession)
         }
@@ -1207,12 +1574,13 @@ public final class FlintSessionController {
             $0.unauthorizedSince = report.notAuthorized ? ($0.unauthorizedSince ?? now) : nil
         }
 
+        var zoneMoved = false
+        var drifted = false
         if let store, session.endsAt != nil {
-            let zoneMoved = !FlintSessionAutoClearPlan.isCurrent(for: session, in: env.clock.calendar())
+            zoneMoved = !FlintSessionAutoClearPlan.isCurrent(for: session, in: env.clock.calendar())
             let missing = !env.registrar.registeredActivityNames().contains(session.monitorName)
             // A same-boot wall-clock change moved the registered wall end away from the logical
             // end: re-register so iOS ends it at the right moment (ADR-012 §9).
-            var drifted = false
             if let wallEnd = session.endsAt, let logicalEnd = session.logicalEnd(clock: env.clock) {
                 drifted = abs(wallEnd.timeIntervalSince(logicalEnd)) > FlintTimeIntegrity.discontinuityThreshold
             }
@@ -1228,15 +1596,114 @@ public final class FlintSessionController {
 
         // Re-read after registration repair and right before writing: the monitor may have
         // ended this session. Never re-apply Safari without a dependable end for a timed cause.
-        if let store, let current = store.loadActiveSession(), current.id == session.id,
-           let selection = sessionSelection(for: current, in: store) {
-            try? env.shield.applyBlockList(selection)
-            if current.endsAt == nil || env.registrar.registeredActivityNames().contains(current.monitorName) {
-                env.webRestrictions.reconcile(current, clock: env.clock)
+        // A Pomodoro parent in a planned rest clears its own store instead (design §4), and
+        // applyShield picks the block-list or allow-list write for the session's mode (F02).
+        if let store, let current = store.loadActiveSession(), current.id == session.id {
+            if let choice = sessionSelection(for: current, in: store) {
+                if current.isInPomodoroRest(clock: env.clock) {
+                    env.shield.clear()
+                } else {
+                    try? Self.applyShield(choice, for: current, shield: env.shield)
+                    if current.endsAt == nil || env.registrar.registeredActivityNames().contains(current.monitorName) {
+                        env.webRestrictions.reconcile(current, clock: env.clock)
+                    }
+                }
             }
+            if let plan = current.pomodoro {
+                // A time-zone change or forward clock jump moved the rest carriers' wall
+                // instants: re-register the future ones from logical time, bounded by the
+                // existing clock-rearm budget (design §4).
+                repairPomodoroCarriers(current, plan: plan, in: store, now: now, wallMoved: zoneMoved || drifted)
+                if let updated = store.loadActiveSession(), updated.id == current.id {
+                    observePlannedRests(updated, plan: plan, in: store, now: now)
+                }
+            }
+            stopOrphanPomodoroCarriers(keepingToken: current.pomodoro == nil ? nil : Self.pomodoroChainToken(for: current))
+        } else {
+            stopOrphanPomodoroCarriers(keepingToken: nil)
         }
 
         return report
+    }
+
+    /// Register the rest carriers that are missing for the chain's remaining rests, anchored to
+    /// the parent's logical times. After a time-zone change or a same-boot wall-clock drift the
+    /// existing registrations land on the wrong wall instants, so the remaining ones are replaced.
+    /// A rest already under way is re-armed from now to its logical end, so focus still resumes
+    /// on time without the host. Bounded by the clock-change re-arm budget so a device that keeps
+    /// dropping registrations cannot drain the shared pool.
+    private func repairPomodoroCarriers(_ session: FlintActiveSession, plan: FlintPomodoroPlan,
+                                        in store: FlintSessionStateStoring, now: Date,
+                                        wallMoved: Bool) {
+        // The budget bounds re-registering carriers iOS dropped. A real time-zone change or wall
+        // drift always re-times the remaining rests in place (same names, no extra pool slots).
+        guard let elapsed = session.pomodoroElapsed(clock: env.clock),
+              wallMoved || (session.clockRearmCount ?? 0) < Self.maximumClockChangeRearms else { return }
+        let names = Self.pomodoroCarrierNames(for: session)
+        let registered = env.registrar.registeredActivityNames()
+        // The chain's wall-equivalent start after any same-boot clock change.
+        let anchor = now.addingTimeInterval(-elapsed)
+        var registeredAny = false
+        for rest in plan.rests {
+            let restStart = anchor.addingTimeInterval(rest.start)
+            let restEnd = anchor.addingTimeInterval(rest.end)
+            // A finished rest has no boundary left to arm.
+            guard restEnd > now, rest.index - 1 < names.count else { continue }
+            let name = names[rest.index - 1]
+            guard wallMoved || !registered.contains(name) else { continue }
+            // A rest under way keeps only its end: its carrier restarts now, and the §4 deadline
+            // adapter's whole-minute warning lands at, or under a minute after, the logical rest
+            // end (never before it: an early wake-up would find the rest still open).
+            let carrier = restStart > now
+                ? Self.pomodoroCarrierPlan(rest: rest, start: anchor, calendar: env.clock.calendar())
+                : FlintSessionAutoClearPlan.make(start: FlintSessionAutoClearPlan.wholeSecond(atOrAfter: now),
+                                                 end: restEnd, calendar: env.clock.calendar(),
+                                                 strategy: .endWarning)
+            // `DeviceActivityCenter` replaces the schedule for an existing name, so a repair
+            // re-registers in place without a window in which the boundary cannot fire.
+            do {
+                try env.registrar.startMonitoring(name, plan: carrier)
+                registeredAny = true
+            } catch {
+                FlintSessionHealth.update(in: env.healthDefaults()) {
+                    $0.lastArmFailure = .init(sessionName: session.name,
+                        reason: String(describing: error), at: now)
+                }
+            }
+        }
+        guard registeredAny else { return }
+        // Spend one clock re-arm so the repair loop stays bounded across launches.
+        let bounded = FlintActiveSession(
+            id: session.id, name: session.name, startedAt: session.startedAt,
+            endsAt: session.endsAt, breakLevel: session.breakLevel,
+            monitorName: session.monitorName, monotonicStart: session.monotonicStart,
+            bootSessionID: session.bootSessionID,
+            autoClearTimeZoneID: session.autoClearTimeZoneID,
+            autoClearUTCOffset: session.autoClearUTCOffset,
+            usesEndWarning: session.usesEndWarning, rearmCount: session.rearmCount,
+            lastRearmAt: session.lastRearmAt, contractVersion: session.contractVersion,
+            origin: session.origin, ownerID: session.ownerID,
+            plannedDuration: session.plannedDuration, startRequestID: session.startRequestID,
+            clockRearmCount: (session.clockRearmCount ?? 0) + 1,
+            remainingCheckpoint: session.remainingCheckpoint,
+            naturalEndObservedAt: session.naturalEndObservedAt,
+            removalGuard: session.removalGuard, pomodoro: session.pomodoro,
+            pomodoroObservedPhase: session.pomodoroObservedPhase)
+        if store.loadActiveSession() == session { store.saveActiveSession(bounded) }
+        _ = env.ledger()?.transaction { state in
+            try? state.sessionAuthority?.checkpoint(bounded)
+        }
+    }
+
+    /// Every `flint.pomo.*` registration that does not belong to the current parent is stale:
+    /// a callback from it can only delay or release the wrong chain, so it is deregistered.
+    private func stopOrphanPomodoroCarriers(keepingToken token: String?) {
+        let names = env.registrar.registeredActivityNames().filter { name in
+            guard Self.isPomodoroCarrier(name) else { return false }
+            return token == nil || Self.pomodoroToken(of: name) != token
+        }
+        guard !names.isEmpty else { return }
+        env.registrar.stopMonitoring(names.sorted())
     }
 
     /// `clockChange`: the interval ended early because the wall clock moved ahead — not iOS
@@ -1249,9 +1716,19 @@ public final class FlintSessionController {
     public static let repairInterval: TimeInterval = 60
 
     /// The session's own frozen targets; sessions saved by older builds have no snapshot and
-    /// fall back to the picker selection they were started from.
+    /// fall back to the picker selection they were started from. Two cases never fall back,
+    /// because the picker no longer describes this session:
+    ///  - an Allow List session: the picker is the block-list default, and re-applying it would
+    ///    replace its allow list with a different shield. No snapshot means no re-apply — never
+    ///    a clear, never a block-list write;
+    ///  - a snapshot saved for another session: that later start already rewrote the picker
+    ///    (snapshot, record, then picker), so nothing is re-applied and this session's last-good
+    ///    native targets stay as they are (R-04).
     private func sessionSelection(for session: FlintActiveSession, in store: FlintSessionStateStoring) -> FamilyActivitySelection? {
-        store.loadSessionSelection(sessionID: session.id) ?? store.loadSelection()
+        if let frozen = store.loadSessionSelection(sessionID: session.id) { return frozen }
+        if session.isAllowList { return nil }
+        if let owner = store.sessionSelectionOwner(), owner != session.id { return nil }
+        return store.loadSelection()
     }
 
     /// Re-register `session`'s auto-clear for its remaining time under a fresh name: register
@@ -1412,9 +1889,14 @@ public final class FlintSessionController {
                 handleMonitorEvent(.intervalDidEnd, activity: activity)
                 return
             }
-            if let store, let selection = sessionSelection(for: session, in: store) {
-                try? env.shield.applyBlockList(selection)
-                env.webRestrictions.reconcile(session, clock: env.clock)
+            if let store, sessionSelection(for: session, in: store) != nil {
+                // A Pomodoro parent replays its phase: focus applies the shield, a rest keeps it
+                // clear. An early callback therefore never releases during focus (design §4).
+                if session.pomodoro != nil {
+                    reconcilePomodoroPhase(session, in: store, now: now)
+                } else {
+                    writePhaseShield(session, in: store)
+                }
             }
 
         case .intervalWillEndWarning, .intervalDidEnd:
@@ -1429,6 +1911,9 @@ public final class FlintSessionController {
                 // whose latency is recorded too (PC-76).
                 let observation = FlintLedgerInstant(clock: env.clock)
                 let lateness = max(0, session.logicalOverrun(clock: observation.clock) ?? 0)
+                if let plan = session.pomodoro {
+                    observePlannedRests(session, plan: plan, in: store, now: observation.wall, persist: false)
+                }
                 guard persistence.terminate(session,
                     outcome: lateness > FlintTimeIntegrity.onTimeWindow ? .unconfirmed : .completed,
                     route: lateness > FlintTimeIntegrity.onTimeWindow ? "natural_end_unconfirmed" : "completed",
@@ -1444,7 +1929,7 @@ public final class FlintSessionController {
                 }
                 store?.clearActiveSession()
                 store?.clearSessionSelection()
-                env.registrar.stopMonitoring([activity])
+                stopSessionRegistrations(session, also: [activity])
             } else if event == .intervalDidEnd, let store {
                 // The interval is over, but the session isn't: keep the shield, re-register. A
                 // forward wall-clock jump explains it, as does a wait that ended short of the
@@ -1508,8 +1993,14 @@ final class LiveSessionShield: FlintSessionShielding {
         )
     }
 
+    func applyAllowList(_ selection: FamilyActivitySelection) throws {
+        try store.applyAllowList(allowedApplications: selection.applicationTokens)
+    }
+
 
     func clear() { store.clear() }
+
+    func retainsAppliedSettings() -> Bool { store.hasAppliedSettings }
 }
 
 final class LiveSessionRegistrar: FlintSessionActivityRegistering {

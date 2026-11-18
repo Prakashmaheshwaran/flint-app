@@ -52,10 +52,13 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.flint.peakfocus.core.common.theme.FlintMotion
 import com.flint.peakfocus.core.common.theme.FlintNumerals
+import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.R
 
@@ -68,7 +71,7 @@ import com.flint.peakfocus.core.common.R
  * FlintScene.kt.
  */
 
-/** The screen-opening signature: the quiet mist eyebrow over the serif display title. */
+/** The screen-opening signature: the quiet mist eyebrow over the Hanken 32/700 title. */
 @Composable
 fun FlintScreenHeader(title: String, eyebrow: String? = null, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(FlintSpacing.sm)) {
@@ -261,10 +264,15 @@ fun FlintBadge(text: String, emphasized: Boolean = false, modifier: Modifier = M
 
 /** Pill for live values; [spokenText] can replace abbreviated visual copy for screen readers. */
 @Composable
-fun FlintInfoPill(text: String, modifier: Modifier = Modifier, spokenText: String? = null) {
+fun FlintInfoPill(
+    text: String,
+    modifier: Modifier = Modifier,
+    spokenText: String? = null,
+    emphasized: Boolean = true,
+) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        color = if (emphasized) FlintPalette.EmberChip else FlintPalette.BoneFill,
+        contentColor = if (emphasized) FlintPalette.EmberText else FlintPalette.Mist,
         shape = RoundedCornerShape(percent = 50),
         modifier = if (spokenText != null) {
             modifier.clearAndSetSemantics { contentDescription = spokenText }
@@ -274,9 +282,80 @@ fun FlintInfoPill(text: String, modifier: Modifier = Modifier, spokenText: Strin
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.titleSmall.merge(FlintNumerals),
-            modifier = Modifier.padding(horizontal = FlintSpacing.md, vertical = FlintSpacing.sm),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 12.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            ).merge(FlintNumerals),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
         )
+    }
+}
+
+/** v3 section heading: Hanken 16/600, sentence case ("Resting now", "Break level"). */
+@Composable
+fun FlintSectionTitle(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = modifier,
+    )
+}
+
+/**
+ * The one status pill vocabulary of v3: an ember "1h 02m left" chip, a quiet "Next · 17:30"
+ * chip, or a live dot + "Protected". [dot] draws the 7dp ember glow; [emphasized] picks the
+ * ember tint over the neutral bone fill.
+ */
+@Composable
+fun FlintStatusPill(
+    text: String,
+    modifier: Modifier = Modifier,
+    emphasized: Boolean = true,
+    dot: Boolean = false,
+    spokenText: String? = null,
+) {
+    Surface(
+        color = if (emphasized) FlintPalette.EmberChip else FlintPalette.BoneFill,
+        contentColor = if (emphasized) FlintPalette.EmberText else FlintPalette.Mist,
+        shape = RoundedCornerShape(percent = 50),
+        border = if (dot) BorderStroke(1.dp, FlintPalette.Divider) else null,
+        modifier = if (spokenText != null) {
+            modifier.clearAndSetSemantics { contentDescription = spokenText }
+        } else {
+            modifier
+        },
+    ) {
+        Row(
+            Modifier.padding(
+                start = if (dot) 10.dp else 10.dp,
+                end = 10.dp,
+                top = 5.dp,
+                bottom = 5.dp,
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            if (dot) {
+                Box(
+                    Modifier
+                        .size(7.dp)
+                        .background(if (emphasized) FlintPalette.Ember else FlintPalette.Stone, CircleShape)
+                        .flintPulse(),
+                )
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 12.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -356,17 +435,17 @@ fun FlintTimeField(
         modifier = modifier,
     ) {
         Column(
-            Modifier.padding(horizontal = FlintSpacing.md, vertical = FlintSpacing.sm + FlintSpacing.xs),
-            verticalArrangement = Arrangement.spacedBy(FlintSpacing.xs),
+            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = label.uppercase(),
-                style = MaterialTheme.typography.labelMedium,
+                text = label,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 16.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = if (parsed != null) valueText else "--:--",
-                style = MaterialTheme.typography.titleLarge.merge(FlintNumerals),
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 26.sp, lineHeight = 30.sp).merge(FlintNumerals),
             )
         }
     }

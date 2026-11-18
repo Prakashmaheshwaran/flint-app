@@ -22,10 +22,10 @@ checks actual bundled privacy manifests, and rejects known DEBUG fixture markers
 
 ## Targets and data boundaries
 
-The host `com.flint.peakfocus` embeds four Screen Time extensions
+The host `app.flint.focus` embeds four Screen Time extensions
 (`.monitor`, `.shield-config`, `.shield-action`, `.report`) plus the
 WidgetKit extension declared in project.yml. The Screen Time bundles use Family Controls
-and `group.com.flint.peakfocus`; the widget uses its declared App Group and does not
+and `group.app.flint.focus`; the widget uses its declared App Group and does not
 acquire enforcement authority. Shared logic lives in the local
 [FlintCore package](Packages/FlintCore).
 
@@ -65,9 +65,11 @@ Shortcut intents. Known boundaries at this checkpoint:
 
 - Future date-specific one-shot scheduling is absent; recurring later-week windows are
   distinct from arbitrary future dates. The Social detox preset has a 23:59–00:00 gap.
-- The Pomodoro intent exposes one focus round; legacy cadence arguments neither chain
-  rounds nor overwrite the saved in-app cadence. Full focus/rest chaining and immediate
-  Allow List sessions are absent.
+- The Pomodoro intent now starts a whole focus/rest chain (F01): one parent session with a frozen
+  plan (focus, rest, rounds, optional long rest) and one pre-registered rest carrier per rest.
+  A single round stays one ordinary focus session. Physical DeviceActivity delivery of rest
+  carriers and the restart/clock-change paths remain device gates. Immediate Allow List
+  sessions are still absent.
 - Open credits are enabled by [#189](https://github.com/Prakashmaheshwaran/flint-app/pull/189).
   R-12 is source-complete, runtime **DEVICE-PENDING**, with a hard pre-release signed-device
   PC-28..38 gate: killed-host 300 s expiry, midnight, re-registration and lock contention.

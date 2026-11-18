@@ -23,16 +23,57 @@ class TimerArmingTest {
         assertTrue(phase(checked.copy(detectors = checked.detectors.copy(accessibilityConnected = false))) is TimerArmingState.Degraded)
     }
 
-    @Test fun `PC-61 Path B needs Usage Access and live enforcing mode without Accessibility or overlay`() {
+    @Test fun `P0-1 Path B with Usage Access and overlay arms without Accessibility`() {
         val checked = readyTimerStatus(at(), listOf(id))
-        val fallback = TimerPermissions(usageAccess = true)
+        val overlay = TimerPermissions(usageAccess = true, overlayGranted = true)
+        val status = checked.copy(detectors = checked.detectors.copy(accessibilityConnected = false, pathB = ProtectionStatus.PathBState.ENFORCING))
+        assertTrue(phase(status, permission = overlay, live = false) is TimerArmingState.Armed)
+    }
+
+    @Test fun `P0-1 Path B polling without an overlay surface never arms and names the missing grant`() {
+        val checked = readyTimerStatus(at(), listOf(id))
+        val noOverlay = TimerPermissions(usageAccess = true)
         for (mode in ProtectionStatus.PathBState.entries) {
             val status = checked.copy(detectors = checked.detectors.copy(accessibilityConnected = false, pathB = mode))
-            assertEquals(mode.name, mode == ProtectionStatus.PathBState.ENFORCING,
-                phase(status, permission = fallback, live = false) is TimerArmingState.Armed)
+            val result = phase(status, permission = noOverlay, live = false)
+            assertTrue(mode.name, result is TimerArmingState.Degraded)
+            if (mode == ProtectionStatus.PathBState.ENFORCING)
+                assertTrue((result as TimerArmingState.Degraded).reason.contains("Display over other apps"))
         }
-        val enforcing = checked.copy(detectors = checked.detectors.copy(pathB = ProtectionStatus.PathBState.ENFORCING))
-        assertTrue(phase(enforcing, permission = fallback.copy(usageAccess = false), live = false) is TimerArmingState.Degraded)
+    }
+
+    @Test fun `P0-1 usage access without a live enforcing detector never arms`() {
+        val checked = readyTimerStatus(at(), listOf(id))
+        val usage = TimerPermissions(usageAccess = true, overlayGranted = true)
+        for (mode in listOf(ProtectionStatus.PathBState.OFF, ProtectionStatus.PathBState.STANDBY, ProtectionStatus.PathBState.UNKNOWN)) {
+            val status = checked.copy(detectors = checked.detectors.copy(accessibilityConnected = false, pathB = mode))
+            assertTrue(mode.name, phase(status, permission = usage, live = false) is TimerArmingState.Degraded)
+        }
+    }
+
+    @Test fun `P0-1 start refuses a Path B only session without overlay before any write`() {
+        val checked = readyTimerStatus(at(), listOf(id))
+        val status = checked.copy(detectors = checked.detectors.copy(accessibilityConnected = false, pathB = ProtectionStatus.PathBState.ENFORCING))
+        assertEquals("Flint can see app opens but cannot block yet. Allow Display over other apps, or turn on the Flint Accessibility service.",
+            timerPrerequisiteFailure(status, TimerPermissions(usageAccess = true), false, at()))
+    }
+
+    @Test fun `P2-4 planner tolerates a recently resolved floor but refuses a stale one`() {
+        val fresh = readyTimerStatus(at(30_000), listOf(id))
+        // 30s-old resolution is inside the display horizon: arming proceeds on Path A.
+        val recentFloor = fresh.copy(safetyFloor = fresh.safetyFloor!!.copy(checkedAtElapsedRealtimeMs = at(0).elapsedRealtimeMs))
+        assertNull(timerPrerequisiteFailure(recentFloor, TimerPermissions(accessibilityEnabled = true), true, at(30_000)))
+        assertEquals(TimerArmingState.Armed(id, at(30_000)), phase(recentFloor, now = at(30_000)))
+        // Past the 60s display horizon the start is refused until the floor re-resolves.
+        assertEquals("Calling or Home safety could not be checked. Retry before starting protection.",
+            timerPrerequisiteFailure(recentFloor, TimerPermissions(accessibilityEnabled = true), true, at(61_000)))
+    }
+
+    @Test fun `P0-1 live Path A arms only when connected and healthy`() {
+        val checked = readyTimerStatus(at(), listOf(id))
+        assertTrue(phase(checked) is TimerArmingState.Armed)
+        assertTrue(phase(checked.copy(detectors = checked.detectors.copy(accessibilityConnected = false))) is TimerArmingState.Degraded)
+        assertTrue(phase(checked, live = false) is TimerArmingState.Degraded)
     }
 
     @Test fun `PC-61 PC-73 stale expired future or wrong-boot checks cannot arm`() {
@@ -55,7 +96,7 @@ class TimerArmingTest {
             checked.copy(safetyFloor = floor.copy(checkedAtElapsedRealtimeMs = null)),
             checked.copy(safetyFloor = floor.copy(checkedAtElapsedRealtimeMs = at(1).elapsedRealtimeMs)))
             .forEach { assertTrue(phase(it) is TimerArmingState.Degraded) }
-        assertTrue(phase(readyTimerStatus(at(30_000), listOf(id)).copy(safetyFloor = floor), now = at(30_000)) is TimerArmingState.Degraded)
+        assertTrue(phase(readyTimerStatus(at(61_000), listOf(id)).copy(safetyFloor = floor), now = at(61_000)) is TimerArmingState.Degraded)
     }
 
     @Test fun `PC-01 PC-65 durable save and wrong-ID or pre-commit observations remain Applying`() {
@@ -87,6 +128,21 @@ class TimerArmingTest {
         val armed = attempt().copy(hadArmed = true)
         assertTrue(phase(readyTimerStatus(at(1)), now = at(1), attempt = armed) is TimerArmingState.Degraded)
         assertTrue(phase(readyTimerStatus(at(1), listOf(id)), now = at(1), attempt = armed, live = false) is TimerArmingState.Degraded)
+    }
+
+    @Test fun `R-30 a failed or fallback-only shield mount withholds Armed until a primary mount clears it`() {
+        val checked = readyTimerStatus(at(), listOf(id))
+        fun withReason(reason: String) = checked.copy(detectors = checked.detectors.copy(degradedReasons = setOf(reason)))
+        for (reason in listOf(ProtectionStatus.REASON_BLOCK_SURFACE_MOUNT_FAILED, ProtectionStatus.REASON_BLOCK_SURFACE_FALLBACK_ONLY)) {
+            for (attempt in listOf(attempt(), attempt().copy(hadArmed = true))) {
+                val degraded = phase(withReason(reason), attempt = attempt) as TimerArmingState.Degraded
+                assertTrue(reason, degraded.committed)
+                assertTrue(reason, degraded.reason.contains("saved end time is unchanged"))
+            }
+            // Start stays available: refusing a new Timer would only remove protection.
+            assertNull(timerPrerequisiteFailure(withReason(reason), permissions, true, at()))
+        }
+        assertTrue(phase(checked) is TimerArmingState.Armed)
     }
 
     @Test fun `PC-58 restored Timer can use current proof but a cross-boot new-start acknowledgement cannot`() {

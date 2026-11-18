@@ -84,11 +84,25 @@ internal fun coordinatorGlanceReading(status: CoordinatorStatus): ProtectionRead
                 BreakLevel.EASY -> GlanceTier.EASY
                 BreakLevel.HARDER -> GlanceTier.HARDER
                 BreakLevel.HARDCORE -> GlanceTier.HARDCORE
-            }, selected.logicalEndElapsedRealtimeMs, kind))
+            }, selected.logicalEndElapsedRealtimeMs, kind,
+            phase = selected.pomodoroPhase?.let { phase ->
+                when (phase.kind) {
+                    com.flint.peakfocus.core.model.PomodoroPhaseKind.FOCUS ->
+                        "Focus round ${phase.round} of ${selected.pomodoroRounds}"
+                    com.flint.peakfocus.core.model.PomodoroPhaseKind.REST -> "Rest"
+                    com.flint.peakfocus.core.model.PomodoroPhaseKind.LONG_REST -> "Long rest"
+                }
+            },
+            phaseEndsAtEpochMs = selected.pomodoroPhaseEndsAtEpochMs,
+            resting = selected.pomodoroPhase?.let { !it.isFocus } == true))
 }
 
 private val focusKinds = setOf(CoordinatorStatus.CauseKind.SESSION, CoordinatorStatus.CauseKind.TIMER)
-private val contextualReasons = listOf("path-b-backup-unavailable", "time-limits-need-usage-access")
+private val contextualReasons = listOf(
+    "path-b-backup-unavailable",
+    "time-limits-need-usage-access",
+    "time-limit-measurement-unavailable",
+)
 private fun displayName(name: String, kind: CoordinatorStatus.CauseKind) =
     CoordinatorStatus.sanitizeDisplayName(name).ifBlank { causeName(kind) }
 private fun causeName(kind: CoordinatorStatus.CauseKind) = when (kind) {

@@ -856,6 +856,7 @@ private final class WebSessionShield: FlintSessionShielding {
     }
     func setDenyAppRemoval(_ deny: Bool) {}
     func clear() { writer.clearAllSettings(store: "flint") }
+    func retainsAppliedSettings() -> Bool { false }
 }
 
 private struct WebTestRefusal: Error {}

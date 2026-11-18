@@ -129,4 +129,10 @@ class GlanceHealthReasonsTest {
         val displayed = display(source)
         assertFalse(OngoingNotificationPlan.from(displayed, 130_000).text.contains("Usage access"))
     }
+
+    @Test fun r30MountFailureReasonsTakeTheConservativeDegradedBranch() {
+        for (reason in listOf(C.REASON_BLOCK_SURFACE_MOUNT_FAILED, C.REASON_BLOCK_SURFACE_FALLBACK_ONLY)) {
+            assertEquals(reason, "Protection degraded", display(withReasons(ready, setOf(reason))).status)
+        }
+    }
 }

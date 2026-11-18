@@ -132,6 +132,7 @@ private final class ControllerNotificationShield: FlintSessionShielding {
     func applyBlockList(_ selection: FamilyActivitySelection) throws {}
     func setDenyAppRemoval(_ deny: Bool) {}
     func clear() {}
+    func retainsAppliedSettings() -> Bool { false }
 }
 
 private final class ControllerNotificationRegistrar: FlintSessionActivityRegistering {

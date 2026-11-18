@@ -2,8 +2,10 @@ package com.flint.peakfocus.feature.blocklist
 
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -44,13 +46,13 @@ class TimerAppPickerTest {
         showPicker()
         compose.onNodeWithText("2 SELECTED").assertExists()
         compose.onNodeWithText("2").assertExists() // Footer count.
-        compose.onNodeWithText("Add · 2").assertIsNotEnabled()
+        compose.onNodeWithText("Done · 2 apps").assertIsNotEnabled()
 
         compose.onNodeWithText("Camera").performClick()
 
         compose.onNodeWithText("1 SELECTED").assertExists()
         compose.onNodeWithText("1").assertExists() // Footer count.
-        compose.onNodeWithText("Add · 1").assertIsEnabled()
+        compose.onNodeWithText("Done · 1 app").assertIsEnabled()
     }
 
     @Test fun `searching keeps the pending count while the draft is unchanged`() {
@@ -60,6 +62,22 @@ class TimerAppPickerTest {
 
         compose.onNodeWithText("1 SELECTED").assertExists()
         compose.onNodeWithText("1").assertExists() // Footer count.
-        compose.onNodeWithText("Add · 1").assertIsEnabled()
+        compose.onNodeWithText("Done · 1 app").assertIsEnabled()
+    }
+
+    @Test fun `allow-list mode asks which apps stay available and claims the rest are blocked`() {
+        compose.setContent {
+            TimerAppPicker(
+                appsState = InstalledAppsUiState.Ready(apps),
+                initiallySelected = draft,
+                onConfirm = {},
+                onCancel = {},
+                allowListMode = true,
+            )
+        }
+        compose.onNodeWithText("What stays available").assertExists()
+        compose.onNodeWithText("Every other app is blocked while this timer runs.").assertExists()
+        // The picker's own floor note already says these governed surfaces are never blocked.
+        compose.onAllNodesWithText("What rests").assertCountEquals(0)
     }
 }

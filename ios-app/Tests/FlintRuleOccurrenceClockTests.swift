@@ -47,6 +47,76 @@ final class FlintRuleOccurrenceClockTests: XCTestCase {
         XCTAssertEqual(h.center.stops.flatMap { $0 }, [rule.activityName], "R-07: release exactly once")
     }
 
+    // R-07 residual: an ADR-012 record without a trusted anchor (pre-PC-54 upgrade, or the
+    // optional field selectively lost) must not adopt a jumped wall date. Wall moves
+    // 10:00 → 18:00 with no elapsed time before the first observation of that record.
+    func testR07AnchorlessUpgradeFixtureCannotReleaseOnJumpedWallTime() throws { try exerciseAnchorless(.upgradeFixture) }
+    func testR07LostAnchorCannotReleaseOnJumpedWallTime() throws { try exerciseAnchorless(.lostAnchor) }
+    func testR07LostAnchorCannotMakeQueuedOffDueOnJumpedWallTime() throws { try exerciseAnchorless(.lostAnchorQueued) }
+    func testR07LostAnchorAndOccurrenceKeepQueueWindowAsEvidence() throws { try exerciseAnchorless(.lostAnchorAndOccurrenceQueued) }
+
+    private enum AnchorlessSeed { case upgradeFixture, lostAnchor, lostAnchorQueued, lostAnchorAndOccurrenceQueued }
+    private func exerciseAnchorless(_ seed: AnchorlessSeed) throws {
+        let h = try RuleHarness(); defer { h.clean() }
+        let formatter = ISO8601DateFormatter()
+        h.now = formatter.date(from: "2026-10-28T10:00:00Z")!
+        let key = FlintRuleStoreKey.schedules.rawValue
+        let arbiter = FlintRuleArbiter(environment: h.environment)
+        if seed == .upgradeFixture {
+            XCTAssertTrue(FlintRuleStoreLock.prepareInitialization(environment: h.environment))
+            // Checked-in Hardcore 09:00–17:00 UTC occurrence on 2026-10-28, no anchor.
+            h.defaults.set(try JSONSerialization.data(withJSONObject: [RuleFixture.object("adr012-schedule-without-anchor")]),
+                forKey: key)
+            let seeded = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+            h.center.held[.init(seeded.activityName)] = seeded.registration()
+        } else {
+            let installed = h.install(h.schedule(tier: .hardcore))
+            if seed != .lostAnchor {
+                guard case let .deferRequired(ticket, end) = arbiter.setEnabled(FlintScheduleRule.self, id: installed.id,
+                    enabled: false, revision: installed.revision, confirmation: nil) else { return XCTFail() }
+                XCTAssertEqual(arbiter.setEnabled(FlintScheduleRule.self, id: installed.id, enabled: false,
+                    revision: installed.revision, confirmation: ticket), .queued(until: end))
+            }
+            var objects = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(h.defaults.data(forKey: key))) as? [[String: Any]])
+            var protection = try XCTUnwrap(objects[0]["protection"] as? [String: Any])
+            XCTAssertNotNil(protection.removeValue(forKey: "timeAnchor"))
+            if seed == .lostAnchorAndOccurrenceQueued { XCTAssertNotNil(protection.removeValue(forKey: "occurrence")) }
+            objects[0]["protection"] = protection
+            h.defaults.set(try JSONSerialization.data(withJSONObject: objects), forKey: key)
+        }
+        let rule = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        XCTAssertEqual(rule.protection?.timeAnchor?.isValid, false, "absence is not trusted time")
+        h.now = formatter.date(from: "2026-10-28T18:00:00Z")! // same boot, no elapsed advancement
+
+        if seed == .upgradeFixture || seed == .lostAnchor {
+            guard case let .deferRequired(ticket, end) = arbiter.setEnabled(FlintScheduleRule.self, id: rule.id,
+                enabled: false, revision: rule.revision, confirmation: nil) else {
+                return XCTFail("R-07: an anchorless active Hardcore occurrence must defer, not release")
+            }
+            XCTAssertEqual(arbiter.setEnabled(FlintScheduleRule.self, id: rule.id, enabled: false,
+                revision: rule.revision, confirmation: ticket), .queued(until: end))
+        }
+        XCTAssertTrue(arbiter.applyQueued(FlintScheduleRule.self))
+        let retained = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
+        XCTAssertTrue(retained.enabled, "R-07: wall time cannot make the queued off due")
+        XCTAssertNotNil(retained.protection?.queuedChange)
+        XCTAssertEqual(retained.protection?.timeAnchor?.isValid, true, "first observation establishes a trusted anchor")
+        XCTAssertTrue(h.cleared.isEmpty)
+        XCTAssertTrue(h.center.stops.isEmpty)
+        XCTAssertTrue(h.reports["ruleTime.schedules"]?.failures.contains { $0.reason.hasPrefix("time_uncertain") } == true,
+            "uncertainty must be exposed")
+        // Bounded: release needs no more than the retained 8-hour occurrence of trusted time.
+        h.advance(8 * 3600 - 60)
+        XCTAssertTrue(arbiter.applyQueued(FlintScheduleRule.self))
+        XCTAssertTrue(h.cleared.isEmpty)
+        h.advance(60)
+        XCTAssertTrue(arbiter.applyQueued(FlintScheduleRule.self))
+        XCTAssertFalse(try XCTUnwrap(h.load(FlintScheduleRule.self).first).enabled)
+        XCTAssertEqual(h.cleared, [rule.storeName])
+        XCTAssertTrue(arbiter.applyQueued(FlintScheduleRule.self))
+        XCTAssertEqual(h.cleared, [rule.storeName], "release exactly once")
+    }
+
     func testHardcoreQueueCannotApplyAtForwardWallEndPC54() throws {
         let h = try RuleHarness(); defer { h.clean() }
         let initial = h.install(h.schedule(tier: .hardcore))

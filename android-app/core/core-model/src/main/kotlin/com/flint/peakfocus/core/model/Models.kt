@@ -1,5 +1,7 @@
 package com.flint.peakfocus.core.model
 
+import java.time.LocalDate
+
 /**
  * Difficulty of breaking or stopping a block early.
  *
@@ -51,11 +53,19 @@ data class AppGroup(
 /**
  * A schedule window. [daysOfWeek] uses ISO numbering (1 = Monday … 7 = Sunday);
  * empty means every day.
+ *
+ * [date] makes this a **one-time** window: exactly one occurrence, starting on that calendar
+ * date at [startMinuteOfDay] in the rule's saved zone ([BlockRule] `runtime.zoneId`), ending at
+ * [endMinuteOfDay] — the next day when the end is at or before the start (overnight). A dated
+ * schedule never repeats and is never gated weekly, so [daysOfWeek] is empty for it. The date is
+ * any distance ahead; it is resolved through `ScheduleOccurrences`, so the DST endpoint policy
+ * and the once-per-start-date replay guard are the same ones recurring schedules use.
  */
 data class Schedule(
     val daysOfWeek: Set<Int> = emptySet(),
     val startMinuteOfDay: Int,
     val endMinuteOfDay: Int,
+    val date: LocalDate? = null,
 )
 
 /**
@@ -76,6 +86,12 @@ data class BlockRule(
     val breakLevel: BreakLevel = BreakLevel.EASY,
     val enabled: Boolean = true,
     val expiresAtEpochMs: Long? = null,
+    /**
+     * F01 Pomodoro parent: the frozen focus/rest plan accepted with this rule. Null for every
+     * plain Timer and rule. [expiresAtEpochMs] is the chain end; the current phase follows from
+     * the trusted elapsed time (see `RuleClockProjection`), never from wall time.
+     */
+    val pomodoro: PomodoroPlan? = null,
     /** Transient occurrence authority supplied by the editor bridge; never serialized. */
     val runtime: RuleRuntime? = null,
 ) {

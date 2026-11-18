@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Insights</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <div aria-hidden="true" style="position: absolute; left: 0; right: 0; top: 0; height: 240px; background: radial-gradient(ellipse 70% 60% at 50% 0%, rgba(239, 159, 39, 0.12) 0%, rgba(239, 159, 39, 0) 100%), linear-gradient(180deg, #0A0C11 0%, #0E0D0F 100%)"></div>
+
+  <header style="position: absolute; left: 20px; right: 20px; top: 56px; display: flex; justify-content: space-between; align-items: center">
+    <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -0.6px">Insights</h1>
+    <div role="tablist" aria-label="Range" style="display: flex; gap: 2px; padding: 3px; border-radius: 17px; background: rgba(237, 230, 218, 0.07)">
+      <button type="button" role="tab" aria-selected="true" style="height: 32px; padding: 0 12px; border: none; border-radius: 14px; background: #EDE6DA; color: #141316; font-size: 13px; font-weight: 600">Today</button>
+      <button type="button" role="tab" aria-selected="false" style="height: 32px; padding: 0 12px; border: none; border-radius: 14px; background: transparent; color: #B7AE9F; font-size: 13px; font-weight: 600">7 days</button>
+    </div>
+  </header>
+
+  <section aria-label="Today versus your average" style="position: absolute; left: 20px; right: 20px; top: 118px; display: flex; flex-direction: column; gap: 18px; padding: 18px 16px 16px 16px; border-radius: 24px; background: #17161A; border: 1px solid rgba(237, 230, 218, 0.08)">
+    <p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.35; text-wrap: pretty">You focused <span style="color: #F4C27E">2h 40m</span> today, 48 min more than your 7-day average.</p>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: end; padding-top: 6px; border-top: 1px solid rgba(237, 230, 218, 0.08)">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 14px">
+        <div style="position: relative; width: 64px; height: 140px; display: flex; align-items: flex-end">
+          <div style="width: 64px; height: 110px; border-radius: 18px; background: linear-gradient(180deg, #F6B860 0%, #EF9F27 55%, rgba(239, 159, 39, 0.25) 100%)"></div>
+        </div>
+        <span style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+          <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 24px; font-variant-numeric: tabular-nums">3h 12m</span>
+          <span style="font-size: 12px; color: #B7AE9F">Screen time today</span>
+        </span>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 14px">
+        <div style="position: relative; width: 64px; height: 140px; display: flex; align-items: flex-end">
+          <div style="width: 64px; height: 140px; border-radius: 18px; background: linear-gradient(180deg, rgba(237, 230, 218, 0.22) 0%, rgba(237, 230, 218, 0.1) 60%, rgba(237, 230, 218, 0.03) 100%)"></div>
+        </div>
+        <span style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+          <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 24px; font-variant-numeric: tabular-nums; color: #B7AE9F">4h 05m</span>
+          <span style="font-size: 12px; color: #B7AE9F">Your 7-day average</span>
+        </span>
+      </div>
+    </div>
+    <span style="font-size: 12px; color: #9C9486; text-align: center">Measured on this phone. Nothing is uploaded.</span>
+  </section>
+
+  <section aria-label="Most reached for" style="position: absolute; left: 20px; right: 20px; top: 474px; display: flex; flex-direction: column">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px 8px 4px">
+      <span style="font-size: 16px; font-weight: 600">Most reached for</span>
+      <span style="font-size: 12px; color: #B7AE9F">opens stopped · time</span>
+    </div>
+    <sc-for list="{{apps}}" as="a" hint-placeholder-count="3">
+      <div style="display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 4px; border-top: 1px solid rgba(237, 230, 218, 0.07)">
+        <span style="{{a.tile}}">{{a.initial}}</span>
+        <span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px">
+          <span style="font-size: 14px; font-weight: 600">{{a.name}}</span>
+          <span style="height: 3px; border-radius: 2px; background: rgba(237, 230, 218, 0.08); width: 100%"><span style="{{a.fill}}"></span></span>
+        </span>
+        <span style="font-size: 13px; color: #B7AE9F; font-variant-numeric: tabular-nums; white-space: nowrap"><span style="color: #EDE6DA; font-weight: 600">{{a.opens}}</span> · {{a.time}}</span>
+      </div>
+    </sc-for>
+  </section>
+
+  <section aria-label="Focus this week" style="position: absolute; left: 20px; right: 20px; top: 668px; display: flex; flex-direction: column; gap: 8px">
+    <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: end; height: 40px">
+      <sc-for list="{{week}}" as="d" hint-placeholder-count="7">
+        <span style="{{d.bar}}"></span>
+      </sc-for>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; font-size: 11px; color: #9C9486; text-align: center">
+      <sc-for list="{{week}}" as="d" hint-placeholder-count="7">
+        <span style="{{d.label}}">{{d.day}}</span>
+      </sc-for>
+    </div>
+  </section>
+
+  <nav aria-label="Tabs" style="position: absolute; left: 20px; right: 20px; bottom: 24px; height: 68px; padding: 6px; box-sizing: border-box; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; border-radius: 34px; background: rgba(22, 21, 24, 0.9); border: 1px solid rgba(237, 230, 218, 0.1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px)">
+    <a href="M03-Today.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 28px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-4.2-7"></path><circle cx="18.6" cy="6.4" r="1.6" fill="currentColor" stroke="none"></circle></svg>
+      Today
+    </a>
+    <a href="M13-Rules.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 28px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+      Rules
+    </a>
+    <a href="M12-Insights.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 28px; background: rgba(237, 230, 218, 0.1); text-decoration: none; color: #EDE6DA; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 19v-6M12 19V6"></path><path d="M18 19v-9" stroke="#EF9F27"></path></svg>
+      Insights
+    </a>
+    <a href="M16-You.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 28px; text-decoration: none; color: #9C9486; font-size: 11px; font-weight: 500">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="9" r="3.5"></circle><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"></path></svg>
+      You
+    </a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const apps = [['Instagram', 'I', '#5C3344', 23, '48m', 1], ['YouTube', 'Y', '#5A2A2A', 11, '31m', 0.65], ['Reddit', 'R', '#6B3D2A', 8, '22m', 0.46]].map(([name, initial, bg, opens, time, f]) => ({
+      name, initial, opens, time,
+      tile: 'flex: 0 0 auto; width: 36px; height: 36px; border-radius: 11px; background: ' + bg + '; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #D8CFC0;',
+      fill: 'display: block; height: 3px; border-radius: 2px; background: #EF9F27; width: ' + Math.round(f * 100) + '%;'
+    }));
+    const days = [['M', 2.1], ['T', 3.0], ['W', 1.4], ['T', 2.6], ['F', 2.9], ['S', 2.67, true], ['S', null]];
+    const week = days.map(([day, v, today]) => ({
+      day,
+      label: today ? 'color: #EDE6DA; font-weight: 700;' : '',
+      bar: v == null
+        ? 'height: 4px; border-radius: 2px; border: 1px dashed rgba(237,230,218,0.2); box-sizing: border-box;'
+        : 'height: ' + Math.round(v / 3 * 40) + 'px; border-radius: 4px; background: ' + (today ? '#EF9F27' : 'rgba(237,230,218,0.18)') + ';'
+    }));
+    return { apps, week };
+  }
+}
+</script>
+</body>
+</html>

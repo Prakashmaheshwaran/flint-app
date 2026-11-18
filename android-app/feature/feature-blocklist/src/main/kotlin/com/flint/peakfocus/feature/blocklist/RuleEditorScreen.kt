@@ -13,11 +13,16 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,10 +37,14 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.Button
@@ -45,8 +54,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,18 +71,28 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.flint.peakfocus.core.common.theme.FlintMotion
+import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.theme.FlintSpacing
 import com.flint.peakfocus.core.common.theme.FlintTheme
+import com.flint.peakfocus.core.common.ui.BoneButton
 import com.flint.peakfocus.core.common.ui.FlintCard
+import com.flint.peakfocus.core.common.ui.FlintSegmented
 import com.flint.peakfocus.core.common.ui.FlintTimeField
 import com.flint.peakfocus.core.common.ui.rememberFlintHaptics
 import com.flint.peakfocus.core.model.AppGroup
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BreakLevel
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -85,7 +108,7 @@ import kotlinx.coroutines.launch
  *
  * [onDelete] is null for a new rule (nothing to delete yet).
  */
-@OptIn(ExperimentalFoundationApi::class) // bringIntoViewRequester on older foundation lines.
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class) // bringIntoViewRequester; date picker
 @Composable
 internal fun RuleEditorScreen(
     initialDraft: RuleDraft,
@@ -110,6 +133,7 @@ internal fun RuleEditorScreen(
     var domainError by remember { mutableStateOf(false) }
     var attemptedSave by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
+    var pickingDate by remember { mutableStateOf(false) }
     var pickingApps by remember { mutableStateOf(false) }
     var namingGroup by remember { mutableStateOf(false) }
     var groupName by remember { mutableStateOf("") }
@@ -146,7 +170,9 @@ internal fun RuleEditorScreen(
         startMinuteOfDay = parseMinuteOfDay(startText) ?: -1,
         endMinuteOfDay = parseMinuteOfDay(endText) ?: -1,
     )
-    val errors = if (attemptedSave) validate(candidate) else emptyList()
+    // An existing rule's saved window is the baseline: its past start is never re-judged.
+    val savedDraft = initialDraft.takeIf { it.id != null }
+    val errors = if (attemptedSave) validate(candidate, original = savedDraft) else emptyList()
 
     AnimatedContent(
         targetState = pickingApps,
@@ -161,6 +187,7 @@ internal fun RuleEditorScreen(
                 eyebrow = "Block rule",
                 multiSelect = true,
                 initiallySelected = draft.apps.map { it.packageName }.toSet(),
+                groups = groups,
                 onConfirm = { picked ->
                     // Keep rule entries for apps that are no longer installed — the picker can't
                     // show them, and confirming must not silently drop them.
@@ -180,26 +207,108 @@ internal fun RuleEditorScreen(
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .imePadding()
-                    .padding(FlintSpacing.gutter),
+                    .padding(horizontal = 20.dp),
             ) {
-                EditorHeader(
-                    title = if (initialDraft.id == null) "New block rule" else "Edit block rule",
-                    eyebrow = "Block rule",
-                    onBack = onClose,
-                )
-                Spacer(Modifier.height(FlintSpacing.md))
+                val attemptSave: () -> Unit = {
+                    attemptedSave = true
+                    val problems = validate(candidate, original = savedDraft)
+                    if (problems.isEmpty()) {
+                        haptics.confirm()
+                        onSave(candidate)
+                    } else {
+                        haptics.reject()
+                        // Walk the eye to the first offending field, not just the summary.
+                        val requester = when (problems.first()) {
+                            RuleDraftError.NAME_REQUIRED -> nameRequester
+                            RuleDraftError.NO_TARGETS,
+                            RuleDraftError.NO_ALLOWED_APPS,
+                            -> targetsRequester
+                            RuleDraftError.INVALID_TIME,
+                            RuleDraftError.ZERO_LENGTH_WINDOW,
+                            RuleDraftError.DATE_REQUIRED,
+                            RuleDraftError.START_IN_PAST,
+                            -> scheduleRequester
+                        }
+                        scope.launch { requester.bringIntoView() }
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(
+                        onClick = onClose,
+                        enabled = !saveState.busy,
+                        modifier = Modifier.minimumInteractiveComponentSize(),
+                    ) {
+                        Text("Cancel", color = FlintPalette.Mist)
+                    }
+                    Text(
+                        "Block rule",
+                        style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 1.5.sp),
+                        color = FlintPalette.Mist,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.weight(1f),
+                    )
+                    BoneButton(
+                        text = "Save",
+                        onClick = attemptSave,
+                        compact = true,
+                        enabled = !saveState.busy,
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
 
-                OutlinedTextField(
-                    value = draft.name,
-                    onValueChange = { draft = draft.copy(name = it) },
-                    modifier = Modifier
+                Column(
+                    Modifier
                         .fillMaxWidth()
+                        .padding(horizontal = 4.dp)
                         .bringIntoViewRequester(nameRequester),
-                    label = { Text("Rule name") },
-                    placeholder = { Text("Social media") },
-                    singleLine = true,
-                    isError = attemptedSave && draft.name.isBlank(),
-                )
+                ) {
+                    Text("Name", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = FlintPalette.Mist)
+                    Spacer(Modifier.height(6.dp))
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = draft.name,
+                        onValueChange = { draft = draft.copy(name = it) },
+                        singleLine = true,
+                        // BasicTextField has no theme color: without one it draws black on Ground.
+                        textStyle = MaterialTheme.typography.headlineSmall.copy(
+                            fontSize = 28.sp,
+                            letterSpacing = (-0.5).sp,
+                            color = FlintPalette.Bone,
+                        ),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(FlintPalette.Ember),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp).semantics {
+                            if (attemptedSave && draft.name.isBlank()) {
+                                error("Rule name is required")
+                            }
+                        },
+                        decorationBox = { inner ->
+                            Box(Modifier.fillMaxWidth().heightIn(min = 44.dp), contentAlignment = Alignment.CenterStart) {
+                                if (draft.name.isEmpty()) {
+                                    Text(
+                                        "Laser Focus",
+                                        style = MaterialTheme.typography.headlineSmall.copy(fontSize = 28.sp, letterSpacing = (-0.5).sp),
+                                        color = FlintPalette.Faint,
+                                    )
+                                }
+                                inner()
+                            }
+                        },
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(
+                                if (attemptedSave && draft.name.isBlank()) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    FlintPalette.Divider
+                                },
+                            ),
+                    )
+                }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
                 SectionLabel(if (draft.allowListMode) "Allowed apps" else "Apps to block")
@@ -435,93 +544,134 @@ internal fun RuleEditorScreen(
                 SectionLabel("Schedule")
                 Spacer(Modifier.height(FlintSpacing.sm))
                 FlintCard(modifier = Modifier.bringIntoViewRequester(scheduleRequester)) {
-                    LabeledSwitchRow(
-                        title = "Only at certain times",
-                        description = "Off means the rule is active around the clock while " +
-                            "enabled.",
-                        checked = draft.scheduled,
-                        onCheckedChange = { draft = draft.copy(scheduled = it) },
-                    )
-                    AnimatedVisibility(
-                        visible = draft.scheduled,
-                        enter = expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
-                        exit = shrinkVertically(editorRevealSpec()) + fadeOut(editorRevealSpec()),
-                    ) {
-                        Column {
-                            Spacer(Modifier.height(FlintSpacing.cardGap))
-                            DayOfWeekRow(
-                                selected = draft.days,
-                                onToggle = { day ->
-                                    draft = draft.copy(
-                                        days = if (day in draft.days) {
-                                            draft.days - day
-                                        } else {
-                                            draft.days + day
-                                        },
-                                    )
-                                },
-                            )
-                            Spacer(Modifier.height(FlintSpacing.xs))
-                            Text(
-                                text = "No days selected = every day.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(FlintSpacing.cardGap))
-                            Row {
-                                FlintTimeField(
-                                    label = "From",
-                                    valueText = startText,
-                                    onValueText = { startText = it },
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Spacer(Modifier.width(FlintSpacing.cardGap))
-                                FlintTimeField(
-                                    label = "Until",
-                                    valueText = endText,
-                                    onValueText = { endText = it },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            val start = parseMinuteOfDay(startText)
-                            val end = parseMinuteOfDay(endText)
-                            if (start != null && end != null) {
+                    if (draft.id == null && draft.scheduled) {
+                        // Only a NEW rule with a window chooses its kind: an existing rule keeps
+                        // the one it has, so a weekly rule can never be silently rewritten into
+                        // a one-time one. With "Only at certain times" off there is no window at
+                        // all, so there is no kind to choose.
+                        FlintSegmented(
+                            options = listOf(false to "Repeats", true to "One time"),
+                            selected = draft.oneTime,
+                            onSelect = { oneTime ->
+                                haptics.tick()
+                                draft = if (oneTime) {
+                                    draft.copy(oneTime = true, scheduled = true, date = draft.date ?: LocalDate.now())
+                                } else {
+                                    draft.copy(oneTime = false, scheduled = true)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(FlintSpacing.cardGap))
+                    }
+                    if (draft.oneTime) {
+                        OneTimeWindowFields(
+                            date = draft.date,
+                            onPickDate = { pickingDate = true },
+                            startText = startText,
+                            onStartText = { startText = it },
+                            endText = endText,
+                            onEndText = { endText = it },
+                        )
+                    } else {
+                        LabeledSwitchRow(
+                            title = "Only at certain times",
+                            description = "Off means the rule is active around the clock while " +
+                                "enabled.",
+                            checked = draft.scheduled,
+                            onCheckedChange = { draft = draft.copy(scheduled = it) },
+                        )
+                        AnimatedVisibility(
+                            visible = draft.scheduled,
+                            enter = expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
+                            exit = shrinkVertically(editorRevealSpec()) + fadeOut(editorRevealSpec()),
+                        ) {
+                            Column {
                                 Spacer(Modifier.height(FlintSpacing.cardGap))
-                                FlintDayStrip(startMinute = start, endMinute = end)
-                            }
-                            if (start != null && end != null && end != start) {
+                                DayOfWeekRow(
+                                    selected = draft.days,
+                                    onToggle = { day ->
+                                        draft = draft.copy(
+                                            days = if (day in draft.days) {
+                                                draft.days - day
+                                            } else {
+                                                draft.days + day
+                                            },
+                                        )
+                                    },
+                                )
                                 Spacer(Modifier.height(FlintSpacing.xs))
                                 Text(
-                                    text = if (end < start) {
-                                        "Overnight window — runs past midnight into the next day."
-                                    } else {
-                                        "24-hour time, e.g. 21:30."
-                                    },
+                                    text = "No days selected = every day.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                                Spacer(Modifier.height(FlintSpacing.cardGap))
+                                Row {
+                                    FlintTimeField(
+                                        label = "From",
+                                        valueText = startText,
+                                        onValueText = { startText = it },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Spacer(Modifier.width(FlintSpacing.cardGap))
+                                    FlintTimeField(
+                                        label = "Until",
+                                        valueText = endText,
+                                        onValueText = { endText = it },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                                val start = parseMinuteOfDay(startText)
+                                val end = parseMinuteOfDay(endText)
+                                if (start != null && end != null) {
+                                    Spacer(Modifier.height(FlintSpacing.cardGap))
+                                    FlintDayStrip(startMinute = start, endMinute = end)
+                                }
+                                if (start != null && end != null && end != start) {
+                                    Spacer(Modifier.height(FlintSpacing.xs))
+                                    Text(
+                                        text = if (end < start) {
+                                            "Overnight window — runs past midnight into the next day."
+                                        } else {
+                                            "24-hour time, e.g. 21:30."
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
 
-                SectionLabel("Break difficulty")
+                SectionLabel("Break level")
                 Spacer(Modifier.height(FlintSpacing.sm))
-                FlintCard {
-                    BreakLevelSelector(
-                        selected = draft.breakLevel,
-                        onSelect = { draft = draft.copy(breakLevel = it) },
-                    )
-                    AnimatedVisibility(
-                        visible = draft.breakLevel == BreakLevel.HARDCORE,
-                        enter = expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
-                        exit = shrinkVertically(editorRevealSpec()) + fadeOut(editorRevealSpec()),
-                    ) {
-                        Column {
-                            Spacer(Modifier.height(FlintSpacing.sm))
-                            HardcoreCommitmentDisclosure()
-                        }
+                FlintSegmented(
+                    options = BreakLevel.entries.map { it to breakLevelLabel(it) },
+                    selected = draft.breakLevel,
+                    onSelect = { draft = draft.copy(breakLevel = it) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    when (draft.breakLevel) {
+                        BreakLevel.EASY -> "Stop any time."
+                        BreakLevel.HARDER -> "No early stop. Each break waits a few minutes first."
+                        BreakLevel.HARDCORE -> "No breaks, no stop, can’t delete Flint until it ends."
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                    color = FlintPalette.Mist,
+                )
+                AnimatedVisibility(
+                    visible = draft.breakLevel == BreakLevel.HARDCORE,
+                    enter = expandVertically(editorRevealSpec()) + fadeIn(editorRevealSpec()),
+                    exit = shrinkVertically(editorRevealSpec()) + fadeOut(editorRevealSpec()),
+                ) {
+                    Column {
+                        Spacer(Modifier.height(FlintSpacing.sm))
+                        HardcoreCommitmentDisclosure()
                     }
                 }
                 Spacer(Modifier.height(FlintSpacing.lg))
@@ -529,33 +679,11 @@ internal fun RuleEditorScreen(
                 ErrorMessages(errors.map { it.message } + if (namingGroup || deletingGroup != null) emptyList() else listOfNotNull(saveState.error))
                 if (errors.isNotEmpty()) Spacer(Modifier.height(FlintSpacing.cardGap))
 
-                Button(
+                com.flint.peakfocus.core.common.ui.EmberButton(
+                    text = "Save rule",
+                    onClick = attemptSave,
                     enabled = !saveState.busy,
-                    onClick = {
-                        attemptedSave = true
-                        val problems = validate(candidate)
-                        if (problems.isEmpty()) {
-                            haptics.confirm()
-                            onSave(candidate)
-                        } else {
-                            haptics.reject()
-                            // Walk the eye to the first offending field, not just the summary.
-                            val requester = when (problems.first()) {
-                                RuleDraftError.NAME_REQUIRED -> nameRequester
-                                RuleDraftError.NO_TARGETS,
-                                RuleDraftError.NO_ALLOWED_APPS,
-                                -> targetsRequester
-                                RuleDraftError.INVALID_TIME,
-                                RuleDraftError.ZERO_LENGTH_WINDOW,
-                                -> scheduleRequester
-                            }
-                            scope.launch { requester.bringIntoView() }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Save rule")
-                }
+                )
                 if (onDelete != null) {
                     Spacer(Modifier.height(FlintSpacing.sm))
                     TextButton(
@@ -574,6 +702,39 @@ internal fun RuleEditorScreen(
                     Text("Cancel")
                 }
             }
+        }
+    }
+
+    if (pickingDate) {
+        val today = LocalDate.now()
+        val initial = draft.date ?: today
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            selectableDates = object : SelectableDates {
+                // A one-time session can be any distance ahead, never in the past.
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean =
+                    utcTimeMillis >= today.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+
+                override fun isSelectableYear(year: Int): Boolean = year >= today.year
+            },
+        )
+        DatePickerDialog(
+            onDismissRequest = { pickingDate = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        state.selectedDateMillis?.let { millis ->
+                            draft = draft.copy(date = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate())
+                        }
+                        pickingDate = false
+                    },
+                ) { Text("Done") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pickingDate = false }) { Text("Cancel") }
+            },
+        ) {
+            DatePicker(state = state, title = { Text("One-time session date") })
         }
     }
 
@@ -669,6 +830,87 @@ internal fun RuleEditorScreen(
     }
 }
 
+/**
+ * The one-time window's own fields: a calendar date (any distance ahead, never in the past) plus
+ * the same From/Until time fields the weekly window uses. There are no weekday pills — a date,
+ * not a weekday, decides when this single occurrence runs.
+ */
+@Composable
+private fun OneTimeWindowFields(
+    date: LocalDate?,
+    onPickDate: () -> Unit,
+    startText: String,
+    onStartText: (String) -> Unit,
+    endText: String,
+    onEndText: (String) -> Unit,
+) {
+    Spacer(Modifier.height(FlintSpacing.cardGap))
+    Surface(
+        onClick = onPickDate,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "Date",
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 16.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = date?.let(::oneTimeDateLabel) ?: "Choose a date",
+                style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 30.sp),
+            )
+        }
+    }
+    Spacer(Modifier.height(FlintSpacing.cardGap))
+    Row {
+        FlintTimeField(
+            label = "From",
+            valueText = startText,
+            onValueText = onStartText,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(FlintSpacing.cardGap))
+        FlintTimeField(
+            label = "Until",
+            valueText = endText,
+            onValueText = onEndText,
+            modifier = Modifier.weight(1f),
+        )
+    }
+    val start = parseMinuteOfDay(startText)
+    val end = parseMinuteOfDay(endText)
+    if (start != null && end != null) {
+        val minutes = when {
+            end > start -> end - start
+            end < start -> 1440 - start + end // overnight: ends on the NEXT day
+            else -> 0
+        }
+        if (minutes > 0) {
+            Spacer(Modifier.height(FlintSpacing.xs))
+            Text(
+                text = "Lasts ${formatDailyMinutes(minutes)}" +
+                    if (end < start) " · Ends the next day" else "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(FlintSpacing.xs))
+        Text(
+            text = "One-time session on ${date?.let(::oneTimeDateLabel) ?: "the chosen date"} — it " +
+                "runs once and never repeats. Times use this device's time zone (${ZoneId.systemDefault().id}).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 private fun SelectedDomainRow(domain: String, onRemove: () -> Unit) {
     Row(
@@ -693,7 +935,11 @@ private fun SelectedDomainRow(domain: String, onRemove: () -> Unit) {
     }
 }
 
-/** Seven equal-width day pills, ISO order Mon..Sun, matching [IsoDays]. */
+/**
+ * Seven equal-width day pills, ISO order Mon..Sun, matching [IsoDays]. When the scaled labels
+ * cannot all fit on one line the pills wrap to two rows (4 + 3) instead of splitting a label
+ * mid-word ("Mo/n").
+ */
 @Composable
 internal fun DayOfWeekRow(
     selected: Set<Int>,
@@ -701,55 +947,67 @@ internal fun DayOfWeekRow(
     modifier: Modifier = Modifier,
 ) {
     val haptics = rememberFlintHaptics()
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(FlintSpacing.xs),
-    ) {
-        IsoDays.ALL.forEach { day ->
-            val isSelected = day in selected
-            val container by animateColorAsState(
-                targetValue = if (isSelected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                },
-                animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-                label = "dayPillContainer",
-            )
-            // The label eases on the container's own spec — a snapped color would sit on the
-            // wrong side of the fill for the animation's first half.
-            val labelColor by animateColorAsState(
-                targetValue = if (isSelected) {
-                    MaterialTheme.colorScheme.onPrimary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
-                label = "dayPillLabel",
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    // 48dp touch minimum; the visual pill stays compact via center alignment.
-                    .heightIn(min = 48.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(container)
-                    .toggleable(
-                        value = isSelected,
-                        role = Role.Checkbox,
-                        onValueChange = {
-                            haptics.tick()
-                            onToggle(day)
-                        },
-                    )
-                    .padding(vertical = FlintSpacing.sm),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = IsoDays.shortLabel(day),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = labelColor,
+    val labelStyle = MaterialTheme.typography.titleSmall.copy(
+        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+    )
+    val pill: @Composable (Int, Modifier) -> Unit = { day, pillModifier ->
+        val isSelected = day in selected
+        val container by animateColorAsState(
+            targetValue = if (isSelected) FlintPalette.Ember else FlintPalette.Card,
+            animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
+            label = "dayPillContainer",
+        )
+        // The label eases on the container's own spec — a snapped color would sit on the
+        // wrong side of the fill for the animation's first half.
+        val labelColor by animateColorAsState(
+            targetValue = if (isSelected) FlintPalette.OnEmber else FlintPalette.Mist,
+            animationSpec = tween(FlintMotion.DurationShort, easing = FlintMotion.EasingStandard),
+            label = "dayPillLabel",
+        )
+        Box(
+            modifier = pillModifier
+                // 48dp touch minimum; the visual pill stays compact via center alignment.
+                .heightIn(min = 48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(container)
+                .border(1.dp, if (isSelected) FlintPalette.Ember else FlintPalette.Divider, RoundedCornerShape(14.dp))
+                .toggleable(
+                    value = isSelected,
+                    role = Role.Checkbox,
+                    onValueChange = {
+                        haptics.tick()
+                        onToggle(day)
+                    },
                 )
+                .padding(vertical = FlintSpacing.sm),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = IsoDays.shortLabel(day),
+                style = labelStyle,
+                color = labelColor,
+                maxLines = 1,
+            )
+        }
+    }
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val measurer = rememberTextMeasurer()
+        val density = LocalDensity.current
+        val gap = 6.dp
+        val widest = IsoDays.ALL.maxOf { day ->
+            measurer.measure(AnnotatedString(IsoDays.shortLabel(day)), labelStyle, softWrap = false).size.width
+        }
+        // Each pill needs its widest label plus a little side room to read as a pill.
+        val needed = (with(density) { widest.toDp() } + 8.dp) * IsoDays.ALL.size + gap * (IsoDays.ALL.size - 1)
+        val rows = if (needed <= maxWidth) listOf(IsoDays.ALL) else IsoDays.ALL.chunked(4)
+        val perRow = rows.maxOf { it.size }
+        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+            rows.forEach { days ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    days.forEach { day -> pill(day, Modifier.weight(1f)) }
+                    // Keep pills the same width in a short last row.
+                    repeat(perRow - days.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
     }

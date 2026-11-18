@@ -52,9 +52,16 @@ final class FlintSessionPersistence {
         guard let ledger = env.ledger() else { return nil }
         let raw = store.loadActiveSession()
         if raw == nil && store.hasActiveSessionRecord() { return nil }
+        // R-20: before any session generation exists (a legacy ledger, or the initial
+        // tombstone of a ledger created for a pre-ledger install), an absent projection is
+        // idle only without native contradiction. Session-owned restrictions still applied
+        // mean a running legacy session lost its record; retain them as unavailable rather
+        // than manufacture idle and clear them. A normal legacy end clears this store.
+        let retainedNative = raw == nil && env.shield.retainsAppliedSettings()
         let result = ledger.transaction { state -> FlintSessionAuthority? in
             var authority = state.sessionAuthority
             if authority == nil && (state.version >= 3 || state.sessionAuthorityVersion != nil) { return nil }
+            if retainedNative && authority?.latest == nil { return nil }
             // Shipped legacy ledgers had no generation field. Upgrade a positively readable
             // legacy absence once; after this migration only the latest tombstone proves idle.
             if authority == nil, store.isProtectionStateReadable() {
@@ -91,7 +98,7 @@ final class FlintSessionPersistence {
                 // A crash after the terminal commit can leave the old projection/resources.
                 if raw.naturalEndObservedAt == nil { env.shield.clear() }
                 store.clearActiveSession(); store.clearSessionSelection()
-                env.registrar.stopMonitoring([raw.monitorName])
+                env.registrar.stopMonitoring([raw.monitorName] + FlintSessionController.pomodoroCarrierNames(for: raw))
             }
             return Resolution(available: true,
                 releaseAlreadyObserved: raw != nil || authority.latest?.session.naturalEndObservedAt != nil)
@@ -115,7 +122,7 @@ final class FlintSessionPersistence {
                 return unavailable()
             }
             store.clearActiveSession(); store.clearSessionSelection()
-            env.registrar.stopMonitoring([session.monitorName])
+            env.registrar.stopMonitoring([session.monitorName] + FlintSessionController.pomodoroCarrierNames(for: session))
             return Resolution(available: true, timeVerdict: verdict, releaseAlreadyObserved: true)
         }
         return Resolution(available: true, session: session, timeVerdict: verdict)
@@ -155,9 +162,16 @@ final class FlintSessionPersistence {
                     // never clear/reapply unknown targets or stop its dependable end.
                     var adopted = FlintSessionAuthority(initializedAt: previous.startedAt)
                     adopted.adopt(previous)
-                    guard store.isProtectionStateReadable(), let raw = store.loadActiveSession(),
-                          let known = adopted.observedSession(matching: raw, clock: env.clock),
-                          !known.isLogicallyExpired(clock: env.clock) else { return false }
+                    guard store.isProtectionStateReadable(), let raw = store.loadActiveSession() else { return false }
+                    // R-04: the projection may instead be this exact unapplied replacement,
+                    // saved before its native application. The generation's own predecessor is
+                    // then the positively known owner; restore it so ordinary stop and Emergency
+                    // Pass scope can reach it. A missing or foreign projection still refuses.
+                    let known: FlintActiveSession
+                    if let current = adopted.observedSession(matching: raw, clock: env.clock) { known = current }
+                    else if generation.matches(raw), FlintSessionAuthority.sameCommitment(raw, generation.session) { known = observed }
+                    else { return false }
+                    guard !known.isLogicallyExpired(clock: env.clock) else { return false }
                     let restored = known.checkpointed(clock: env.clock)
                     store.saveActiveSession(restored)
                     guard store.loadActiveSession() == restored,
@@ -168,7 +182,10 @@ final class FlintSessionPersistence {
                                 retainingAppliedResources: true, at: env.clock.now())
                             state.sessionAuthority = authority
                           }) else { return false }
-                    if session.monitorName != restored.monitorName { env.registrar.stopMonitoring([session.monitorName]) }
+                    if session.monitorName != restored.monitorName {
+                        env.registrar.stopMonitoring([session.monitorName]
+                            + FlintSessionController.pomodoroCarrierNames(for: session))
+                    }
                     _ = unavailable() // known record, unknown target repair; keep health visible
                     return true
                 }
@@ -201,8 +218,18 @@ final class FlintSessionPersistence {
         store.saveActiveSession(session)
         guard store.loadActiveSession() == session else { return false }
         if !session.isLogicallyExpired(clock: env.clock) {
-            do { if let selection { try env.shield.applyBlockList(selection) } } catch { return false }
-            env.webRestrictions.reconcile(session, clock: env.clock)
+            // A Pomodoro parent replays its phase, never a stale focus claim (design §4), and
+            // applyShield picks the block-list or allow-list write for the session's mode (F02).
+            if session.isInPomodoroRest(clock: env.clock), selection != nil {
+                env.shield.clear()
+            } else if !session.isInPomodoroRest(clock: env.clock) {
+                do {
+                    if let selection {
+                        try FlintSessionController.applyShield(selection, for: session, shield: env.shield)
+                    }
+                } catch { return false }
+                env.webRestrictions.reconcile(session, clock: env.clock)
+            }
         }
         guard markApplied(session) else { return false }
         if let previous = generation.previousMonitorName, previous != session.monitorName {
@@ -218,7 +245,7 @@ final class FlintSessionPersistence {
                                    in store: FlintSessionStateStoring) {
         if session.naturalEndObservedAt == nil { env.shield.clear() }
         store.clearActiveSession(); store.clearSessionSelection()
-        var monitors = [session.monitorName]
+        var monitors = [session.monitorName] + FlintSessionController.pomodoroCarrierNames(for: session)
         if let previousMonitor, previousMonitor != session.monitorName { monitors.append(previousMonitor) }
         env.registrar.stopMonitoring(monitors)
         env.reconcileRemovalGuard()

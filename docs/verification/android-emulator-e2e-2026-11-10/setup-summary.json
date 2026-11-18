@@ -1,0 +1,12 @@
+{
+  "setup_started": 7,
+  "launcher_ready": 7,
+  "anr_detected": 0,
+  "anr_dismissed": 0,
+  "setup_failed": 0,
+  "log_present": true,
+  "malformed_records": 0,
+  "malformed_lines": [],
+  "evidence_complete": true,
+  "run_token": "<redacted-uuid>"
+}

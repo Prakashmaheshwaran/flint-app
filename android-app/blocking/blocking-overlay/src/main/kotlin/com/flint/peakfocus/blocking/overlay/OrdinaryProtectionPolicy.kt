@@ -14,6 +14,10 @@ internal data class OrdinaryProtectionInput(
     val url: String? = null,
     val legacyTimeEndEpochMs: Long? = null,
     val timePeriodId: Long? = null,
+    /** Re-derive Time contributors from the transaction snapshot instead of trusting the
+     *  pre-transaction [timeSpent] Boolean. A limit committed between display and commit must
+     *  still block the release (R2p2-N01). */
+    val deriveTimeFromSnapshot: Boolean = false,
 )
 
 internal object OrdinaryProtectionPolicy {
@@ -37,7 +41,10 @@ internal object OrdinaryProtectionPolicy {
         val ledger = current.protection ?: return ProtectionMutation(current, GrantResult.Unavailable())
         fun unchanged(result: GrantResult) = ProtectionMutation(current, result)
         if (GlobalRecoveryPolicy.remaining(ledger.recovery, snapshot.observedAt) > 0) return unchanged(GrantResult.Denied)
-        val causes = causes(snapshot, input, foreign) ?: return unchanged(GrantResult.Unavailable())
+        // R2p2-N01: enumerate from the committed snapshot so a Time Limit committed after the
+        // click cannot be omitted by a stale `timeSpent = false`. The frozen click scope then
+        // mismatches and the break is refused instead of granted without the new contributor.
+        val causes = causes(snapshot, input.copy(deriveTimeFromSnapshot = true), foreign) ?: return unchanged(GrantResult.Unavailable())
         if (causes.isEmpty() || causes.any { it.tier == BreakLevel.HARDCORE }) return unchanged(GrantResult.Denied)
         val scopes = causes.map { it.scope }.toSet()
         // A contributor arriving after the explicit click never joins that request.
@@ -61,7 +68,10 @@ internal object OrdinaryProtectionPolicy {
         if (!validId(id) || trustedElapsedMs(issuedAt, snapshot.observedAt)?.let { it < GlobalRecoveryPolicy.REQUEST_LIFETIME_MS } != true)
             return unchanged(GrantResult.Unavailable())
         var waits = snapshot.harder
-        val hardCauses = causes.filter { it.tier == BreakLevel.HARDER && !it.legacyRights }
+        // R-16: legacy edit/stop rights never waive ordinary-break friction. An imported Harder
+        // occurrence still pays its preserved wait, otherwise a migrated user can take a fresh
+        // 300 s break on the first request and repeat it inside the same occurrence.
+        val hardCauses = causes.filter { it.tier == BreakLevel.HARDER }
         if (hardCauses.isNotEmpty()) {
             val op = HarderWaitPolicy.Operation(HarderWaitPolicy.OperationKind.BREAK,
                 hardCauses.associate { HarderWaitPolicy.Occurrence("${it.scope.counter.rule.source}:${it.scope.counter.rule.ruleId}", it.scope.counter.periodId) to it.scope.definitionRevision },
@@ -133,8 +143,17 @@ internal object OrdinaryProtectionPolicy {
             }, "UTC", legacyRights = true)
             if (!add("foreign", rule.id, rule.breakLevel, rule.toString(), cause)) return null
         }
-        if (input.timeSpent) {
-            val time = snapshot.times.firstOrNull { it.packageName == input.packageName }
+        // R2p2-N01: the committed [snapshot.times] is authoritative inside a transaction, but
+        // `timeSpent` records an *exhausted* budget rather than a configured one. Derivation
+        // therefore adds only the committed zero-minute case (exhausted on sight); a positive
+        // budget still needs its measured verdict.
+        val time = snapshot.times.firstOrNull { it.packageName == input.packageName }
+        // Only a package with no rule row is a genuine legacy-only grant; a positive-budget rule
+        // row also carries an end and must not be reclassified as legacy time.
+        val legacyTime = time == null && (input.legacyTimeEndEpochMs != null || input.timePeriodId != null)
+        val zeroBudgetLive = input.deriveTimeFromSnapshot && time?.dailyMinutes == 0
+        val timeApplies = input.timeSpent || zeroBudgetLive || (input.deriveTimeFromSnapshot && legacyTime)
+        if (timeApplies) {
             if (time != null) {
                 // The active occurrence owns its reset zone. Capturing a template's saved
                 // zone must not revoke a live break written by the pre-zone model.

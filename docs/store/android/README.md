@@ -1,8 +1,13 @@
 # Android Play submission package (draft)
 
-Prepared 2026-10-28 for `com.flint.peakfocus`. These files are editable owner
-drafts, not Console submissions or approval evidence. No Google account action,
-upload, signing enrollment, release, or publication has been performed.
+Prepared 2026-10-28; the package is now `app.flint.focus`. These files are
+editable owner drafts, not Console submissions or approval evidence. No Google
+account action, upload, signing enrollment, release, or publication has been
+performed.
+
+> Package re-key (2026-11-11): these drafts were first prepared for
+> `com.flint.peakfocus`; the Android applicationId is now `app.flint.focus`
+> (ADR-008). See [bundles](bundles.md) for the install/upgrade impact.
 
 - [Target API assessment](target-api.md)
 - [Upload signing and key custody](signing.md)

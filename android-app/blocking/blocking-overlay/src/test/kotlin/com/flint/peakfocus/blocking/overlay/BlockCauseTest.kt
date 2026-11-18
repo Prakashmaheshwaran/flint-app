@@ -34,6 +34,38 @@ class BlockCauseTest {
         breakLevel = level,
     )
 
+    @Test
+    fun `F01 a Pomodoro focus cause counts to the rest and names it, never to the chain end`() {
+        val start = baseMidnight + 10 * hour
+        val plan = com.flint.peakfocus.core.model.PomodoroPlan(focusMinutes = 25, restMinutes = 5, rounds = 4)
+        val chainEnd = start + plan.totalMs
+        val elapsed = 10 * 60_000L
+        val phase = plan.phaseAt(elapsed)!!
+        val rule = BlockRule(id = "session-timer-v2-pomo", name = "Pomodoro", targets = BlockTargets(),
+            breakLevel = BreakLevel.HARDER, expiresAtEpochMs = chainEnd, pomodoro = plan,
+            runtime = com.flint.peakfocus.core.model.RuleRuntime(occurrenceId = "session-timer-v2-pomo",
+                anchor = com.flint.peakfocus.core.model.AccessClockStamp(start, 1_000, "boot"),
+                remainingAtAnchorMs = plan.totalMs, wallEndEpochMs = chainEnd, zoneId = "UTC",
+                timeline = com.flint.peakfocus.core.model.AccessClockStamp(start, 1_000, "boot"),
+                evaluation = com.flint.peakfocus.core.model.RuleEvaluation(true, chainEnd,
+                    start + plan.phases[0].endMs, phase)))
+        val now = start + elapsed
+        val cause = ruleBlockCause(rule, now, 0L)
+        assertEquals(chainEnd, cause.endsAtEpochMs)
+        assertEquals("Focus round 1 of 4 · rest at 10:25", cause.pomodoroNote)
+        assertEquals(start + 25 * 60_000L, cause.pomodoroPhaseEndsAtEpochMs)
+        val state = blockScreenState("com.target", "Target", cause, BreakSessionState(), now)
+        // The countdown is the rest, not the 1h 55m chain end.
+        assertEquals(15 * 60_000L, state.remainingMillis)
+        assertEquals(cause.pomodoroNote, state.pomodoroNote)
+        // Another contributor that outlasts the phase still wins the displayed end.
+        val combined = BlockCause(reason = BlockScreenReason.SCHEDULE, breakLevel = BreakLevel.HARDER,
+            endsAtEpochMs = chainEnd, displayEnd = BlockDisplayEnd(chainEnd + 60_000L),
+            pomodoroNote = cause.pomodoroNote, pomodoroPhaseEndsAtEpochMs = cause.pomodoroPhaseEndsAtEpochMs)
+        assertEquals(chainEnd + 60_000L - now,
+            blockScreenState("com.target", "Target", combined, BreakSessionState(), now).remainingMillis)
+    }
+
     // MARK: ruleBlockCause
 
     @Test

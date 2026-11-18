@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flint — Schedule editor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500&amp;family=Hanken+Grotesk:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#EDE6DA}a:hover{color:#B7AE9F}
+button{font:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0E0D0F; color: #EDE6DA; font-family: 'Hanken Grotesk', -apple-system, system-ui, sans-serif">
+
+  <div style="display: flex; flex-direction: column; padding: 54px 20px 0 20px">
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <a href="M13-Rules.dc.html" style="height: 44px; padding: 0 8px; display: flex; align-items: center; text-decoration: none; color: #B7AE9F; font-size: 15px; font-weight: 600">Cancel</a>
+      <span style="font-size: 12px; font-weight: 600; letter-spacing: 1.5px; color: #B7AE9F">SCHEDULE</span>
+      <a href="M13-Rules.dc.html" style="height: 38px; padding: 0 16px; border-radius: 19px; background: #EDE6DA; color: #141316; display: flex; align-items: center; text-decoration: none; font-size: 14px; font-weight: 700">Save</a>
+    </div>
+
+    <label style="display: flex; flex-direction: column; gap: 6px; margin: 16px 4px 0 4px">
+      <span style="font-size: 12px; color: #B7AE9F">Name</span>
+      <input type="text" value="Laser Focus" style="height: 44px; padding: 0; border: none; border-bottom: 1px solid rgba(237, 230, 218, 0.14); outline: none; background: transparent; color: #EDE6DA; font: inherit; font-size: 28px; font-weight: 700; letter-spacing: -0.5px">
+    </label>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px">
+      <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px; border-radius: 20px; border: 1px solid rgba(237, 230, 218, 0.08); background: #17161A; color: #EDE6DA; text-align: left">
+        <span style="font-size: 12px; color: #B7AE9F">Starts</span>
+        <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 28px; font-variant-numeric: tabular-nums">09:00</span>
+      </button>
+      <button type="button" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 16px; border-radius: 20px; border: 1px solid rgba(237, 230, 218, 0.08); background: #17161A; color: #EDE6DA; text-align: left">
+        <span style="font-size: 12px; color: #B7AE9F">Ends</span>
+        <span style="font-family: 'Shippori Mincho', 'Iowan Old Style', Georgia, serif; font-size: 28px; font-variant-numeric: tabular-nums">12:00</span>
+      </button>
+    </div>
+
+    <span style="margin: 20px 4px 0 4px; font-size: 14px; font-weight: 600">Repeats <span style="color: #B7AE9F; font-weight: 500">· {{daysLabel}}</span></span>
+    <div role="group" aria-label="Days" style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-top: 10px">
+      <sc-for list="{{days}}" as="d" hint-placeholder-count="7">
+        <button type="button" aria-pressed="{{d.on}}" aria-label="{{d.full}}" onClick="{{d.toggle}}" style="{{d.style}}">{{d.short}}</button>
+      </sc-for>
+    </div>
+
+    <a href="M05-AppPicker.dc.html" style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px; padding: 14px 16px; border-radius: 20px; background: #17161A; border: 1px solid rgba(237, 230, 218, 0.08); text-decoration: none; color: #EDE6DA">
+      <span style="display: flex; justify-content: space-between; align-items: center">
+        <span style="font-size: 14px; font-weight: 600">Block <span style="color: #B7AE9F; font-weight: 500">· Deep work, 5 apps, 2 sites</span></span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B7AE9F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+      </span>
+      <span style="display: flex; gap: 8px">
+        <span style="width: 32px; height: 32px; border-radius: 10px; background: #5C3344; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #D8CFC0">I</span>
+        <span style="width: 32px; height: 32px; border-radius: 10px; background: #2E2E33; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #D8CFC0">T</span>
+        <span style="width: 32px; height: 32px; border-radius: 10px; background: #5A2A2A; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #D8CFC0">Y</span>
+        <span style="width: 32px; height: 32px; border-radius: 10px; background: #6B3D2A; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #D8CFC0">R</span>
+        <span style="width: 32px; height: 32px; border-radius: 10px; background: #26262A; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #D8CFC0">X</span>
+        <span style="width: 32px; height: 32px; border-radius: 10px; background: rgba(237, 230, 218, 0.06); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #B7AE9F">+2</span>
+      </span>
+    </a>
+
+    <span style="margin: 20px 4px 0 4px; font-size: 14px; font-weight: 600">Break level</span>
+    <div role="radiogroup" aria-label="Break level" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-top: 10px; padding: 4px; border-radius: 18px; background: rgba(237, 230, 218, 0.06)">
+      <button type="button" role="radio" aria-checked="false" style="height: 40px; border: none; border-radius: 14px; background: transparent; color: #B7AE9F; font-size: 14px; font-weight: 600">Easy</button>
+      <button type="button" role="radio" aria-checked="true" style="height: 40px; border: none; border-radius: 14px; background: #EDE6DA; color: #141316; font-size: 14px; font-weight: 600">Harder</button>
+      <button type="button" role="radio" aria-checked="false" style="height: 40px; border: none; border-radius: 14px; background: transparent; color: #B7AE9F; font-size: 14px; font-weight: 600">Hardcore</button>
+    </div>
+    <p style="margin: 10px 4px 0 4px; font-size: 13px; line-height: 1.45; color: #B7AE9F">No early stop. Each break waits a few minutes first.</p>
+  </div>
+
+  <div style="position: absolute; left: 20px; right: 20px; bottom: 36px; display: flex; justify-content: center">
+    <button type="button" style="height: 44px; padding: 0 18px; border: none; background: transparent; color: #E58A7C; font-size: 14px; font-weight: 600">Delete schedule</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { on: [true, true, true, true, true, false, false] };
+  }
+  renderVals() {
+    const full = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const on = this.state.on;
+    const days = full.map((f, i) => ({
+      full: f, short: f[0],
+      on: on[i] ? 'true' : 'false',
+      style: 'height: 44px; border-radius: 14px; font-size: 14px; font-weight: 700; ' +
+        (on[i] ? 'background: #EF9F27; color: #3A2003; border: 1px solid #EF9F27;' : 'background: #17161A; color: #B7AE9F; border: 1px solid rgba(237,230,218,0.1);'),
+      toggle: () => { const n = on.slice(); n[i] = !n[i]; this.setState({ on: n }); }
+    }));
+    const count = on.filter(Boolean).length;
+    const weekdays = on.slice(0, 5).every(Boolean) && !on[5] && !on[6];
+    return { days, daysLabel: count === 7 ? 'Every day' : weekdays ? 'Weekdays' : count === 0 ? 'Never' : count + ' days' };
+  }
+}
+</script>
+</body>
+</html>

@@ -81,6 +81,23 @@ final class FlintOpenCreditMigrationTests: XCTestCase {
                        "deleted legacy rules plus a missing counter cannot mint a new pool")
     }
 
+    func testBootstrapEmptyRulesFromFreshInstallDoNotMakeTheFirstOpenQuotaUnavailable() throws {
+        // R2p2-N03: bootstrap writes `[]` for a never-used domain before the ledger migration.
+        // The migration must read that as never-used, not as a lost established counter.
+        let suite = "flint.tests.bootstrap-empty-open.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // Mirror exactly what FlintRuleInitialization.prepare writes for a fresh install:
+        // the complete receipt, the `[]` domain array and its marker.
+        defaults.set(Data("{\"schema\":1,\"phase\":\"complete\"}".utf8), forKey: FlintRuleInitialization.receiptKey)
+        defaults.set(Data("{\"schema\":1}".utf8), forKey: FlintRuleStoreKey.openLimits.marker)
+        XCTAssertTrue(FlintOpenLimitRule.saveAll([], to: defaults))
+        var state = FlintLedgerState(initializedAt: now)
+        FlintOpenCredit.importLegacy(into: &state, defaults: defaults, at: instant, calendar: calendar)
+        XCTAssertEqual(state.openCredits.availability, .ready,
+                       "a freshly bootstrapped empty domain is never-used, not an established loss")
+    }
+
     func testPassOnlyLedgerDoesNotInventAnEstablishedOpenSetup() throws {
         let suite = "flint.tests.established-open-migration.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

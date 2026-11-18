@@ -76,16 +76,24 @@ public struct FlintSession: Codable, Identifiable, Equatable, Sendable {
 
 /// A Pomodoro cycle: a focus interval, a break interval, and how many rounds to run. Referenced by
 /// the "Start Pomodoro" App Intent (I-SHORTCUTS) and Block-Now's Pomodoro mode. Pure data — the
-/// controller turns each round into a timed `FlintActiveSession`.
+/// controller turns the whole chain into one timed `FlintActiveSession` with a frozen
+/// `FlintPomodoroPlan` (F01). The optional long-rest fields are additive: records saved before
+/// them decode with no long rest.
 public struct FlintPomodoroConfig: Codable, Equatable, Sendable {
     public var focusMinutes: Int
     public var breakMinutes: Int
     public var rounds: Int
+    /// Optional longer rest, every `longRestEvery` rounds (both set, or neither).
+    public var longRestMinutes: Int?
+    public var longRestEvery: Int?
 
-    public init(focusMinutes: Int = 25, breakMinutes: Int = 5, rounds: Int = 4) {
+    public init(focusMinutes: Int = 25, breakMinutes: Int = 5, rounds: Int = 4,
+                longRestMinutes: Int? = nil, longRestEvery: Int? = nil) {
         self.focusMinutes = focusMinutes
         self.breakMinutes = breakMinutes
         self.rounds = rounds
+        self.longRestMinutes = longRestMinutes
+        self.longRestEvery = longRestEvery
     }
 
     /// The classic 25 / 5 × 4 cycle.
@@ -237,7 +245,7 @@ public struct FlintSleepConfig: Codable, Equatable, Sendable {
 // MARK: - App Group persistence for the stubs
 //
 // `FlintGroupStore` is the canonical App Group I/O, but it's a shared/locked file in the parallel
-// build, so these helpers persist the new stubs into the SAME `group.com.flint.peakfocus` suite
+// build, so these helpers persist the new stubs into the SAME `group.app.flint.focus` suite
 // with the same JSON encoding — the host app and the system extensions read identical bytes without
 // anyone editing `FlintGroupStore`. Keys stay namespaced under "flint.*" to match its convention.
 

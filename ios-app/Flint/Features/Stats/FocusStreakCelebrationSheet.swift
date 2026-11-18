@@ -51,7 +51,7 @@ struct FocusStreakCelebrationSheet: View {
                 .frame(width: 40, height: 5)
                 .padding(.top, 10)
                 .accessibilityHidden(true)
-            FlintStreakEmber(mood: mood, size: 148)
+            FlintStreakEmber(mood: mood, size: 148, forceAnimate: true)
                 .padding(.top, 12)
             Text("\(streak)")
                 .font(FlintFont.text(typeSize.isAccessibilitySize ? 52 : 68, weight: .semibold))

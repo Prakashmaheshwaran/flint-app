@@ -80,6 +80,26 @@ class TimedOpenCreditPolicyTest {
         assertEquals(listOf("Time limit"), TimedOpenCreditPolicy.view(s, input.copy(timeSpent = true), emptyList(), now)!!.blockingContributors)
     }
 
+    @Test fun PC_32_R2p2N01_zeroMinuteLimitCommittedAfterReviewDeniesAndStillChargesNothing() {
+        // Display review saw no Time limit (`timeSpent = false`), so the credit looked clean.
+        val original = snapshot()
+        val scope = TimedOpenCreditPolicy.view(original, input, emptyList(), now)!!.requestScope
+        val reviewed = GrantRequestId(now.wallEpochMs, "11111111-1111-4111-8111-000000000009", now, scope)
+
+        // A zero-minute Time Limit commits between the review and the transaction.
+        val committed = original.copy(times = listOf(TimeLimit("a", 0, BreakLevel.HARDCORE)),
+            editor = original.editor.copy(causes = original.editor.causes +
+                ("time:a" to EditorCause("day", null, "UTC"))))
+
+        // The stale capture would have charged; deriving from the committed snapshot blocks it.
+        val m = request(committed, reviewed)
+        assertEquals(GrantResult.Denied, m.result)
+        assertTrue("a blocked credit must not spend quota", m.openCredits!!.counters.isEmpty())
+        assertTrue(m.openCredits!!.active.isEmpty())
+        assertTrue(m.focus.protection!!.outbox.isEmpty())
+        assertTrue(m.focus.protection!!.pendingCreditEnds.isEmpty())
+    }
+
     @Test fun PC_34_PC_36_minimumCapSharesOneCounterAndEditingOrRecreatingTheLimitNeverRefillsIt() {
         var s = snapshot(cap = 5).let { it.copy(opens = it.opens + OpenLimit("a", 2, BreakLevel.EASY)) }
         s = apply(s, request(s)); assertEquals(1, TimedOpenCreditPolicy.view(s, input, emptyList(), now)!!.remainingCredits)

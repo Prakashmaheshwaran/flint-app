@@ -10,6 +10,10 @@ public struct FlintOrdinaryBreakPreview: Equatable {
     public let message: String
     public var isActionable: Bool { kind == .confirm || kind == .wait }
     public static let unavailable = Self(kind: .unavailable, message: "Access unavailable")
+    /// The designed scope limit, not a fault: an Allow List session has no frozen blocked-target
+    /// set a break could name.
+    public static let unavailableForAllowList = Self(kind: .unavailable,
+        message: "Breaks aren't available during an Allow List session.")
 }
 
 public struct FlintOrdinaryBreakStatus {
@@ -62,6 +66,10 @@ public enum FlintOrdinaryBreaks {
     static func requestForCurrentSession() -> FlintBreakOutcome {
         FlintSessionController().withTransition {
             guard let group = FlintGroupStore(), let session = group.loadActiveSession(),
+                  // An Allow List session freezes the apps it keeps *available*; it has no finite
+                  // set of frozen blocked targets a break could name, so ordinary breaks stay
+                  // unavailable rather than guess a broader scope.
+                  !session.isAllowList,
                   let selection = group.loadSessionSelection(sessionID: session.id),
                   let scope = try? scope(selection), let service = service() else { return .refused(.unavailable) }
             return service.request(scope: scope)
@@ -97,8 +105,10 @@ public enum FlintOrdinaryBreaks {
 
     public static func previewForCurrentSession() -> FlintOrdinaryBreakPreview {
         guard case let .success(state)? = FlintProtectionLedger.appGroup()?.peek(),
-              let group = FlintGroupStore(), let session = group.loadActiveSession(),
-              let selection = group.loadSessionSelection(sessionID: session.id), let scope = try? scope(selection),
+              let group = FlintGroupStore(), let session = group.loadActiveSession() else { return .unavailable }
+        // Same floor as `requestForCurrentSession`: no nameable break scope for an Allow List.
+        if session.isAllowList { return .unavailableForAllowList }
+        guard let selection = group.loadSessionSelection(sessionID: session.id), let scope = try? scope(selection),
               let context = context(state, at: .init(clock: .system)),
               context.canRelease(scope) else { return .unavailable }
         return preview(scope: scope, context: context, grants: state.ordinaryGrants, clock: .system)
@@ -191,6 +201,17 @@ public enum FlintOrdinaryBreaks {
         return result
     }
 
+    /// The running session as a break contributor. An Allow List session contributes the apps it
+    /// keeps *available* — exactly what a schedule allow list contributes — so only what that
+    /// allow list actually blocks can be released, and its category/website coverage stays
+    /// unresolved (never released).
+    static func sessionSelection(_ session: FlintActiveSession, frozen: FlintBreakScope)
+        -> FlintBreakContributor.Selection {
+        session.isAllowList
+            ? .allowList(allowedApplications: frozen.targets.filter { $0.kind == .application })
+            : .blockList(frozen)
+    }
+
     private static func service() -> FlintOrdinaryBreakService? {
         guard let ledger = FlintProtectionLedger.appGroup() else { return nil }
         let env = FlintRuleReloadEnvironment.live
@@ -212,7 +233,8 @@ public enum FlintOrdinaryBreaks {
         }, registered: { center.activities.contains(.init($0)) && center.schedule(for: .init($0)) != nil },
         stop: { FlintScheduling.stopMonitoring([$0]) }, apply: apply,
         gate: { FlintPassRecoveryGate.read().permitsApplication },
-        reportFailure: { recordHealthFailure($0, reason: $1) }, reportRecovery: { clearHealthFailures(activeActivities: $0) })
+        reportFailure: { recordHealthFailure($0, reason: $1) }, reportRecovery: { clearHealthFailures(activeActivities: $0) },
+        history: FlintProtectionHistoryProjection.liveBreakAppend)
     }
 
     static func recordHealthFailure(_ name: String, reason: String, in group: FlintGroupStore? = FlintGroupStore()) {
@@ -263,8 +285,12 @@ public enum FlintOrdinaryBreaks {
             guard let selection = group.loadSessionSelection(sessionID: session.id), let frozen = try? scope(selection) else { return nil }
             let remaining = session.logicalRemaining(clock: clock)
             let end = remaining.map { FlintLedgerInstant(wall: now.wall.addingTimeInterval($0), monotonic: now.monotonic + $0, bootID: now.bootID) }
+            // A planned Pomodoro rest is not an enforcing contributor (design §6): the parent
+            // still owns the whole chain, but during a rest it neither grants nor blocks an
+            // ordinary break for the other rules (FlintBreakScope).
             owners.append(.init(.init(cause: .init(causeID: session.id, kind: .session, tier: session.breakLevel,
-                isActive: true, end: session.stableLogicalEnd(clock: clock)), selection: .blockList(frozen),
+                isActive: !session.isInPomodoroRest(clock: clock), end: session.stableLogicalEnd(clock: clock)),
+                selection: sessionSelection(session, frozen: frozen),
                 logicalEnd: end, timeKnown: remaining != nil || session.endsAt == nil,
                 harder: state.harder[session.id] ?? .init()), storeName: "flint"))
         }
@@ -341,16 +367,20 @@ public enum FlintOrdinaryBreaks {
     /// Restore the owner's frozen policy, including an existing untimed Easy commitment.
     /// An expired finite owner is never recreated; reboot re-anchoring belongs to session reconcile.
     /// Every session reuses the `flint` store, so a session owner is restored only while it is
-    /// verifiably the current session. With no verifiable current owner (a successor, no session,
-    /// an unreadable record, or an owner saved without a session ID) nothing is written: a stale
-    /// owner's narrower policy would release targets the current commitment blocks (R2p2-N02).
-    /// The current session's own reconcile repairs its store.
+    /// verifiably the current session: the readable projection, or, when the projection is absent
+    /// or unreadable, the ledger's applied session authority it mirrors. With no verifiable current
+    /// owner (a successor, no session, an installing or idle authority, or an owner saved without a
+    /// session ID) nothing is written: a stale owner's narrower policy would release targets the
+    /// current commitment blocks (R2p2-N02). The current session's own reconcile repairs its store.
     static func restoreUnavailableAuthorities(_ records: [FlintOrdinaryGrantState.Record], at now: FlintLedgerInstant,
                                              writer: ((String) -> FlintRuleShieldWriting)? = nil,
-                                             currentSessionID: () -> String? = { FlintGroupStore()?.loadActiveSession()?.id }) throws {
+                                             currentSessionID: () -> String? = { FlintGroupStore()?.loadActiveSession()?.id },
+                                             sessionAuthority: () -> FlintSessionAuthority? = {
+                                                 (try? FlintProtectionLedger.appGroup()?.peek().get())?.sessionAuthority
+                                             }) throws {
         var current: String?? // read at most once; `.some(nil)` caches "no verifiable session"
         func isCurrent(_ sessionID: String) -> Bool {
-            if current == nil { current = .some(currentSessionID()) }
+            if current == nil { current = .some(currentSessionID() ?? appliedSessionID(sessionAuthority())) }
             return current! == sessionID
         }
         for record in records {
@@ -364,6 +394,16 @@ public enum FlintOrdinaryBreaks {
                 try write(selection, storeName: owner.storeName, releasing: [], to: writer?(owner.storeName))
             }
         }
+    }
+
+    /// The session the ledger records as applied, for when the projection can't be read. The
+    /// projection only mirrors this authority: a successor installs its own generation before
+    /// its projection is written, and an end commits the idle tombstone before clearing it, so a
+    /// stale owner is never the applied latest generation (R2p2-N02 double fault).
+    static func appliedSessionID(_ authority: FlintSessionAuthority?) -> String? {
+        guard let authority, authority.isValid, !authority.provesIdle,
+              let latest = authority.latest, latest.phase == .applied else { return nil }
+        return latest.session.id
     }
 
     static func write(_ selection: FlintBreakContributor.Selection, storeName: String,

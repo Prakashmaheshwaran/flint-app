@@ -8,9 +8,12 @@ final class FlintRuleMigrationTests: XCTestCase {
         let source = try fixture("adr012-schedule-without-anchor")
         h.defaults.set(source, forKey: FlintRuleStoreKey.schedules.rawValue)
         let old = try XCTUnwrap(h.load(FlintScheduleRule.self).first)
-        XCTAssertNil(old.protection?.timeAnchor)
+        // R-07: absence proves no elapsed time; the record is loaded as an unavailable anchor.
+        XCTAssertEqual(old.protection?.timeAnchor?.isValid, false)
         let observed = try XCTUnwrap(h.environment.observedRules(FlintScheduleRule.self)?.first)
-        XCTAssertNotNil(observed.protection?.timeAnchor)
+        XCTAssertEqual(observed.protection?.timeAnchor?.isValid, true)
+        XCTAssertEqual(observed.protection?.timeAnchor?.timeline, old.protection?.occurrence?.start,
+            "re-anchored conservatively within the retained finite occurrence")
         XCTAssertEqual(observed.protection?.occurrence, old.protection?.occurrence)
         XCTAssertEqual(observed.revision, old.revision)
         XCTAssertEqual(observed.activityName, old.activityName)

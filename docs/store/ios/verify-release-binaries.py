@@ -51,7 +51,7 @@ def verify(app: Path, expect_fixtures: bool = False) -> None:
             matches.append("report preview sample: Instagram")
         if not expect_fixtures and matches:
             raise SystemExit(f"DEBUG fixtures in {identifier}: {matches}")
-        if expect_fixtures and identifier == "com.flint.peakfocus":
+        if expect_fixtures and identifier == "app.flint.focus":
             if "FlintUIPreviewSession" not in strings or "AuthorizationPreview" not in symbols + strings:
                 raise SystemExit("Debug control did not find authorization/session fixtures")
         if expect_fixtures and identifier.endswith(".report") and "Instagram" not in strings:

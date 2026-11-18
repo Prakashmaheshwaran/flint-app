@@ -36,8 +36,18 @@ class DataStoreTimeLimitUsageStore(
     private val deviceZone: () -> String = { TimeZone.getDefault().id },
     private val prepareEditor: ((MutablePreferences, AccessClockStamp) -> Unit)? = null,
 ) {
-    /** Read after preparation; absent usage keys here are uninitialized, not authoritative zero. */
-    val state = dataStore.data.storageStates(::readTimeLimitUsage)
+    /**
+     * Read after preparation; absent usage keys here are uninitialized, not authoritative zero.
+     * A pending production capture and a never-initialized ledger are retryable ([StorageFailure.IO],
+     * the same reason the writers raise), never CORRUPT. Any partial or malformed Time-owned bytes,
+     * a failed capture, or a future version keep their strict reason. No state is ever Ready-empty.
+     */
+    val state = dataStore.data.storageStates { prefs ->
+        dataStore.requireTimeBootstrap(prefs)
+        readTimeLimitBootstrapContext(prefs) // A recorded capture failure keeps its own reason.
+        if (prefs.asMap().keys.none { it.name in TIME_USAGE_OWNED_KEYS }) throw StorageUnavailableException(StorageFailure.IO)
+        readTimeLimitUsage(prefs)
+    }
 
     /**
      * Same serialized durable domain as OS samples. Ownership is rechecked inside the edit;
@@ -226,14 +236,16 @@ internal fun MutablePreferences.putTimeLimitUsage(ledger: TimeLimitUsageLedger) 
 
 internal fun timeUsageRequire(value: Boolean) { if (!value) wireCorrupt() }
 
+/** Keys written only by Time usage/saved-zone initialization; none present means never initialized. */
+private val TIME_USAGE_OWNED_KEYS by lazy { setOf(TIME_USAGE_SCHEMA.name, TIME_USAGE_STATE.name, TIME_USAGE_ARCHIVE.name,
+    TIME_USAGE_TARGETS.name, TIME_LIMIT_ZONE_SCHEMA.name) }
+
 /** Only the Time read boundary owns these children; capture failure cannot break other stores. */
 internal fun validateTimeLimitUsageForRead(prefs: Preferences) {
     readTimeLimitBootstrapContext(prefs)
     val editorVersion = StrictPrefsCodec.long(prefs, EDITOR_VERSION_KEY)
     if (editorVersion != null) readEditorState(prefs) // Includes future-version rejection.
-    val ownNames = setOf(TIME_USAGE_SCHEMA.name, TIME_USAGE_STATE.name, TIME_USAGE_ARCHIVE.name,
-        TIME_USAGE_TARGETS.name, TIME_LIMIT_ZONE_SCHEMA.name)
-    if (editorVersion?.let { it >= 3L } == true || prefs.asMap().keys.any { it.name in ownNames })
+    if (editorVersion?.let { it >= 3L } == true || prefs.asMap().keys.any { it.name in TIME_USAGE_OWNED_KEYS })
         readTimeLimitUsage(prefs)
 }
 

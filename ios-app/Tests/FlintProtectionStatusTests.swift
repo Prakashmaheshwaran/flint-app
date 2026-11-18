@@ -310,7 +310,7 @@ final class FlintProtectionStatusTests: XCTestCase {
             calls.append(name)
         })
         FlintProtectionStatus.publish(snapshot, to: store, effects: effects)
-        XCTAssertEqual(calls, ["FlintProtectionWidget", "com.flint.peakfocus.status.changed"])
+        XCTAssertEqual(calls, ["FlintProtectionWidget", "app.flint.focus.status.changed"])
         calls = []
         FlintProtectionStatus.publish(snapshot, to: nil, effects: effects)
         XCTAssertTrue(calls.isEmpty)

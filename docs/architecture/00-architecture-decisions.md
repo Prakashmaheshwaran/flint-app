@@ -156,17 +156,19 @@ Shields are written **from the monitor extension** so blocking survives app deat
 
 | Target | Bundle ID |
 |---|---|
-| Host app | `com.flint.peakfocus` |
-| Monitor extension | `com.flint.peakfocus.monitor` |
-| Shield configuration | `com.flint.peakfocus.shield-config` |
-| Shield action | `com.flint.peakfocus.shield-action` |
-| Device-activity report | `com.flint.peakfocus.report` |
-| App Group (all targets) | `group.com.flint.peakfocus` |
+| Host app | `app.flint.focus` |
+| Monitor extension | `app.flint.focus.monitor` |
+| Shield configuration | `app.flint.focus.shield-config` |
+| Shield action | `app.flint.focus.shield-action` |
+| Device-activity report | `app.flint.focus.report` |
+| App Group (all targets) | `group.app.flint.focus` |
 
-**Distribution gate (track from day one).** Each Bundle ID needs its own
-`com.apple.developer.family-controls` **distribution** approval from Apple (free to develop;
-a GitHub URL is accepted as the "website"; free/OSS apps are not disqualified; turnaround days
-→ weeks). File these early.
+**Distribution gate (track from day one).** Shipping needs Apple's
+`com.apple.developer.family-controls` **distribution** entitlement (free to develop;
+a GitHub URL is accepted as the "website"; free/OSS apps are not disqualified). Apple's form is
+now account-level; Flint's request `2CLYP9S4H2` was granted on 2026-11-01, after which the
+capability is enabled per App ID in the developer portal. The iOS identifiers moved from
+`com.flint.peakfocus` to `app.flint.focus` because the old prefix is registered to another team.
 
 ---
 
@@ -177,7 +179,9 @@ multi-module Gradle (Kotlin + Compose, single-Activity). Two detection paths
 (**AccessibilityService** primary + **UsageStatsManager** fallback) feed **one pure-Kotlin
 `BlockDecisionEngine`**; enforcement via a11y overlay (preferred) or `SYSTEM_ALERT_WINDOW`
 overlay / full-screen Activity + `GLOBAL_ACTION_HOME`, kept alive by a foreground service with
-a `blocking-resilience` module for OEM/battery survival. Application ID `com.flint.peakfocus`.
+a `blocking-resilience` module for OEM/battery survival. Application ID `app.flint.focus`
+(originally `com.flint.peakfocus`; the Gradle namespace and Kotlin packages keep
+`com.flint.peakfocus`, see ADR-008).
 
 **Play compliance is a ship gate, not a nicety.** Flint is **not** eligible for
 `isAccessibilityTool` (it is a "monitoring app") — it must **not** declare that flag, and must
@@ -192,10 +196,25 @@ ships this exact route, so it is proven.
 **Decision.** Use `com.flint.peakfocus` (iOS bundle prefix + Android applicationId) as a
 **placeholder** reverse-DNS, since no domain is owned.
 
+**Amendment (2026-11-05).** `com.flint.peakfocus` turned out to be registered to another Apple
+team, so the iOS bundle prefix and App Group were re-keyed to `app.flint.focus` /
+`group.app.flint.focus` (the App IDs registered for Flint's own team). The Android applicationId
+is unchanged for now.
+
+**Amendment (2026-11-11).** The Android applicationId was re-keyed to `app.flint.focus` (debug
+and release; instrumentation APK `app.flint.focus.test`) so both platforms share one identifier
+family. The Gradle `namespace` and Kotlin packages stay `com.flint.peakfocus` to avoid churn, so
+runtime component strings (adb `-n`, `ComponentName`, `setClassName`, Orca `--activity`) must use
+fully qualified class names (e.g. `app.flint.focus/com.flint.peakfocus.MainActivity`), never
+`pkg/.Class` shorthand or `packageName + ".Class"`. Manifest declarations such as
+`android:name=".MainActivity"` still resolve against the namespace and need no change. Installs
+from the old package cannot update in place and do not carry local data.
+
 **Fork note (documented in CONTRIBUTING).** Anyone shipping their own build must (a) change the
-bundle/application IDs to identifiers they control, and (b) for iOS, file their own
-family-controls distribution requests (approval is tied to a specific Apple ID + Bundle IDs and
-is **not** transferable). The source is fully open; the *shipping signing identity* is not.
+bundle/application IDs to identifiers they control, and (b) for iOS, request their own
+family-controls distribution entitlement (granted to a specific Apple developer account, then
+enabled per Bundle ID, and **not** transferable). The source is fully open; the *shipping signing
+identity* is not.
 
 ---
 

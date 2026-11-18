@@ -33,6 +33,12 @@ internal object ProtectionStatusProjection {
         usageAccessMissing: Boolean = false,
         timeMeasurementUnavailable: Boolean = false,
         timeMeasurementStorageUnavailable: Boolean = false,
+        /**
+         * Latest new shield mount outcome (R-30); a failure is health, never access. Required:
+         * every caller must pass the observed outcome, so an omitted argument can never read as
+         * a healthy mount.
+         */
+        blockSurface: BlockSurfaceMountPublisher.Outcome,
     ): ProtectionStatus {
         val inputs = listOf(focus, rulesReadiness, times, opens, editor)
         val readiness = when {
@@ -42,6 +48,7 @@ internal object ProtectionStatusProjection {
         }
         val reasons = linkedSetOf<String>()
         if (!pathAConnected) reasons += "path-a-disconnected"
+        blockSurface.reason?.let { reasons += it }
         if (timeMeasurementUnavailable || timeMeasurementStorageUnavailable) reasons += "time-limit-measurement-unavailable"
         // Derived context only: the service owns the raw permission observation. Copying
         // its missing-access reason here would feed stale policy state back after recovery.
@@ -65,12 +72,15 @@ internal object ProtectionStatusProjection {
         if ((ledger?.droppedEvents ?: 0) > 0) reasons += "lifecycle-events-dropped"
         if (ledger?.previousAccessEnded == true) reasons += "access-ended-after-restart"
         val causes = mutableListOf<ProtectionStatus.ActiveCause>()
+        // A Pomodoro phase end must refresh the snapshot; a stale phase is never displayed.
+        val phaseBoundaries = mutableListOf<Long>()
         val sidecar = (editor as? StorageState.Ready)?.value
         val configured = (rulesReadiness as? StorageState.Ready)?.value.orEmpty()
         val configuredIds = configured.map { it.id }.toSet()
         val currentRules = configured + effectiveRules.filter { it.id !in configuredIds }
         if (readiness == ProtectionStatus.Readiness.READY && sidecar != null) {
-            fun add(key: String, ruleId: String?, name: String, kind: ProtectionStatus.CauseKind, tier: BreakLevel) {
+            fun add(key: String, ruleId: String?, name: String, kind: ProtectionStatus.CauseKind, tier: BreakLevel,
+                    plan: com.flint.peakfocus.core.model.PomodoroPlan? = null) {
                 val occurrence = sidecar.causes[key]
                 if (occurrence == null) {
                     reasons += "occurrence-state-unavailable"
@@ -80,10 +90,20 @@ internal object ProtectionStatusProjection {
                 val interval = occurrence.interval
                 val remaining = interval?.remainingMs(now)
                 if (remaining == 0L) return
+                // F01: the phase follows trusted elapsed time; its end is when this read stops
+                // being able to claim the phase, so it also bounds snapshot validity. A plan that
+                // does not line up with the committed remaining time makes no phase claim.
+                val elapsed = if (plan != null && remaining != null && remaining <= plan.totalMs)
+                    plan.totalMs - remaining else null
+                val phase = if (plan != null && elapsed != null) plan.phaseAt(elapsed) else null
+                val phaseRemaining = if (phase != null && elapsed != null) phase.endMs - elapsed else null
+                val phaseEndMs = phaseRemaining?.let { addBounded(now.wallEpochMs, it) }
                 causes += ProtectionStatus.ActiveCause(ruleId, ProtectionStatus.sanitizeDisplayName(name), kind, tier,
                     remaining, remaining?.let { addBounded(now.elapsedRealtimeMs, it) },
                     remaining?.let { addBounded(now.wallEpochMs, it) },
-                    interval?.let { clockDiscontinuity(it.anchor, now) } ?: true, occurrence.occurrenceId)
+                    interval?.let { clockDiscontinuity(it.anchor, now) } ?: true, occurrence.occurrenceId,
+                    phase, plan?.rounds, phaseEndMs)
+                phaseRemaining?.let { phaseBoundaries += addBounded(now.elapsedRealtimeMs, it) }
             }
             currentRules.filter { it.enabled }.forEach { rule ->
                 val kind = when {
@@ -93,7 +113,7 @@ internal object ProtectionStatusProjection {
                     rule.expiresAtEpochMs != null && !rule.id.startsWith(BlockRule.SESSION_ID_PREFIX) -> ProtectionStatus.CauseKind.SCHEDULE
                     else -> ProtectionStatus.CauseKind.SESSION
                 }
-                if (rule.id in configuredIds) add(ruleCauseKey(rule.id), rule.id, rule.name, kind, rule.breakLevel)
+                if (rule.id in configuredIds) add(ruleCauseKey(rule.id), rule.id, rule.name, kind, rule.breakLevel, rule.pomodoro)
                 else foreignActivity(rule, now, legacyZone)?.let { activity ->
                     causes += ProtectionStatus.ActiveCause(rule.id, ProtectionStatus.sanitizeDisplayName(rule.name), kind, rule.breakLevel,
                         activity.end?.let { (it - now.wallEpochMs).coerceAtLeast(0) },
@@ -120,7 +140,7 @@ internal object ProtectionStatusProjection {
         val eligibility = ledger?.let { RollingEmergencyPassPolicy().eligibility(GlobalRecoveryPolicy.passState(it), now) }
         val passBoundary = if (recoveryRemaining > 0) recoveryRemaining else
             (eligibility as? RollingEmergencyPassPolicy.Eligibility.CoolingDown)?.remainingMs
-        val deadline = (causes.mapNotNull { it.logicalEndElapsedRealtimeMs } + listOfNotNull(
+        val deadline = (causes.mapNotNull { it.logicalEndElapsedRealtimeMs } + phaseBoundaries + listOfNotNull(
             next?.let { addBounded(now.elapsedRealtimeMs, (it.startWallEstimateEpochMs - now.wallEpochMs).coerceAtLeast(0)) },
             addBounded(now.elapsedRealtimeMs, FRESHNESS_MS),
             passBoundary?.let { addBounded(now.elapsedRealtimeMs, it) },
@@ -148,6 +168,11 @@ internal object ProtectionStatusProjection {
         val expiry = rule.expiresAtEpochMs
         if (expiry != null && expiry <= now.wallEpochMs) return null
         val schedule = rule.schedule ?: return ForeignActivity(expiry)
+        // A dated window is one occurrence in device wall time; never a weekly pattern.
+        if (schedule.date != null) {
+            val occurrence = ScheduleOccurrences.containing(schedule, ZoneId.of(zone), now.wallEpochMs) ?: return null
+            return ForeignActivity(minOf(occurrence.endsAtEpochMs, expiry ?: Long.MAX_VALUE))
+        }
         val cal = Calendar.getInstance(TimeZone.getTimeZone(zone)).apply { timeInMillis = now.wallEpochMs }
         val minute = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         val day = ((cal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1

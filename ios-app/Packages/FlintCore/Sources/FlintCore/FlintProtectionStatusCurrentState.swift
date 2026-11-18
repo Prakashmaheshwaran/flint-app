@@ -10,11 +10,23 @@ extension FlintProtectionStatusBuilder.RuleInput {
                                 armed: Bool, observed: Bool, now: Date, calendar: Calendar,
                                 clock: FlintClock? = nil) -> Self {
         guard rule.protection != nil else {
+            // A one-shot is never a weekly window, even without versioned metadata: its mirror
+            // weekday would otherwise publish a next occurrence every week.
+            if let oneShot = rule.oneShot {
+                let window = DateInterval(start: oneShot.start, end: oneShot.end)
+                return .init(id: rule.id, kind: .oneShotSchedule, displayName: rule.name, tier: rule.breakLevel,
+                    enabled: rule.enabled && now < oneShot.end, armed: armed, observed: observed,
+                    currentWindow: oneShot.contains(now) ? window : nil,
+                    nextWindow: oneShot.start > now ? window : nil)
+            }
             return .schedule(id: rule.id, kind: kind, displayName: rule.name, tier: rule.breakLevel,
                 schedule: rule.schedule, enabled: rule.enabled, armed: armed, observed: observed, now: now, calendar: calendar)
         }
         var resolved = clock ?? .system; resolved.now = { now }
         let timeline = FlintRuleOccurrenceClock.date(for: rule, clock: resolved)
+        // A finished one-shot is history, not a cause: it is deliberately unregistered, so it must
+        // not publish registration_unobserved/failed or degrade every other surface's status.
+        let finishedOneShot = rule.oneShot.map { timeline >= $0.end && rule.occurrence(at: now, clock: resolved) == nil } ?? false
         func displayed(_ window: FlintRuleWindow) -> DateInterval {
             let display = FlintRuleOccurrenceClock.display(window, for: rule, clock: resolved)
             return .init(start: display.start, end: display.end)
@@ -29,7 +41,7 @@ extension FlintProtectionStatusBuilder.RuleInput {
             }
         }
         return .init(id: rule.id, kind: rule.oneShot == nil ? kind : .oneShotSchedule,
-            displayName: rule.name, tier: rule.breakLevel, enabled: rule.enabled,
+            displayName: rule.name, tier: rule.breakLevel, enabled: rule.enabled && !finishedOneShot,
             armed: armed, observed: observed, available: rule.validationIssue == nil,
             currentWindow: current, nextWindow: next)
     }
@@ -192,12 +204,24 @@ extension FlintProtectionStatus {
         }
         // Legacy sessions predate origin tracking; absent origins retain the app UI default.
         // The end shown and published is the logical one: a same-boot wall jump moves it (§9).
-        let session = active.map {
-            FlintProtectionStatusBuilder.SessionInput($0,
-                armed: sessionArmed ?? activities.contains($0.monitorName),
-                kind: sessionKind,
-                origin: sessionOrigin ?? $0.origin.flatMap(FlintProtectionStatusSnapshot.Session.Origin.init(rawValue:)) ?? .appUI,
-                logicalEnd: $0.stableLogicalEnd(clock: clock))
+        // A frozen chain plan identifies a Pomodoro parent regardless of the caller's default.
+        let effectiveKind: FlintProtectionStatusSnapshot.Session.Kind =
+            active?.pomodoro != nil ? .pomodoro : sessionKind
+        let session = active.map { active -> FlintProtectionStatusBuilder.SessionInput in
+            let position = active.pomodoroPhase(clock: clock)
+            let elapsed = active.pomodoroElapsed(clock: clock)
+            let phase = position?.phase
+            let phaseEndsAt = phase.flatMap { phase in
+                elapsed.map { now.addingTimeInterval(phase.end - $0) }
+            }
+            return FlintProtectionStatusBuilder.SessionInput(active,
+                armed: sessionArmed ?? activities.contains(active.monitorName),
+                enforcing: !active.isInPomodoroRest(clock: clock),
+                kind: effectiveKind,
+                origin: sessionOrigin ?? active.origin.flatMap(FlintProtectionStatusSnapshot.Session.Origin.init(rawValue:)) ?? .appUI,
+                logicalEnd: active.stableLogicalEnd(clock: clock),
+                phase: phase == nil ? nil : (phase?.isRest == true ? .rest : .focus),
+                round: phase?.round, rounds: active.pomodoro?.rounds, phaseEndsAt: phaseEndsAt)
         }
         let liveActive = active.flatMap { $0.isLogicallyExpired(clock: clock) ? nil : $0 }
         // A recent observed wall-clock anomaly remains relevant without a manual session.

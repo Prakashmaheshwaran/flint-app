@@ -104,11 +104,7 @@ object PathBBlockHandoff {
     ): BlockScreenCoordinator {
         val overlay = OverlayController(appContext)
         val host = surfaceHost ?: object : BlockScreenCoordinator.SurfaceHost {
-            override fun attach(view: View): Boolean {
-                if (!overlay.canShow()) return false
-                overlay.show(view)
-                return overlay.isShowing()
-            }
+            override fun attach(view: View): Boolean = overlay.canShow() && overlay.show(view)
 
             override fun detach(view: View) = overlay.hide()
             override fun setRecoveryHandoffFocus(enabled: Boolean) = overlay.setRecoveryHandoffFocus(enabled)

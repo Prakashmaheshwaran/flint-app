@@ -1,0 +1,45 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuites tests="12" failures="0" errors="0" skipped="0" time="0.000" timestamp="2026-11-11T09:24:43" hostname="localhost">
+  <testsuite name="com.flint.peakfocus.e2e.FlintSmokeTest" tests="4" failures="0" errors="0" skipped="0" time="299.131" timestamp="2026-11-11T09:24:43" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="hardcoreShieldEmergencyPassWorks" classname="com.flint.peakfocus.e2e.FlintSmokeTest" time="93.992" />
+    <testcase name="authoredRuleSurvivesProcessRestartAndShieldBreakWorks" classname="com.flint.peakfocus.e2e.FlintSmokeTest" time="112.958" />
+    <testcase name="onboardingConsentRendersAndDeclines" classname="com.flint.peakfocus.e2e.FlintSmokeTest" time="11.693" />
+    <testcase name="exhaustedDailyBudgetShowsTimeLimitShield" classname="com.flint.peakfocus.e2e.FlintSmokeTest" time="80.488" />
+  </testsuite>
+  <testsuite name="com.flint.peakfocus.e2e.FocusHistoryTest" tests="1" failures="0" errors="0" skipped="0" time="377.048" timestamp="2026-11-11T09:24:43" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="realCompletionAndEarlyEndSurviveRestartAndRenderHistory" classname="com.flint.peakfocus.e2e.FocusHistoryTest" time="377.048" />
+  </testsuite>
+  <testsuite name="com.flint.peakfocus.e2e.GlanceStartupWidgetTest" tests="1" failures="0" errors="0" skipped="0" time="12.909" timestamp="2026-11-11T09:24:43" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="installedWidgetWorkerRendersUnavailableAndOpensFlint" classname="com.flint.peakfocus.e2e.GlanceStartupWidgetTest" time="12.909" />
+  </testsuite>
+  <testsuite name="com.flint.peakfocus.e2e.GlanceSurfaceTest" tests="1" failures="0" errors="0" skipped="0" time="28.016" timestamp="2026-11-11T09:24:43" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="fixtureWidgetAndOptionalNotificationProtectedInactiveAndUnavailable" classname="com.flint.peakfocus.e2e.GlanceSurfaceTest" time="28.016" />
+  </testsuite>
+  <testsuite name="com.flint.peakfocus.e2e.SetupAnrPolicyTest" tests="1" failures="0" errors="0" skipped="0" time="0.004" timestamp="2026-11-11T09:24:43" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="onlyIdentifiedSystemOrLauncherAnrsCanBeDismissed" classname="com.flint.peakfocus.e2e.SetupAnrPolicyTest" time="0.004" />
+  </testsuite>
+  <testsuite name="com.flint.peakfocus.e2e.SetupHomeInputPolicyTest" tests="4" failures="0" errors="0" skipped="0" time="0.002" timestamp="2026-11-11T09:24:43" hostname="localhost">
+    <properties>
+      <property name="device" value="emulator-5554" />
+    </properties>
+    <testcase name="acceptedInputIsNotRepeatedUnlessAnAnrInterruptsSetup" classname="com.flint.peakfocus.e2e.SetupHomeInputPolicyTest" time="0.000" />
+    <testcase name="rejectedInputsBackOffAndStopAfterThreeAttempts" classname="com.flint.peakfocus.e2e.SetupHomeInputPolicyTest" time="0.002" />
+    <testcase name="observedLauncherSuppressesRetryEvenWhenInputReportedFailure" classname="com.flint.peakfocus.e2e.SetupHomeInputPolicyTest" time="0.000" />
+    <testcase name="deadlinePreventsInputIncludingWhenBackoffWouldOutlastIt" classname="com.flint.peakfocus.e2e.SetupHomeInputPolicyTest" time="0.000" />
+  </testsuite>
+</testsuites>

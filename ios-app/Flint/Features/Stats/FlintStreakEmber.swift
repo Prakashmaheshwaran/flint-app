@@ -168,10 +168,10 @@ private struct FlameGeometry {
 
     init(s: CGFloat) {
         self.s = s
-        self.w = s * 0.76
-        self.h = s * 0.90
-        self.cx = s * 0.5
-        self.baseY = s * 0.95
+        self.w = s * 0.74
+        self.h = s * 0.92
+        self.cx = s * 0.50
+        self.baseY = s * 0.96
     }
 }
 
@@ -208,21 +208,38 @@ internal func fringeWidthsDp(sizeDp: Double) -> (Double, Double) {
     if sizeDp < 48 { return (0.7, 1.1) } else if sizeDp < 120 { return (1.0, 1.8) } else { return (1.4, 2.6) }
 }
 
-/// Emoji-like 🔥 outer silhouette.
+/// Emoji/Snapchat-like 🔥 outer silhouette.
 private func buildOuter(geo: FlameGeometry, tipDx: CGFloat, sway: CGFloat, heightScale: CGFloat, widen: CGFloat, lickL: CGFloat, lickR: CGFloat) -> Path {
     let w = geo.w, h = geo.h, cx = geo.cx, baseY = geo.baseY
     func x(_ fx: CGFloat, _ ft: CGFloat) -> CGFloat { cx + fx * w * widen + sway * ft * ft + tipDx * ft * ft }
     func y(_ ft: CGFloat) -> CGFloat { baseY - ft * h * heightScale }
     var p = Path()
-    p.move(to: CGPoint(x: x(0.04, 1.00), y: y(1.00)))
-    p.addCurve(to: CGPoint(x: x(0.36, 0.58) + lickR * 0.7, y: y(0.58)), control1: CGPoint(x: x(0.14, 0.90), y: y(0.90)), control2: CGPoint(x: x(0.30, 0.72) + lickR * 0.5, y: y(0.72)))
-    p.addCurve(to: CGPoint(x: x(0.40, 0.22), y: y(0.22)), control1: CGPoint(x: x(0.42, 0.46), y: y(0.46)), control2: CGPoint(x: x(0.46, 0.34), y: y(0.34)))
-    p.addCurve(to: CGPoint(x: x(0.22, 0.00), y: y(0.00)), control1: CGPoint(x: x(0.46, 0.14), y: y(0.14)), control2: CGPoint(x: x(0.38, 0.04), y: y(0.04)))
-    p.addCurve(to: CGPoint(x: x(-0.22, 0.00), y: y(0.00)), control1: CGPoint(x: x(0.08, -0.01), y: y(-0.01)), control2: CGPoint(x: x(-0.08, -0.01), y: y(-0.01)))
-    p.addCurve(to: CGPoint(x: x(-0.38, 0.28), y: y(0.28)), control1: CGPoint(x: x(-0.38, 0.04), y: y(0.04)), control2: CGPoint(x: x(-0.44, 0.16), y: y(0.16)))
-    p.addCurve(to: CGPoint(x: x(-0.24, 0.56) + lickL * 0.7, y: y(0.56)), control1: CGPoint(x: x(-0.34, 0.38), y: y(0.38)), control2: CGPoint(x: x(-0.30, 0.46) + lickL * 0.4, y: y(0.46)))
-    p.addCurve(to: CGPoint(x: x(-0.02, 0.92), y: y(0.92)), control1: CGPoint(x: x(-0.18, 0.68) + lickL * 0.4, y: y(0.68)), control2: CGPoint(x: x(-0.08, 0.82), y: y(0.82)))
-    p.addCurve(to: CGPoint(x: x(0.04, 1.00), y: y(1.00)), control1: CGPoint(x: x(0.00, 0.96), y: y(0.96)), control2: CGPoint(x: x(0.02, 0.985), y: y(0.985)))
+    // Pointed tip, slightly right of center.
+    p.move(to: CGPoint(x: x(0.06, 1.00), y: y(1.00)))
+    p.addCurve(to: CGPoint(x: x(0.40, 0.58) + lickR * 0.8, y: y(0.58)),
+               control1: CGPoint(x: x(0.18, 0.90), y: y(0.90)),
+               control2: CGPoint(x: x(0.34, 0.74) + lickR * 0.5, y: y(0.74)))
+    p.addCurve(to: CGPoint(x: x(0.40, 0.18), y: y(0.18)),
+               control1: CGPoint(x: x(0.46, 0.44), y: y(0.44)),
+               control2: CGPoint(x: x(0.48, 0.32), y: y(0.32)))
+    p.addCurve(to: CGPoint(x: x(0.18, -0.01), y: y(-0.01)),
+               control1: CGPoint(x: x(0.46, 0.10), y: y(0.10)),
+               control2: CGPoint(x: x(0.38, 0.01), y: y(0.01)))
+    p.addCurve(to: CGPoint(x: x(-0.24, 0.01), y: y(0.01)),
+               control1: CGPoint(x: x(0.02, -0.015), y: y(-0.015)),
+               control2: CGPoint(x: x(-0.10, -0.01), y: y(-0.01)))
+    p.addCurve(to: CGPoint(x: x(-0.40, 0.28), y: y(0.28)),
+               control1: CGPoint(x: x(-0.40, 0.04), y: y(0.04)),
+               control2: CGPoint(x: x(-0.46, 0.16), y: y(0.16)))
+    p.addCurve(to: CGPoint(x: x(-0.27, 0.54) + lickL * 0.7, y: y(0.54)),
+               control1: CGPoint(x: x(-0.36, 0.36), y: y(0.36)),
+               control2: CGPoint(x: x(-0.32, 0.44) + lickL * 0.4, y: y(0.44)))
+    p.addCurve(to: CGPoint(x: x(-0.02, 0.90), y: y(0.90)),
+               control1: CGPoint(x: x(-0.20, 0.66) + lickL * 0.4, y: y(0.66)),
+               control2: CGPoint(x: x(-0.10, 0.80), y: y(0.80)))
+    p.addCurve(to: CGPoint(x: x(0.06, 1.00), y: y(1.00)),
+               control1: CGPoint(x: x(0.01, 0.95), y: y(0.95)),
+               control2: CGPoint(x: x(0.04, 0.985), y: y(0.985)))
     p.closeSubpath()
     return p
 }
@@ -230,16 +247,26 @@ private func buildOuter(geo: FlameGeometry, tipDx: CGFloat, sway: CGFloat, heigh
 /// Inner yellow/orange flame tongue.
 private func buildCore(geo: FlameGeometry, tipDx: CGFloat, sway: CGFloat, heightScale: CGFloat, widen: CGFloat, top: CGFloat) -> Path {
     let w = geo.w, h = geo.h, cx = geo.cx, baseY = geo.baseY
-    func x(_ fx: CGFloat, _ ft: CGFloat) -> CGFloat { cx + fx * w * widen * 0.92 + sway * ft * ft + tipDx * ft * ft * 0.75 }
+    func x(_ fx: CGFloat, _ ft: CGFloat) -> CGFloat { cx + fx * w * widen + sway * ft * ft + tipDx * ft * ft * 0.70 }
     func y(_ ft: CGFloat) -> CGFloat { baseY - ft * h * heightScale }
-    let tipY = min(top, 0.90)
+    let tipY = min(top, 0.84)
     var p = Path()
     p.move(to: CGPoint(x: x(0.03, tipY), y: y(tipY)))
-    p.addCurve(to: CGPoint(x: x(0.18, 0.42), y: y(0.42)), control1: CGPoint(x: x(0.10, tipY - 0.10), y: y(tipY - 0.10)), control2: CGPoint(x: x(0.18, 0.56), y: y(0.56)))
-    p.addCurve(to: CGPoint(x: x(0.04, 0.12), y: y(0.12)), control1: CGPoint(x: x(0.20, 0.30), y: y(0.30)), control2: CGPoint(x: x(0.14, 0.18), y: y(0.18)))
-    p.addCurve(to: CGPoint(x: x(-0.14, 0.28), y: y(0.28)), control1: CGPoint(x: x(-0.04, 0.10), y: y(0.10)), control2: CGPoint(x: x(-0.12, 0.16), y: y(0.16)))
-    p.addCurve(to: CGPoint(x: x(-0.06, 0.64), y: y(0.64)), control1: CGPoint(x: x(-0.16, 0.40), y: y(0.40)), control2: CGPoint(x: x(-0.12, 0.52), y: y(0.52)))
-    p.addCurve(to: CGPoint(x: x(0.03, tipY), y: y(tipY)), control1: CGPoint(x: x(-0.02, 0.74), y: y(0.74)), control2: CGPoint(x: x(0.00, tipY - 0.08), y: y(tipY - 0.08)))
+    p.addCurve(to: CGPoint(x: x(0.16, 0.44), y: y(0.44)),
+               control1: CGPoint(x: x(0.10, tipY - 0.12), y: y(tipY - 0.12)),
+               control2: CGPoint(x: x(0.16, 0.58), y: y(0.58)))
+    p.addCurve(to: CGPoint(x: x(0.03, 0.14), y: y(0.14)),
+               control1: CGPoint(x: x(0.17, 0.32), y: y(0.32)),
+               control2: CGPoint(x: x(0.12, 0.20), y: y(0.20)))
+    p.addCurve(to: CGPoint(x: x(-0.13, 0.30), y: y(0.30)),
+               control1: CGPoint(x: x(-0.05, 0.12), y: y(0.12)),
+               control2: CGPoint(x: x(-0.12, 0.18), y: y(0.18)))
+    p.addCurve(to: CGPoint(x: x(-0.05, 0.64), y: y(0.64)),
+               control1: CGPoint(x: x(-0.14, 0.42), y: y(0.42)),
+               control2: CGPoint(x: x(-0.10, 0.54), y: y(0.54)))
+    p.addCurve(to: CGPoint(x: x(0.03, tipY), y: y(tipY)),
+               control1: CGPoint(x: x(-0.01, 0.74), y: y(0.74)),
+               control2: CGPoint(x: x(0.00, tipY - 0.08), y: y(tipY - 0.08)))
     p.closeSubpath()
     return p
 }
@@ -251,6 +278,8 @@ struct FlintStreakEmber: View {
     let mood: StreakEmberMood
     var milestoneFlash: CGFloat = 0
     var size: CGFloat = 96
+    /// When true, keeps a gentle live/burning motion even for dormant (e.g. streak sheet).
+    var forceAnimate: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -265,7 +294,7 @@ struct FlintStreakEmber: View {
         .accessibilityHidden(true)
     }
 
-    private var shouldAnimate: Bool { !reduceMotion && mood != .dormant }
+    private var shouldAnimate: Bool { !reduceMotion && (mood != .dormant || forceAnimate) }
 
     @State private var startDate = Date()
     @State private var anchorSeconds = STATIC_FLAME_SECONDS
@@ -277,7 +306,7 @@ struct FlintStreakEmber: View {
         let compact = s < 48
         let emberCount = s >= 128 ? 3 : (s >= 64 ? 2 : (s >= 36 ? 1 : 0))
         let animate = shouldAnimate
-        let rate = mood == .warning ? 0.6 : 1.0
+        let rate = mood == .dormant ? 0.45 : (mood == .warning ? 0.6 : 1.0)
         let intensity = palette.intensity
 
         let tipDx = animate ? tipFlickerDx(t, rate: rate, halfW: Double(geo.w) * 0.5) * intensity : 0

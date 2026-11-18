@@ -1,0 +1,9 @@
+{"serial": "emulator-5554", "context": "initial", "result": "verified", "boot_id": "<redacted-uuid>", "expected": null}
+{"serial": "emulator-5554", "context": "collection", "result": "same", "boot_id": "<redacted-uuid>", "expected": "<redacted-uuid>"}
+{"serial": "emulator-5554", "context": "grant-cleanup", "result": "same", "boot_id": "<redacted-uuid>", "expected": "<redacted-uuid>"}
+{"serial": "emulator-5554", "context": "initial", "result": "verified", "boot_id": "<redacted-uuid>", "expected": null}
+{"serial": "emulator-5554", "context": "collection", "result": "same", "boot_id": "<redacted-uuid>", "expected": "<redacted-uuid>"}
+{"serial": "emulator-5554", "context": "grant-cleanup", "result": "same", "boot_id": "<redacted-uuid>", "expected": "<redacted-uuid>"}
+{"serial": "emulator-5554", "context": "initial", "result": "verified", "boot_id": "<redacted-uuid>", "expected": null}
+{"serial": "emulator-5554", "context": "collection", "result": "same", "boot_id": "<redacted-uuid>", "expected": "<redacted-uuid>"}
+{"serial": "emulator-5554", "context": "grant-cleanup", "result": "same", "boot_id": "<redacted-uuid>", "expected": "<redacted-uuid>"}

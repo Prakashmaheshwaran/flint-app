@@ -11,7 +11,7 @@ import org.junit.Test
 
 class SafetyFloorGateTest {
 
-    private val self = "com.flint.peakfocus"
+    private val self = "app.flint.focus"
     private var now = 1_000L
     private var resolveCalls = 0
     private var sources: Map<String, Set<String>?> = mapOf(

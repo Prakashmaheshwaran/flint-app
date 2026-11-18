@@ -185,7 +185,7 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
             var baseline = FlintScheduleRegistrationState.load(from: defaults)[original.monitorName]
             XCTAssertNotNil(baseline?.protection?.timeAnchor)
             baseline?.protection?.timeAnchor = nil
-            XCTAssertEqual(baseline, original)
+            XCTAssertEqual(baseline?.ignoringOccurrence, Optional(original.ignoringOccurrence))
             var edited = original
             edited.name = "Renamed"
             edited.breakLevel = .harder
@@ -201,7 +201,7 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
             var retained = FlintScheduleRegistrationState.load(from: defaults)[original.monitorName]
             XCTAssertNotNil(retained?.protection?.timeAnchor)
             retained?.protection?.timeAnchor = nil
-            XCTAssertEqual(retained, lastGood)
+            XCTAssertEqual(retained?.ignoringOccurrence, Optional(lastGood.ignoringOccurrence))
             XCTAssertEqual(controller.reload().count, 1)
             XCTAssertEqual(center.starts.count, 2, "a refused edit must retry instead of adopting a false baseline")
         }
@@ -252,5 +252,38 @@ final class FlintProtectionRecoverySafetyTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         try body(defaults)
+    }
+}
+
+final class FlintScheduleOccurrenceEqualityTests: XCTestCase {
+    /// The upgrade-baseline test compares persisted records against freshly built ones. Only
+    /// `protection.occurrence` is wall-clock-derived and must be normalized; every other field
+    /// still has to match, or the helper would hide a real regression.
+    func testIgnoringOccurrenceStripsOnlyTheWallClockWindow() {
+        let base = FlintScheduleRule(id: "x", name: "Original", schedule: .init(startHour: 9, endHour: 17))
+        var withWindow = base
+        var protection = try! XCTUnwrap(base.protection)
+        protection.occurrence = .init(start: Date(timeIntervalSince1970: 100),
+                                      end: Date(timeIntervalSince1970: 200))
+        withWindow.protection = protection
+        XCTAssertNotEqual(withWindow, base, "a live occurrence makes the raw records unequal")
+        XCTAssertEqual(withWindow.ignoringOccurrence, base.ignoringOccurrence)
+
+        var renamed = withWindow
+        renamed.name = "Renamed"
+        XCTAssertNotEqual(renamed.ignoringOccurrence, base.ignoringOccurrence, "other fields stay strict")
+    }
+}
+
+private extension FlintScheduleRule {
+    /// `protection.occurrence` is derived from the wall clock at load time, so a test that
+    /// asserts persistence equality must not depend on whether "now" currently falls inside
+    /// the rule's window. Everything else in the record is still compared strictly.
+    var ignoringOccurrence: FlintScheduleRule {
+        guard var protection else { return self }
+        protection.occurrence = nil
+        return FlintScheduleRule(id: id, name: name, schedule: schedule, breakLevel: breakLevel,
+                                 selection: selection, allowListMode: allowListMode, enabled: enabled,
+                                 protection: protection, oneShot: oneShot)
     }
 }

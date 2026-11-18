@@ -91,6 +91,7 @@ fun FlintStreakEmber(
     modifier: Modifier = Modifier,
     size: Dp = 160.dp,
     milestoneFlash: Float = 0f,
+    forceAnimate: Boolean = false,
 ) {
     // One renderer for every placement: the reference silhouette lives in StreakFlame.
     // This wrapper only keeps the existing mood-based call sites and silent semantics.
@@ -101,6 +102,7 @@ fun FlintStreakEmber(
         size = size,
         contentDescription = null,
         milestoneFlash = milestoneFlash,
+        forceAnimate = forceAnimate,
     )
 }
 

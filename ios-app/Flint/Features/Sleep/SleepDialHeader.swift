@@ -1,8 +1,8 @@
 import SwiftUI
 import FlintCore
 
-/// The top of the Sleep screen: a 24-hour dial with the night drawn from bedtime (moon) to
-/// wake (ember), the hours of quiet inside it, and the two times as tappable cards.
+/// The top of the Sleep screen (M11): a 24-hour dial with the night drawn from bedtime (moon)
+/// to wake (ember), the hours of quiet inside it, and the two times as tappable cards.
 struct SleepDialHeader: View {
     @ObservedObject var vm: SleepModeViewModel
     @State private var editing: Field?
@@ -14,20 +14,12 @@ struct SleepDialHeader: View {
     private enum Field: Identifiable { case bedtime, wake; var id: Self { self } }
 
     var body: some View {
-        Section {
-            VStack(spacing: 24) {
-                Text(vm.config.enabled ? daysLine : String(localized: "Off"))
-                    .flintSecondary(14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                dial
-                timeCardLayout {
-                    timeCard("Bedtime", vm.config.schedule.startHour, vm.config.schedule.startMinute) { editing = .bedtime }
-                    timeCard("Wake", vm.config.schedule.endHour, vm.config.schedule.endMinute) { editing = .wake }
-                }
+        VStack(spacing: 20) {
+            dial
+            timeCardLayout {
+                timeCard("Bedtime", vm.config.schedule.startHour, vm.config.schedule.startMinute) { editing = .bedtime }
+                timeCard("Wake", vm.config.schedule.endHour, vm.config.schedule.endMinute) { editing = .wake }
             }
-            .padding(.vertical, 8)
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
         }
         .sheet(item: $editing) { field in
             TimePickerSheet(
@@ -44,10 +36,6 @@ struct SleepDialHeader: View {
         dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(spacing: 10))
             : AnyLayout(HStackLayout(spacing: 10))
-    }
-
-    private var daysLine: String {
-        String(localized: "\(SleepPresentation.daysSummary(vm.config.schedule)) · \(SleepPresentation.assistSummary(vm.config.sleepAssist, tier: vm.config.nightBreakLevel))")
     }
 
     private var dial: some View {
@@ -93,12 +81,12 @@ struct SleepDialHeader: View {
                     Text(hour, format: .number.precision(.integerLength(2)))
                         .font(FlintFont.text(11))
                         .foregroundStyle(FlintBrand.stone)
-                        .offset(point(Double(hour) / 24, radius: 80))
+                        .offset(point(Double(hour) / 24, radius: 74))
                 }
-                quietDuration.frame(maxWidth: 144)
+                quietDuration
             }
         }
-        .frame(width: 208, height: 208)
+        .frame(width: 240, height: 240)
         .padding(14) // Keep the end knobs inside the row's measured bounds.
         .accessibilityHidden(true)
     }
@@ -119,13 +107,19 @@ struct SleepDialHeader: View {
     private func timeCard(_ label: LocalizedStringKey, _ hour: Int, _ minute: Int, action: @escaping () -> Void) -> some View {
         let time = SleepPresentation.clock(hour, minute)
         return Button(action: action) {
-            FlintCard {
-                Text(label).flintSecondary(12)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).font(FlintFont.text(12)).foregroundStyle(FlintBrand.mist)
                 Text(time)
-                    .font(FlintFont.display(24, relativeTo: .title2))
+                    .font(FlintFont.display(26, relativeTo: .title2))
+                    .monospacedDigit()
                     .foregroundStyle(FlintBrand.bone)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(FlintBrand.card))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(FlintBrand.bone(0.08)))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(label))
