@@ -91,7 +91,6 @@ import com.flint.peakfocus.core.common.ui.FlintCircleButton
 import com.flint.peakfocus.core.common.ui.FlintEyebrow
 import com.flint.peakfocus.core.common.ui.FlintGlyphs
 import com.flint.peakfocus.core.common.ui.FlintInfoPill
-import com.flint.peakfocus.core.common.ui.FlintMark
 import com.flint.peakfocus.core.common.ui.FlintNavPanel
 import com.flint.peakfocus.core.common.ui.FlintRadioCard
 import com.flint.peakfocus.core.common.ui.FlintSectionTitle
@@ -359,8 +358,8 @@ private fun TodayScene(
     val emberMood = emberMoodFor(streak, completedToday)
 
     Box(modifier.fillMaxSize()) {
-        // Clean horizon — streak candle lives in the top-right, not the center.
-        EmberLandscape(orbCenter = null)
+        // Horizon scene: the ember sun sets behind the ridge, half above the hills.
+        EmberLandscape(orbCenter = Offset(195f, 479f), orbRadius = 73f)
         BoxWithConstraints(Modifier.fillMaxSize().padding(contentPadding)) {
             Column(
                 Modifier
@@ -401,7 +400,6 @@ private fun TodayScene(
                             // the streak sheet only.
                             FlintStreakEmber(mood = emberMood, size = StreakFlamePlacement.Badge, animate = false)
                         }
-                        FlintMark(Modifier.size(20.dp))
                     }
                     Text(
                         (headline ?: "Make time for what matters").let { if (it.endsWith(".")) it else "$it." },
@@ -1499,7 +1497,7 @@ private val todayPresets: List<TimerPreset>
     get() = listOf("deep-study", "reading", "workout").mapNotNull { id -> timerPresets.firstOrNull { it.id == id } }
 
 private fun todayLabel(): String =
-    SimpleDateFormat("EEEE • d MMMM", Locale.getDefault()).format(Date())
+    SimpleDateFormat("EEEE · d MMMM", Locale.getDefault()).format(Date())
 
 internal fun localMinuteOfDay(epochMs: Long): Int {
     val calendar = Calendar.getInstance().apply { timeInMillis = epochMs }
