@@ -1,5 +1,8 @@
 package com.flint.peakfocus.core.common.ui
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas as AndroidCanvas
 import android.graphics.Movie
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -41,6 +44,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
@@ -958,13 +963,9 @@ fun StreakFlame(
     val windowFocused = windowInfo.isWindowFocused
     val hostView = LocalView.current
     val context = LocalContext.current
-    // Decode the GIF once into a Movie. We drive its clock ourselves so the loop is
-    // continuous: no platform loop gap, no one-second pause at the end of the GIF.
-    val movie = remember(context) {
-        context.resources.openRawResource(R.drawable.flint_streak_fire).use { stream ->
-            Movie.decodeStream(stream)
-        }
-    }
+    // Decode every GIF frame once and cache them. Animating a fixed frame list with our
+    // own 60 ms clock removes the platform GIF loop gap entirely — no end-of-loop pause.
+    val frames = remember(context) { StreakGifFrames.get(context) }
     var onScreen by remember { mutableStateOf(true) }
     var elapsedMs by remember { mutableLongStateOf(0L) }
     val shouldAnimate = animate && !reduced && windowFocused && onScreen &&
@@ -1011,22 +1012,21 @@ fun StreakFlame(
             },
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            val m = movie ?: return@Canvas
-            val duration = m.duration().coerceAtLeast(1)
-            m.setTime((elapsedMs % duration).toInt())
-            val mw = m.width().toFloat()
-            val mh = m.height().toFloat()
+            if (frames.isEmpty()) return@Canvas
+            val frameIndex = ((elapsedMs / 60L) % frames.size).toInt()
+            val image = frames[frameIndex]
+            val imageW = image.width.toFloat()
+            val imageH = image.height.toFloat()
             val canvasW = this.size.width
             val canvasH = this.size.height
-            val scale = min(canvasW / mw, canvasH / mh)
-            val dx = (canvasW - mw * scale) * 0.5f
-            val dy = (canvasH - mh * scale) * 0.5f
-            drawIntoCanvas { canvas ->
-                canvas.nativeCanvas.save()
-                canvas.nativeCanvas.translate(dx, dy)
-                canvas.nativeCanvas.scale(scale, scale)
-                m.draw(canvas.nativeCanvas, 0f, 0f)
-                canvas.nativeCanvas.restore()
+            val scale = min(canvasW / imageW, canvasH / imageH)
+            val dx = (canvasW - imageW * scale) * 0.5f
+            val dy = (canvasH - imageH * scale) * 0.5f
+            withTransform({
+                translate(left = dx, top = dy)
+                scale(scaleX = scale, scaleY = scale, pivot = Offset.Zero)
+            }) {
+                drawImage(image)
             }
         }
     }
@@ -1396,3 +1396,32 @@ fun FocusStreakCelebrationSheet(
         }
     }
 }
+
+private object StreakGifFrames {
+    private const val FRAME_MS = 60
+    private const val FRAME_COUNT = 45
+    @Volatile private var cache: List<ImageBitmap>? = null
+
+    @Suppress("DEPRECATION")
+    fun get(context: Context): List<ImageBitmap> {
+        cache?.let { return it }
+        synchronized(this) {
+            cache?.let { return it }
+            val movie = context.resources.openRawResource(R.drawable.flint_streak_fire).use {
+                Movie.decodeStream(it)
+            } ?: return emptyList()
+            val width = movie.width()
+            val height = movie.height()
+            val decoded = ArrayList<ImageBitmap>(FRAME_COUNT)
+            for (index in 0 until FRAME_COUNT) {
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                movie.setTime(index * FRAME_MS)
+                movie.draw(AndroidCanvas(bitmap), 0f, 0f)
+                decoded.add(bitmap.asImageBitmap())
+            }
+            cache = decoded
+            return decoded
+        }
+    }
+}
+
