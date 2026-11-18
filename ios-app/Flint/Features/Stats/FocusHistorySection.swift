@@ -39,7 +39,7 @@ struct FocusHistorySection: View {
             }
             .accessibilityIdentifier("history.section")
 
-            if let summary = history.summary {
+            if StreakPresentationPolicy.showsCard(for: history.summary), let summary = history.summary {
                 streakCard(summary)
             }
 
@@ -52,7 +52,7 @@ struct FocusHistorySection: View {
         let mood = StreakEmberMood.forStreak(summary.streak, completedToday: completedToday)
         return FlintCard(radius: 24, padding: EdgeInsets(top: 18, leading: 16, bottom: 16, trailing: 16)) {
             VStack(spacing: 6) {
-                FlintStreakEmber(mood: mood, size: 160)
+                FlintStreakEmber(mood: mood, size: StreakFlamePlacement.insights)
                 Text("\(summary.streak)")
                     .font(FlintFont.display(56, relativeTo: .largeTitle))
                     .foregroundStyle(FlintBrand.bone)
@@ -63,15 +63,9 @@ struct FocusHistorySection: View {
             }
             .frame(maxWidth: .infinity)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(streakLabel(summary))
+            .accessibilityLabel(StreakPresentationPolicy.badgeLabel(for: summary))
         }
         .accessibilityIdentifier("history.streak")
-    }
-
-    private func streakLabel(_ summary: FlintHistorySummary) -> String {
-        if summary.availability == .unavailable { return "Focus streak" }
-        if summary.streak <= 0 { return "No active focus streak" }
-        return summary.streak == 1 ? "Focus streak, 1 day" : "Focus streak, \(summary.streak) days"
     }
 
     // MARK: Sentence

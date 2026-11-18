@@ -18,19 +18,22 @@ final class FocusHistoryModel: ObservableObject {
     private let sink: FlintHistorySink
     private let clock: () -> Date
     private let sessionClock: FlintClock
-    private let calendar: Calendar
+    /// Resolved at every refresh so a time-zone change rebuckets without a relaunch.
+    private let calendarProvider: () -> Calendar
     private let activeSession: () -> FlintActiveSession?
     /// Projects break/pass intents committed by any process (host or extension) before reading.
     private let project: ((FlintHistoryStore, FlintHistorySnapshot) -> Void)?
 
     init(sink: FlintHistorySink = .shared, clock: @escaping () -> Date = Date.init,
          sessionClock: FlintClock = .system,
-         calendar: Calendar = .current,
+         calendar: Calendar? = nil,
+         calendarProvider: @escaping () -> Calendar = { .autoupdatingCurrent },
          activeSession: @escaping () -> FlintActiveSession? = { FlintGroupStore()?.loadActiveSession() },
          isPreview: Bool = false, presentsCompletions: Bool = true,
          acknowledgementKey: String = "flint.history.lastAcknowledgedCompletion",
          project: ((FlintHistoryStore, FlintHistorySnapshot) -> Void)? = nil) {
-        self.sink = sink; self.clock = clock; self.calendar = calendar; self.activeSession = activeSession
+        self.sink = sink; self.clock = clock; self.activeSession = activeSession
+        self.calendarProvider = calendar.map { fixed in { fixed } } ?? calendarProvider
         self.sessionClock = sessionClock
         self.isPreview = isPreview; self.presentsCompletions = presentsCompletions
         self.acknowledgementKey = acknowledgementKey
@@ -38,7 +41,7 @@ final class FocusHistoryModel: ObservableObject {
     }
 
     func refresh(completion: ((FlintHistorySummary) -> Void)? = nil) {
-        let now = clock(), calendar = calendar, active = activeSession(), project = project
+        let now = clock(), calendar = calendarProvider(), active = activeSession(), project = project
         sink.perform { [weak self] store in
             let snapshot = FlintHistoryReconciler.reconcile(store: store, activeSession: active, now: now,
                                                             calendar: calendar, project: project)
@@ -64,7 +67,7 @@ final class FocusHistoryModel: ObservableObject {
         guard presentsCompletions, let latest = Self.latestCompletion(in: summary,
             acknowledgedID: defaults.string(forKey: acknowledgementKey)) else { return nil }
         let now = clock()
-        guard calendar.isDate(latest.endedAt, inSameDayAs: now) ||
+        guard calendarProvider().isDate(latest.endedAt, inSameDayAs: now) ||
                 (latest.endedAt <= now && now.timeIntervalSince(latest.endedAt) <= 12 * 3600) else {
             defaults.set(latest.id, forKey: acknowledgementKey)
             return nil

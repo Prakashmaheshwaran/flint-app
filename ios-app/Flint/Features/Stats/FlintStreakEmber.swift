@@ -16,6 +16,17 @@ enum StreakEmberMood: Equatable {
 /// Frame duration of the streak atlas. Every frame is authored at 60 ms.
 internal let streakFrameInterval: TimeInterval = 0.06
 
+/// The three shipped flame placements. Named so the sizes are asserted directly instead of
+/// being scraped out of view source.
+enum StreakFlamePlacement {
+    /// Landing header badge: static, never animates.
+    static let badge: CGFloat = 24
+    /// Streak celebration sheet hero.
+    static let sheet: CGFloat = 148
+    /// Insights streak card hero.
+    static let insights: CGFloat = 160
+}
+
 /// Single owner of the streak mood rule: Active = streak alive and a session completed
 /// today; Warning = alive but not yet today; Dormant = no active streak. Callers keep
 /// their own inputs; only the mapping is shared.
@@ -140,7 +151,7 @@ struct FocusStreakCelebrationSheet: View {
                 .frame(width: 40, height: 5)
                 .padding(.top, 10)
                 .accessibilityHidden(true)
-            FlintStreakEmber(mood: mood, size: 148, forceAnimate: true)
+            FlintStreakEmber(mood: mood, size: StreakFlamePlacement.sheet, forceAnimate: true)
                 .padding(.top, 12)
             Text("\(streak)")
                 .font(FlintFont.text(typeSize.isAccessibilitySize ? 52 : 68, weight: .semibold))

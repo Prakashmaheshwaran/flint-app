@@ -28,9 +28,13 @@ struct TodayView: View {
         StreakEmberMood.forStreak(streak, completedToday: streakCompletedToday)
     }
     private var streakLabel: String {
-        if history.summary == nil { return "Focus streak" }
-        if streak <= 0 { return "No active focus streak" }
-        return streak == 1 ? "Focus streak, 1 day" : "Focus streak, \(streak) days"
+        StreakPresentationPolicy.badgeLabel(for: history.summary)
+    }
+
+    /// The sheet carries the streak number; with unreadable history there is nothing
+    /// truthful to show, so the badge does not open it.
+    private var canShowStreakSheet: Bool {
+        StreakPresentationPolicy.showsSheet(for: history.summary)
     }
 
     var body: some View {
@@ -142,12 +146,21 @@ struct TodayView: View {
                     .tracking(-0.3)
                     .foregroundStyle(FlintBrand.bone)
                 Spacer(minLength: 8)
-                Button { showStreakSheet = true } label: {
-                    FlintStreakEmber(mood: streakMood, size: 24, animate: false)
+                Button {
+                    guard canShowStreakSheet else { return }
+                    showStreakSheet = true
+                } label: {
+                    FlintStreakEmber(mood: streakMood, size: StreakFlamePlacement.badge, animate: false)
+                        // The flame stays at the approved 24 pt size; the button keeps a
+                        // 44 pt target around it.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(!canShowStreakSheet)
+                .accessibilityIdentifier("today.streak.ember")
                 .accessibilityLabel(streakLabel)
-                .accessibilityHint("Shows streak details")
+                .accessibilityHint("Opens your focus streak")
             }
             if !compact { Spacer(minLength: 8) }
             Button(action: onOpenRules) {

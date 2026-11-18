@@ -1,17 +1,24 @@
 package com.flint.peakfocus.core.history
 
+import java.time.Clock
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 /**
  * Comparable streak lifecycle fixtures shared conceptually with iOS
  * `FlintHistoryStreakLifecycleTests`. Scenario IDs S01–S20 match across platforms.
  */
 class FocusStreakLifecycleTest {
+    @get:Rule val temporary = TemporaryFolder()
     private val zone = ZoneId.of("America/New_York")
     private val hour = 3_600_000L
     /** Local noon on 2026-10-28 America/New_York. */
@@ -279,20 +286,44 @@ class FocusStreakLifecycleTest {
         assertEquals(2, splitTokyo.bestRecordedStreak)
     }
 
-    @Test fun S18_appRestartAfterMissedDayPreservesHistory() {
+    @Test fun S18_summaryIsOrderIndependentForTheSameEvents() {
+        // Aggregation must not depend on log order; durability across a reopen is S19.
         val events = completedDays(-4, -3, -2)
-        val first = summarize(events)
-        val relaunch = summarize(events) // identical reload of durable events
-        assertEquals(0, first.streak)
-        assertEquals(3, first.bestRecordedStreak)
-        assertEquals(first.streak, relaunch.streak)
-        assertEquals(first.bestRecordedStreak, relaunch.bestRecordedStreak)
-        assertEquals(3, relaunch.sessions.count { it.outcome == SessionOutcome.COMPLETED })
+        val forward = summarize(events)
+        val reversed = summarize(events.reversed())
+        assertEquals(0, forward.streak)
+        assertEquals(3, forward.bestRecordedStreak)
+        assertEquals(forward.streak, reversed.streak)
+        assertEquals(forward.bestRecordedStreak, reversed.bestRecordedStreak)
+        assertEquals(forward.sessions.map { it.outcome }, reversed.sessions.map { it.outcome })
     }
 
-    @Test fun S19_forceStopRelaunchSameAsRestart() {
-        // Force-stop cannot erase local history; re-summarizing identical events is the contract.
-        S18_appRestartAfterMissedDayPreservesHistory()
+    @Test fun S19_forceStopRelaunchRebuildsStreakFromDisk() = runBlocking {
+        val directory = temporary.newFolder()
+        // The store stamps historyStart from its creation clock; create it 40 days back so
+        // the written sessions are not clipped by historyStart, then advance to "now".
+        var nowMs = todayNoon - 40L * 24 * hour
+        val clock = object : Clock() {
+            override fun instant(): Instant = Instant.ofEpochMilli(nowMs)
+            override fun getZone(): ZoneId = ZoneOffset.UTC
+            override fun withZone(zone: ZoneId): Clock = this
+        }
+        val writer = FocusHistoryStore(directory, clock) { zone }
+        writer.load() // stamps metadata.created at the earlier clock
+        nowMs = todayNoon
+
+        val events = completedDays(-3, -2, -1)
+        events.forEach { assertTrue(writer.append(it)) }
+
+        // A fresh store over the same directory is the force-stop/relaunch path.
+        val reopened = FocusHistoryStore(directory, clock) { zone }
+        val snapshot = reopened.load()
+        assertEquals(events.map { it.id }, snapshot.events.map { it.id })
+
+        val summary = FocusHistoryAggregator.summarize(snapshot, todayNoon, zone, emptySet())
+        assertEquals(3, summary.streak)
+        assertEquals(3, summary.bestRecordedStreak)
+        assertEquals(3, summary.days.count { it.completed > 0 })
     }
 
     @Test fun S20_uncertainHistoryDoesNotInventStreak() {

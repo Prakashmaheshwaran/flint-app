@@ -68,6 +68,12 @@ final class FocusStreakCopyTests: XCTestCase {
         XCTAssertEqual(streakFrameInterval, 0.06, accuracy: 0.000_001)
     }
 
+    func testShippedPlacementsMatchTheContract() {
+        XCTAssertEqual(StreakFlamePlacement.badge, 24)
+        XCTAssertEqual(StreakFlamePlacement.sheet, 148)
+        XCTAssertEqual(StreakFlamePlacement.insights, 160)
+    }
+
     func testBundledAtlasShipsTheSharedFrameContract() {
         let frames = StreakGifFrames.shared.frames
         XCTAssertEqual(

@@ -278,19 +278,39 @@ final class FlintHistoryStreakLifecycleTests: XCTestCase {
         XCTAssertEqual(splitTokyo.bestRecordedStreak, 2)
     }
 
-    func testS18_appRestartAfterMissedDayPreservesHistory() {
+    func testS18_summaryIsDeterministicForTheSameEvents() {
+        // Recomputation only; durability across a real reopen is covered by S19.
         let events = completedDays(-4, -3, -2)
         let first = summarize(events)
-        let relaunch = summarize(events)
+        let again = summarize(events)
         XCTAssertEqual(first.streak, 0)
         XCTAssertEqual(first.bestRecordedStreak, 3)
-        XCTAssertEqual(first.streak, relaunch.streak)
-        XCTAssertEqual(first.bestRecordedStreak, relaunch.bestRecordedStreak)
-        XCTAssertEqual(relaunch.sessions.filter { $0.outcome == .completed }.count, 3)
+        XCTAssertEqual(first.streak, again.streak)
+        XCTAssertEqual(first.bestRecordedStreak, again.bestRecordedStreak)
+        XCTAssertEqual(again.sessions.filter { $0.outcome == .completed }.count, 3)
     }
 
-    func testS19_forceStopRelaunchSameAsRestart() {
-        testS18_appRestartAfterMissedDayPreservesHistory()
+    func testS19_forceStopRelaunchRebuildsStreakFromDisk() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // Write three consecutive completed days through the production store.
+        let writer = FlintHistoryStore(directory: directory, clock: { self.todayNoon }, calendar: ny)
+        for event in completedDays(-3, -2, -1) {
+            XCTAssertTrue(writer.append(event))
+        }
+        let written = writer.read().events.map(\.at)
+        XCTAssertEqual(written.count, 6)
+
+        // A fresh store over the same directory is the force-stop/relaunch path.
+        let reopened = FlintHistoryStore(directory: directory, clock: { self.todayNoon }, calendar: ny)
+        let snapshot = reopened.read()
+        XCTAssertEqual(snapshot.events.map(\.at), written)
+
+        let summary = FlintHistoryAggregator.summarize(snapshot, activeSessionID: nil,
+                                                       now: todayNoon, calendar: ny)
+        XCTAssertEqual(summary.streak, 3, "yesterday-anchored run survives the reload")
+        XCTAssertEqual(summary.bestRecordedStreak, 3)
     }
 
     func testS20_uncertainHistoryDoesNotInventStreak() {

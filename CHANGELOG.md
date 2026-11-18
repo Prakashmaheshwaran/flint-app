@@ -13,7 +13,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning: [S
   Motion; on Android it also stops advancing when it is off-screen or the window is not
   focused.
 - **Streak mood.** Active, at-risk and dormant mood use the same approved flame; the mood
-  changes its opacity and whether it animates, never the silhouette.
+  changes the flame's opacity and whether it animates, never the silhouette. Android dims
+  at-risk slightly (0.96) and dormant more (0.92); iOS dims dormant only (0.92), so active
+  and at-risk share the same flame image there.
 - **Streak semantics.** Only completed Timer focus sessions count; multiple completions in one
   local calendar day count once; a missed calendar day ends the current run; best recorded
   streak is derived from retained history, never a separate counter. Days use the device's
