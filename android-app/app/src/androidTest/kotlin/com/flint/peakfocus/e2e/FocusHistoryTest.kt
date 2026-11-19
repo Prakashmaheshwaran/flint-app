@@ -98,8 +98,10 @@ class FocusHistoryTest : FlintE2EFixture() {
         restartFlint()
         visible(By.text("FOCUSED TODAY")); visible(By.text(duration(focusedToday(history()))))
         clickTab("Insights")
-        // The streak card sits above the sessions card, so the week totals start below the fold.
-        visible(By.text("FOCUS SESSIONS"))
+        // The streak card sits above the sessions card, so on a 1080x1920 screen both the
+        // section label and the week totals start below the fold, where Compose does not
+        // expose their nodes until the page scrolls.
+        scrollTo(By.text("FOCUS SESSIONS"))
         scrollTo(By.text("1 completed · 1 ended early"))
         evidence("insights-week")
         // Week and Day both total 5m for this history, so the period label — not the sum —
