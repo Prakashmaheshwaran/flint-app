@@ -22,13 +22,13 @@ final class StreakTerminalDedupTests: XCTestCase {
     }
 
     private func started(id: String = "start") -> FlintHistoryEvent {
-        FlintHistoryEvent(type: .started, session: "s", at: start, plannedEnd: now,
-                          tier: "easy", source: "manual", name: "Focus", id: id)
+        FlintHistoryEvent(type: .started, session: "s", at: start, id: id, plannedEnd: now,
+                          tier: "easy", source: "manual", name: "Focus")
     }
 
     private func terminal(_ type: FlintHistoryEventType, id: String, at: Date? = nil,
                           route: String? = nil) -> FlintHistoryEvent {
-        FlintHistoryEvent(type: type, session: "s", at: at ?? now, route: route, id: id)
+        FlintHistoryEvent(type: type, session: "s", at: at ?? now, id: id, route: route)
     }
 
     private func summary(_ store: FlintHistoryStore) -> FlintHistorySummary {
