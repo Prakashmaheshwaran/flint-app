@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -59,6 +60,8 @@ import com.flint.peakfocus.core.common.R
 import com.flint.peakfocus.core.common.theme.FlintNumerals
 import com.flint.peakfocus.core.common.theme.FlintPalette
 import com.flint.peakfocus.core.common.theme.FlintSpacing
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.flint.peakfocus.core.common.theme.FlintText
 import kotlin.math.PI
 import kotlin.math.min
@@ -150,7 +153,11 @@ fun FlintStreakEmber(
     val windowFocused = windowInfo.isWindowFocused
     val hostView = LocalView.current
     val context = LocalContext.current
-    val frames = remember(context) { StreakAtlasFrames.get(context) }
+    // Decoding the sheet and cropping 45 frames is bitmap work; keep it off the first
+    // composition. The process-wide cache makes later callers immediate.
+    val frames by produceState(initialValue = emptyList<ImageBitmap>(), context) {
+        value = withContext(Dispatchers.IO) { StreakAtlasFrames.get(context) }
+    }
     var onScreen by remember { mutableStateOf(true) }
     var elapsedMs by remember { mutableLongStateOf(0L) }
     val shouldAnimate = flameShouldAnimate(

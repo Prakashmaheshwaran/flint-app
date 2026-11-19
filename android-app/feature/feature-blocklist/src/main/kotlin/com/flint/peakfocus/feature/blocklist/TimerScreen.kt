@@ -381,7 +381,9 @@ private fun TodayScene(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        FlintEyebrow(remember { todayLabel() }, Modifier.weight(1f))
+                        // Derived from the UI clock: a date captured once would go stale
+                        // after midnight while Today stays composed.
+                        FlintEyebrow(todayLabel(state.nowEpochMs), Modifier.weight(1f))
                         Box(
                             Modifier
                                 .size(48.dp)
@@ -1504,8 +1506,8 @@ private fun CompleteStatsRow(session: FocusSession, summary: FocusSummary?) {
 private val todayPresets: List<TimerPreset>
     get() = listOf("deep-study", "reading", "workout").mapNotNull { id -> timerPresets.firstOrNull { it.id == id } }
 
-private fun todayLabel(): String =
-    SimpleDateFormat("EEEE · d MMMM", Locale.getDefault()).format(Date())
+private fun todayLabel(nowEpochMs: Long): String =
+    SimpleDateFormat("EEEE · d MMMM", Locale.getDefault()).format(Date(nowEpochMs))
 
 internal fun localMinuteOfDay(epochMs: Long): Int {
     val calendar = Calendar.getInstance().apply { timeInMillis = epochMs }

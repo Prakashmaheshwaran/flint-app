@@ -126,8 +126,12 @@ internal fun FocusSessionsSection() {
                     onClick = {
                         retrying = true
                         scope.launch {
-                            FocusHistoryBridge.retry(context)
-                            retrying = false
+                            try {
+                                FocusHistoryBridge.retry(context)
+                            } finally {
+                                // A failed retry must not leave the control stuck on "Retrying…".
+                                retrying = false
+                            }
                         }
                     },
                 ) { Text(if (retrying) "Retrying…" else "Retry focus history") }
