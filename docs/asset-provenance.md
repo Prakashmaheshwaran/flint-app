@@ -10,14 +10,19 @@ the generated third-party notices (which cover libraries and fonts only).
 | Android | `android-app/core/core-common/src/main/res/drawable-nodpi/flint_streak_sheet.png` | `FlintStreakEmber` (frame atlas, 45 frames, 9 x 5 grid of 156 x 187 px) |
 | iOS | `ios-app/Flint/Resources/flint_streak_fire.gif` | `FlintStreakEmber` via `StreakGifFrames` (45 frames, 60 ms each) |
 
-- **Origin: first-party artwork.** The flame is generated from Flint's own geometry by
-  `design/tools/generate_streak_flame.py`: three lobed tongues defined as cubic curves,
-  deformed over 45 frames, filled with the streak palette. It is not traced from, sampled
-  from, or recoloured from another product's artwork or emoji set.
-- **Licence:** Flint's own work, distributed under the repository licence (`LICENSE`, MIT).
-- **Attribution:** none beyond the repository licence; no third-party artwork is bundled.
-- **Status: cleared for distribution as first-party work.** The generator is checked in so
-  the asset can be reproduced, reviewed and adjusted by the project.
-- **Regeneration contract:** 45 frames at 60 ms, 156 x 187 px each, Android atlas in a
-  9-column grid. `StreakAtlasTest` and `FocusStreakCopyTests` pin these values, so a
-  regenerated asset that drifts will fail the build.
+- **What it is:** a stylised fire emblem, supplied as an animated GIF for the streak
+  experience. Both platform assets are the same artwork; the Android PNG is a pre-cropped
+  atlas derived from it so the renderer never depends on a GIF decoder.
+- **Provenance:** supplied by the project owner for Flint. The artwork is emoji-derived and
+  the exact upstream licence has **not** been documented or verified.
+- **Status: unverified.** No permission statement or licence text is on file. This is
+  recorded here rather than omitted so the gap is explicit and cannot be mistaken for a
+  cleared third-party asset.
+- **Before distributing outside the current private preview:** confirm the licence for the
+  artwork, or replace it with first-party artwork. Replacing it is a visual change and needs
+  design sign-off; it is intentionally not part of the streak code consolidation.
+
+Both files are byte-identical apart from format/derivation (the Android atlas is generated
+from the same 45 frames). `ios-app/Flint/Resources/flint_streak_fire.gif` is the master copy;
+regenerating the Android atlas must preserve 45 frames in a 9-column grid of 156 x 187 px,
+which `StreakAtlasTest` enforces.
