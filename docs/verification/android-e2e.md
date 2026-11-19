@@ -60,6 +60,7 @@ explicitly preserves accessibility services during the test session.
 | Emergency Pass | Hardcore rule shows shield, omits ordinary break, explicit pass opens target | No pass reset, overlap or durable grant proof |
 | Budget | Existing DEBUG receiver seeds a zero-minute legacy budget, real service shows Time limit shield | Does not prove elapsed UsageStats measurement, modern limit authoring or cross-midnight reset |
 | App PIN | Settings sets a 4–6 digit PIN ("On"); a cold relaunch shows the gate with the tab bar hidden; a wrong PIN is refused; Emergency Pass & protection recovery open without the PIN; the right PIN unlocks and removing the PIN turns it off | Emulator only; no Recents-thumbnail pixel proof, no TalkBack audio, no physical device |
+| Focus history | A real Start focus run completes after real elapsed time; Today shows the focused total; a restart keeps the completion; the Focus sessions empty state renders from a cold launch | The Focus Streak card sits above the sessions section, so on the runner's 1080x1920 display the Week/Day chips and totals are below the fold, where Compose does not expose their nodes; scrolling that page kills the software-rendered runner emulator, so those two views are verified by hand, not here |
 
 These are emulator integration checks, not hardware/OEM, anti-removal, web
 blocking, Play compliance or complete enforcement certification. There are no
