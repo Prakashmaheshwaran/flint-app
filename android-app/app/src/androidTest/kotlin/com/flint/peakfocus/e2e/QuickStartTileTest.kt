@@ -5,8 +5,10 @@ import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Until
+import org.json.JSONObject
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -63,12 +65,26 @@ class QuickStartTileTest : FlintE2EFixture() {
             // the empty-draft hint and the existing refusal copy shown when no detector is live.
             visible(sheetOpen)
             visible(By.text("Turn on Accessibility or grant Usage Access."))
-            // The sheet opens for a manual start; Begin is the only commit and nothing is running.
-            assertNull("Tile click must not start a focus session", device.findObject(By.text("End session")))
             screenshot("tile-start-focus")
+            // Dismiss the sheet, then verify real focus-session state: the Start focus sheet has no
+            // "End session" control, so UI absence there cannot prove nothing started in background.
+            shell("cmd statusbar collapse")
+            visible(By.desc("Close").enabled(true)).click()
+            assertTrue(
+                "Tile click must not create a focus session",
+                focusHistoryEvents().none { it.optString("type") == "started" },
+            )
+            visible(By.text("Today"))
         } finally {
             shell("cmd statusbar remove-tile $tile")
             shell("cmd statusbar collapse")
         }
     }
+
+    private fun focusHistoryEvents(): List<JSONObject> =
+        shell("run-as $app cat files/focus-history/events.v1.jsonl")
+            .lineSequence()
+            .filter { it.startsWith("{") }
+            .map(::JSONObject)
+            .toList()
 }
