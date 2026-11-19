@@ -2,6 +2,7 @@ package com.flint.peakfocus.blocking.overlay
 
 import com.flint.peakfocus.core.model.AccessClockStamp
 import com.flint.peakfocus.core.model.BreakLevel
+import com.flint.peakfocus.core.model.PomodoroPhase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -80,6 +81,15 @@ data class ProtectionStatus(
         val timeUncertain: Boolean,
         /** Exact materialized occurrence; a reusable rule ID is not session identity. */
         val occurrenceId: String? = null,
+        /**
+         * F01: the Pomodoro phase of this read, or null for every other cause. A planned rest
+         * is still an active commitment, so the cause stays listed with `phase` saying so.
+         */
+        val pomodoroPhase: PomodoroPhase? = null,
+        /** Planned rounds of the frozen plan, for "round k of N" labels. */
+        val pomodoroRounds: Int? = null,
+        /** Wall estimate of the phase end; readers must not show a phase past this instant. */
+        val pomodoroPhaseEndsAtEpochMs: Long? = null,
     )
 
     data class NextOccurrence(

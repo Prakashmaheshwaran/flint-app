@@ -259,10 +259,29 @@ class DataStoreEditorCommitmentStore(
         }
         var state = prepare(prefs, now)
         require(rule.id.startsWith(CONTRACT_TIMER_ID_PREFIX) && rule.schedule == null && rule.enabled)
+
         require(rule.targets.apps.isNotEmpty() && rule.targets.apps.none { it.packageName.isBlank() })
         // A block list may not spend the floor on its own escape surfaces. An allow list only
         // keeps apps reachable, so naming a floor app there is harmless (mirrors the editor).
         require(rule.targets.allowListMode || rule.targets.apps.none { it.packageName in floor(safety) })
+        // A Pomodoro parent's deadline is its frozen plan's chain end (§1/§2), measured from the
+        // instant the screen authored it (`TimerViewModel.start`) rather than from this commit's
+        // later clock sample. Real time passes between the two samples, so the remaining duration
+        // here is the plan minus that elapsed drift; demanding an exact match would reject every
+        // correctly authored chain as "Choose a valid Pomodoro plan." The plan itself is still
+        // authoritative: the deadline may never reach past this sample's chain end (that would
+        // pad the commitment beyond its plan) and never already be over.
+        val planError = rule.pomodoro?.let { plan ->
+            val deadline = rule.expiresAtEpochMs
+            when {
+                PomodoroPlan.validationError(plan) != null -> PomodoroPlan.validationError(plan)
+                !isValidNewSessionDuration(plan.totalMs) -> "Choose a duration of at most 24 hours."
+                deadline == null || deadline <= now.wallEpochMs -> "Choose a valid Pomodoro plan."
+                deadline > now.wallEpochMs + plan.totalMs -> "Choose a valid Pomodoro plan."
+                else -> null
+            }
+        }
+        if (planError != null) return@transact TimerStartResult.Rejected(planError)
         require(isValidNewSessionDuration((rule.expiresAtEpochMs ?: 0) - now.wallEpochMs))
         val current = prefs.editorRules()
         if (state.causes.size >= MAX_EDITOR_CAUSES) return@transact TimerStartResult.Rejected("Protection capacity is full. Finish an existing commitment and try again.")

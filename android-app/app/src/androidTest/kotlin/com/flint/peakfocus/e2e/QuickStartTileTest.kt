@@ -30,10 +30,13 @@ class QuickStartTileTest : FlintE2EFixture() {
             .getActivityInfo(ComponentName(app, entryClass), 0)
         assertFalse("The quick-start entry must not be exported", info.exported)
 
-        // Nothing starts a session or opens the sheet by itself. "Break level" only exists in the
-        // Start focus sheet, so the check does not depend on the remembered duration label.
+        // Nothing starts a session or opens the sheet by itself. The empty-draft Start focus
+        // sheet shows this hint only when it has opened without an app selection (and the entry
+        // must never start anything), so the check does not depend on scroll position or the
+        // remembered duration/break-level label.
+        val sheetOpen = By.text("Choose what rests first.")
         SystemClock.sleep(500)
-        assertNull("No start focus sheet without a user gesture", device.findObject(By.text("Break level")))
+        assertNull("No start focus sheet without a user gesture", device.findObject(sheetOpen))
 
         shell("cmd statusbar add-tile $tile")
         try {
@@ -42,14 +45,17 @@ class QuickStartTileTest : FlintE2EFixture() {
             // notifyQuickSettingsTilesChanged with an empty list right after the click). Retry
             // until the sheet is actually on screen instead of assuming one click lands.
             var attempts = 0
-            while (attempts < 10 && !device.hasObject(By.text("Break level"))) {
+            while (attempts < 10 && !device.hasObject(sheetOpen)) {
                 shell("cmd statusbar click-tile $tile")
-                device.wait(Until.hasObject(By.text("Break level")), 2_000)
+                device.wait(Until.hasObject(sheetOpen), 2_000)
                 attempts++
             }
-            visible(By.text("Break level"))
-            visible(By.text("Choose what rests first."))
+            // Stable sheet identifiers present in the Start focus sheet (not Flint's main screen):
+            // the empty-draft hint and the existing refusal copy shown when no detector is live.
+            visible(sheetOpen)
             visible(By.text("Turn on Accessibility or grant Usage Access."))
+            // The sheet opens for a manual start; Begin is the only commit and nothing is running.
+            assertNull("Tile click must not start a focus session", device.findObject(By.text("End session")))
             screenshot("tile-start-focus")
         } finally {
             shell("cmd statusbar remove-tile $tile")

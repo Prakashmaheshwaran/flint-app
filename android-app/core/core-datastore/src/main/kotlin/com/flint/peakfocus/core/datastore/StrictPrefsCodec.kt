@@ -62,8 +62,8 @@ internal object StrictPrefsCodec {
     fun rules(encoded: String): List<BlockRule> {
         rows(encoded).forEach { row ->
             val f = row.split('|')
-            if (f.size > 12) future()
-            check(f.size in 10..12)
+            if (f.size > 13) future()
+            check(f.size in 10..13)
             atom(f[0], true); atom(f[1])
             check(f[2].toBooleanStrictOrNull() != null && f[4].toBooleanStrictOrNull() != null)
             level(f[3]); targets(f[5], f[6])
@@ -72,11 +72,33 @@ internal object StrictPrefsCodec {
             val end = f[9].toIntOrNull() ?: corrupt()
             check((start == -1 && end == -1 && f[7].isEmpty()) || (start in 0..1439 && end in 0..1439))
             if (f.size >= 11) check(f[10].toLongOrNull()?.let { it == -1L || it >= 0 } == true)
-            if (f.size == 12) {
-                // A dated one-time schedule: a real ISO date on a real window whose weekday
-                // gate is empty, so a damaged record can never read as a weekly rule.
-                check(start in 0..1439 && end in 0..1439 && start != end && f[7].isEmpty())
-                check(runCatching { LocalDate.parse(f[11]) }.getOrNull() != null)
+            // Field 11 is a dated one-time schedule (empty only when field 12 carries a plan);
+            // field 12 is the F01 plan `focus~rest~rounds[~longRest~every]`. A 12-field row must
+            // still carry a real ISO date, and a dated row must have a real window with an empty
+            // weekday gate so a damaged record can never become a weekly rule.
+            if (f.size >= 12) {
+                if (f[11].isNotEmpty()) {
+                    check(start in 0..1439 && end in 0..1439 && start != end && f[7].isEmpty())
+                    check(runCatching { LocalDate.parse(f[11]) }.getOrNull() != null)
+                } else {
+                    check(f.size == 13)
+                }
+            }
+            if (f.size == 13) {
+                // A plan field is always non-empty in a 13-field row; anything that is not a
+                // well-formed plan is an unknown future shape, never a plainer Timer.
+                val sub = f[12].split('~')
+                if (sub.size != 3 && sub.size != 5) future()
+                val numbers = sub.map { it.toIntOrNull() ?: future() }
+                try {
+                    if (numbers.size == 3) com.flint.peakfocus.core.model.PomodoroPlan(
+                        focusMinutes = numbers[0], restMinutes = numbers[1], rounds = numbers[2])
+                    else com.flint.peakfocus.core.model.PomodoroPlan(
+                        focusMinutes = numbers[0], restMinutes = numbers[1], rounds = numbers[2],
+                        longRestMinutes = numbers[3], longRestEvery = numbers[4])
+                } catch (_: IllegalArgumentException) {
+                    future()
+                }
             }
         }
         return PrefsCodec.decodeRules(encoded).also { result -> check(result.map { it.id }.distinct().size == result.size) }

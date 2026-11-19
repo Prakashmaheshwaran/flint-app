@@ -12,6 +12,7 @@ import com.flint.peakfocus.core.history.HistoryCodec
 import com.flint.peakfocus.core.history.HistoryClearPhase
 import com.flint.peakfocus.core.history.HistoryReconciler
 import com.flint.peakfocus.core.history.HistoryRule
+import com.flint.peakfocus.core.history.PlannedRest
 import com.flint.peakfocus.core.history.historyRulesSnapshot
 import com.flint.peakfocus.core.history.SessionOutcome
 import com.flint.peakfocus.core.model.*
@@ -366,6 +367,37 @@ class FocusHistoryTerminalDeliveryTest {
         assertEquals(terminal.sessionId, record.session)
         assertEquals("time_uncertain", record.reason)
         assertTrue(record.inferred)
+    }
+
+    @Test fun `a completed Pomodoro parent records its planned rests with its terminal`() = runTest {
+        val minute = 60_000L
+        val clock = Clock.fixed(Instant.ofEpochMilli(start + 2 * hour), ZoneOffset.UTC)
+        val store = FocusHistoryStore(temporary.newFolder(), clock)
+        val plan = PomodoroPlan(focusMinutes = 25, restMinutes = 5, rounds = 4)
+        val id = "session-timer-v2-$start-pomodoro"
+        val chainEnd = start + plan.totalMs
+        assertTrue(store.append(HistoryEvent(type = "started", session = id, at = start,
+            plannedEnd = chainEnd, tz = "UTC", name = "Pomodoro", tier = "easy", source = "unknown", rounds = 4)))
+        // A read that first sees the parent only after its end still knows the frozen plan.
+        val rests = plan.phases.filter { !it.isFocus }.map { phase ->
+            PlannedRest(phase.round, "$id.rest${phase.round}", start + phase.startMs, start + phase.endMs)
+        }
+        val completed = EditorTerminalEvent("editor:completed:$id", id, id, EditorTerminalKind.COMPLETED,
+            AccessClockStamp(chainEnd, chainEnd - start, "boot"),
+            AccessClockStamp(clock.millis(), 2 * hour, "boot"), 1L, false)
+        assertEquals(1, projectEditorHistoryTerminals(PendingOwner(completed), store::update,
+            ZoneOffset.UTC, plannedRests = { session -> if (session == id) rests else emptyList() }))
+
+        val events = store.load().events
+        assertEquals((1..3).map { "$id.rest$it" },
+            events.filter { it.type == "break_started" }.map { it.grant })
+        assertEquals((1..3).map { "$id.rest$it" },
+            events.filter { it.type == "break_ended" }.map { it.grant })
+        val session = FocusHistoryAggregator.sessions(events, clock.millis(), emptySet()).single()
+        assertEquals(SessionOutcome.COMPLETED, session.outcome)
+        // 115 committed minutes minus three five-minute rests; rest time is never focus.
+        assertEquals(100 * minute, session.focusedMs)
+        assertEquals(4, session.pomodoroRoundsCompleted)
     }
 
     @Test fun failedSinkDoesNotStarveAnotherTerminalAndOnlySuccessfulIdsAreAcknowledged() = runTest {

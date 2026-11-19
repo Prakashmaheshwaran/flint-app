@@ -9,6 +9,7 @@ import com.flint.peakfocus.core.model.BreakRequestState
 import com.flint.peakfocus.core.model.BreakSessionState
 import com.flint.peakfocus.core.model.DomainRef
 import com.flint.peakfocus.core.model.OpenLimit
+import com.flint.peakfocus.core.model.PomodoroPlan
 import com.flint.peakfocus.core.model.Schedule
 import com.flint.peakfocus.core.model.TimeLimit
 import java.time.LocalDate
@@ -56,15 +57,45 @@ internal object PrefsCodec {
         .replace("%7C", FIELD)
         .replace("%25", "%")
 
-    // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end[|expiresAt][|date]
-    // (expiresAt appended later for one-shot sessions; date appended for dated one-time schedules
-    //  and ONLY then, so every existing 10- and 11-field record round-trips byte-identically)
+    // MARK: BlockRule — id|name|enabled|breakLevel|allowListMode|apps|domains|days|start|end
+    //        [|expiresAt[|date[|pomodoro]]]
+    // (expiresAt appended for one-shot sessions; `date` appended for a dated one-time schedule
+    //  — and only for one, so every existing 10- and 11-field record round-trips byte-identically;
+    //  `pomodoro` appended for an F01 Pomodoro parent, which forces an empty `date` placeholder so
+    //  the two extensions can never be confused. Older builds see 12+ fields, `decodeRule` there
+    //  returns null and the strict codec reports the value unavailable, so they fail closed rather
+    //  than reading a chain as a plain Timer or dropping a one-time date into a weekly rule.)
 
     fun encodeRules(rules: List<BlockRule>): String =
         rules.joinToString(RECORD) { encodeRule(it) }
 
     fun decodeRules(encoded: String): List<BlockRule> =
         encoded.split(RECORD).filter { it.isNotBlank() }.mapNotNull { decodeRule(it) }
+
+    /** `focus~rest~rounds[~longRest~every]`; empty = no plan. */
+    private fun encodePomodoro(plan: PomodoroPlan): String = listOf(
+        plan.focusMinutes, plan.restMinutes, plan.rounds,
+    ).joinToString(SUB) + (plan.longRestMinutes?.let { long ->
+        SUB + long + SUB + plan.longRestEvery
+    } ?: "")
+
+    /** A malformed or out-of-range plan decodes as no plan: the rule stays a plain Timer. */
+    private fun decodePomodoro(raw: String): PomodoroPlan? {
+        if (raw.isEmpty()) return null
+        val sub = raw.split(SUB)
+        if (sub.size != 3 && sub.size != 5) return null
+        val focus = sub[0].toIntOrNull() ?: return null
+        val rest = sub[1].toIntOrNull() ?: return null
+        val rounds = sub[2].toIntOrNull() ?: return null
+        val longRest = if (sub.size == 5) sub[3].toIntOrNull() ?: return null else null
+        val every = if (sub.size == 5) sub[4].toIntOrNull() ?: return null else null
+        return try {
+            PomodoroPlan(focusMinutes = focus, restMinutes = rest, rounds = rounds,
+                longRestMinutes = longRest, longRestEvery = every)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
 
     private fun encodeRule(rule: BlockRule): String {
         val apps = rule.targets.apps.joinToString(ITEM) { app ->
@@ -85,16 +116,18 @@ internal object PrefsCodec {
             (rule.schedule?.endMinuteOfDay ?: NO_SCHEDULE).toString(),
             (rule.expiresAtEpochMs ?: NO_EXPIRY).toString(),
         )
-        // Appended only for a dated schedule: an older build then sees 12 fields and fails
-        // closed (UNSUPPORTED_VERSION) instead of dropping the one-time date and inventing a
-        // weekly rule. Recurring/manual records keep their exact 10/11-field shape.
-        rule.schedule?.date?.let { fields += it.toString() }
+        // Extensions are positional: the date owns field 11 and a plan owns field 12. A plan
+        // without a date writes an empty placeholder so a 13-field line is unambiguous; a dated
+        // rule stays at 12 fields and a plain/recurring rule at 10 or 11.
+        val date = rule.schedule?.date
+        if (date != null) fields += date.toString() else if (rule.pomodoro != null) fields += ""
+        rule.pomodoro?.let { fields += encodePomodoro(it) }
         return fields.joinToString(FIELD)
     }
 
     private fun decodeRule(line: String): BlockRule? {
         val f = line.split(FIELD)
-        if (f.size !in 10..12) return null
+        if (f.size !in 10..13) return null
         val id = unescape(f[0])
         if (id.isEmpty()) return null
 
@@ -110,9 +143,14 @@ internal object PrefsCodec {
 
         val start = f[8].toIntOrNull() ?: NO_SCHEDULE
         val end = f[9].toIntOrNull() ?: NO_SCHEDULE
-        // A 12th field is always a one-time date. If it is damaged, or there is no window to
-        // date, drop the record: falling back to an undated window would invent a weekly rule.
-        val date = if (f.size == 12) runCatching { LocalDate.parse(f[11]) }.getOrNull() ?: return null else null
+        // A 12th field is a one-time date. If it is damaged, or there is no window to date, drop
+        // the record: falling back to an undated window would invent a weekly rule. Field 11 is
+        // empty only when a 13th field carries a plan, i.e. a Pomodoro parent without a date.
+        val date = when {
+            f.size < 12 -> null
+            f[11].isEmpty() -> if (f.size == 13) null else return null
+            else -> runCatching { LocalDate.parse(f[11]) }.getOrNull() ?: return null
+        }
         if (date != null && start == NO_SCHEDULE) return null
         val schedule = if (start == NO_SCHEDULE) {
             null
@@ -137,6 +175,7 @@ internal object PrefsCodec {
             breakLevel = decodeBreakLevel(f[3]),
             enabled = f[2].toBooleanStrictOrNull() ?: true,
             expiresAtEpochMs = f.getOrNull(10)?.toLongOrNull()?.takeIf { it != NO_EXPIRY },
+            pomodoro = f.getOrNull(12)?.let(::decodePomodoro),
         )
     }
 
