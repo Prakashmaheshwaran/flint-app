@@ -359,7 +359,7 @@ private fun TodayScene(
 
     Box(modifier.fillMaxSize()) {
         // Horizon scene: the ember sun sets behind the ridge, half above the hills.
-        EmberLandscape(orbCenter = Offset(195f, 502f), orbRadius = 73f)
+        EmberLandscape(orbCenter = Offset(195f, 426f), orbRadius = 50f)
         BoxWithConstraints(Modifier.fillMaxSize().padding(contentPadding)) {
             Column(
                 Modifier
