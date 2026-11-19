@@ -36,6 +36,40 @@ class TargetRuntimeHealthTest {
             detectors = degraded.detectors.copy(accessibilityConnected = true)), now))
     }
 
+    // R-30: a bound Path A service is detector liveness, not proof that this shield attached.
+    // A published mount outcome must reach the per-target reader even while Path A is connected.
+    @Test fun aReportedMountOutcomeOutranksABoundPrimaryDetector() {
+        val state = status()
+        for (reason in listOf(ProtectionStatus.REASON_BLOCK_SURFACE_MOUNT_FAILED,
+                ProtectionStatus.REASON_BLOCK_SURFACE_FALLBACK_ONLY)) {
+            for (connected in listOf(true, false)) {
+                val degraded = state.copy(detectors = state.detectors.copy(
+                    accessibilityConnected = connected,
+                    pathB = ProtectionStatus.PathBState.ENFORCING,
+                    degradedReasons = setOf(reason)))
+                assertEquals(reason, TargetRuntimeHealth.unavailableReason(degraded, now))
+            }
+        }
+        // The same fresh, bound policy with no reported outcome stays established.
+        assertNull(TargetRuntimeHealth.unavailableReason(state.copy(detectors = state.detectors.copy(
+            degradedReasons = setOf("usage-access-missing"))), now))
+    }
+
+    @Test fun aDeliveredNothingMountIsNeverMaskedByFallbackOnly() {
+        val both = status().copy(detectors = ProtectionStatus.DetectorHealth(true,
+            ProtectionStatus.PathBState.ENFORCING, setOf(ProtectionStatus.REASON_BLOCK_SURFACE_MOUNT_FAILED,
+                ProtectionStatus.REASON_BLOCK_SURFACE_FALLBACK_ONLY)))
+        assertEquals(ProtectionStatus.REASON_BLOCK_SURFACE_MOUNT_FAILED, TargetRuntimeHealth.unavailableReason(both, now))
+    }
+
+    // A stale check is still stale first: freshness outranks a mount outcome.
+    @Test fun stalenessOutranksAReportedMountOutcome() {
+        val state = status().copy(detectors = ProtectionStatus.DetectorHealth(true,
+            ProtectionStatus.PathBState.ENFORCING, setOf(ProtectionStatus.REASON_BLOCK_SURFACE_MOUNT_FAILED)))
+        assertEquals("enforcement-check-stale", TargetRuntimeHealth.unavailableReason(state,
+            now.copy(elapsedRealtimeMs = state.validUntilElapsedRealtimeMs!!)))
+    }
+
     @Test fun exactLeaseBoundaryRebootAndClockRegressionInvalidateTheCheck() {
         val state = status()
         assertEquals("enforcement-check-stale", TargetRuntimeHealth.unavailableReason(state,
