@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import Flint
 
 /// The iOS side of the streak renderer contract.
 ///
