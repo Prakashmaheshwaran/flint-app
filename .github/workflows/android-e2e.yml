@@ -90,7 +90,7 @@ jobs:
           cores: 2
           ram-size: 3072M
           heap-size: 512M
-          emulator-options: -no-window -gpu swiftshader_indirect -feature -Vulkan -no-snapshot -no-snapshot-save -noaudio -no-boot-anim -camera-back none -camera-front none
+          emulator-options: -no-window -gpu swiftshader_indirect -feature -Vulkan -skin 720x1280 -no-snapshot -no-snapshot-save -noaudio -no-boot-anim -camera-back none -camera-front none
           emulator-boot-timeout: 300
           disable-animations: true
           pre-emulator-launch-script: '"$ANDROID_HOME/emulator/emulator" -accel-check > artifacts/android-e2e/kvm-check.txt 2>&1'
