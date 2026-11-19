@@ -359,7 +359,7 @@ private fun TodayScene(
 
     Box(modifier.fillMaxSize()) {
         // Horizon scene: the ember sun sets behind the ridge, half above the hills.
-        EmberLandscape(orbCenter = Offset(195f, 479f), orbRadius = 73f)
+        EmberLandscape(orbCenter = Offset(195f, 502f), orbRadius = 73f)
         BoxWithConstraints(Modifier.fillMaxSize().padding(contentPadding)) {
             Column(
                 Modifier
@@ -415,9 +415,9 @@ private fun TodayScene(
                         )
                     }
                     Column(
-                        Modifier.fillMaxWidth().padding(top = 64.dp),
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(FocusHistoryText.today(history), style = if (history?.days?.lastOrNull()?.focusedMs != null && history.sessions.isNotEmpty())
                             MaterialTheme.typography.displaySmall.merge(FlintNumerals) else MaterialTheme.typography.titleLarge,
@@ -426,7 +426,7 @@ private fun TodayScene(
                         FocusHistoryText.note(history, resources = LocalContext.current.resources)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist) }
                         Text("Your next session · ${timerDurationLabel(state.draft.durationMinutes)}",
                             style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist,
-                            modifier = Modifier.padding(top = 12.dp))
+                            modifier = Modifier.padding(top = 4.dp))
                     }
                 }
 
