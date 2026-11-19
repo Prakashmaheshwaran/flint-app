@@ -359,8 +359,13 @@ private fun TodayScene(
     val emberMood = emberMoodFor(streak, completedToday)
 
     Box(modifier.fillMaxSize()) {
-        // Horizon scene: the ember sun sets behind the ridge, half above the hills.
-        EmberLandscape(orbCenter = Offset(195f, 426f), orbRadius = 50f)
+        // Horizon scene: the reference composition when the copy is short, and a
+        // smaller, lower sun when the setup copy is long enough to reach the horizon.
+        val tightCopy = (subline?.length ?: 0) > 260
+        EmberLandscape(
+            orbCenter = Offset(195f, if (tightCopy) 426f else 470f),
+            orbRadius = if (tightCopy) 50f else 73f,
+        )
         BoxWithConstraints(Modifier.fillMaxSize().padding(contentPadding)) {
             Column(
                 Modifier
