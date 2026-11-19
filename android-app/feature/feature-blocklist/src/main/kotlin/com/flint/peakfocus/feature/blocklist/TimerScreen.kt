@@ -91,6 +91,7 @@ import com.flint.peakfocus.core.common.ui.FlintCircleButton
 import com.flint.peakfocus.core.common.ui.FlintEyebrow
 import com.flint.peakfocus.core.common.ui.FlintGlyphs
 import com.flint.peakfocus.core.common.ui.FlintInfoPill
+import com.flint.peakfocus.core.common.ui.FlintMark
 import com.flint.peakfocus.core.common.ui.FlintNavPanel
 import com.flint.peakfocus.core.common.ui.FlintRadioCard
 import com.flint.peakfocus.core.common.ui.FlintSectionTitle
@@ -400,6 +401,8 @@ private fun TodayScene(
                             // the streak sheet only.
                             FlintStreakEmber(mood = emberMood, size = StreakFlamePlacement.Badge, animate = false)
                         }
+                        // Brand mark sits at the far right, after the streak flame.
+                        FlintMark(Modifier.size(20.dp))
                     }
                     Text(
                         (headline ?: "Make time for what matters").let { if (it.endsWith(".")) it else "$it." },
