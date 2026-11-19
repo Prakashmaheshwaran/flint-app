@@ -43,12 +43,21 @@ class QuickStartTileTest : FlintE2EFixture() {
             // `add-tile` is asynchronous: SystemUI publishes the tile afterwards, and a click
             // issued before that is silently ignored (the logcat shows
             // notifyQuickSettingsTilesChanged with an empty list right after the click). Retry
-            // until the sheet is actually on screen instead of assuming one click lands.
+            // until the sheet is actually on screen instead of assuming one click lands. Refresh
+            // the accessibility cache while polling so a stale API 36 view never hides an already
+            // opened sheet and triggers another tile click after a successful activation.
             var attempts = 0
-            while (attempts < 10 && !device.hasObject(sheetOpen)) {
+            while (attempts < 10) {
+                refreshAccessibilityCache()
+                if (device.hasObject(sheetOpen)) break
                 shell("cmd statusbar click-tile $tile")
-                device.wait(Until.hasObject(sheetOpen), 2_000)
                 attempts++
+                val deadline = SystemClock.uptimeMillis() + 2_000
+                while (SystemClock.uptimeMillis() < deadline) {
+                    refreshAccessibilityCache()
+                    if (device.hasObject(sheetOpen)) break
+                    SystemClock.sleep(100)
+                }
             }
             // Stable sheet identifiers present in the Start focus sheet (not Flint's main screen):
             // the empty-draft hint and the existing refusal copy shown when no detector is live.
