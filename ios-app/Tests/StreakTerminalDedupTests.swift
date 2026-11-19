@@ -15,7 +15,8 @@ final class StreakTerminalDedupTests: XCTestCase {
 
     private func withStore(_ body: (FlintHistoryStore) throws -> Void) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                attributes: nil)
         defer { try? FileManager.default.removeItem(at: directory) }
         try body(FlintHistoryStore(directory: directory, clock: { self.now }, calendar: calendar))
     }

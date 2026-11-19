@@ -4,9 +4,6 @@ Flint for iOS includes no third-party libraries, frameworks or Swift packages. T
 
 The app and its Insights report extension bundle two third-party font families. Their licenses and Flint's own license follow.
 
-Bundled artwork (the streak flame) is recorded separately in `docs/asset-provenance.md`; that
-record states its provenance as unverified rather than implying a cleared licence.
-
 ## Hanken Grotesk
 
 - Files: HankenGrotesk-Regular.ttf, HankenGrotesk-Medium.ttf, HankenGrotesk-SemiBold.ttf, HankenGrotesk-Bold.ttf

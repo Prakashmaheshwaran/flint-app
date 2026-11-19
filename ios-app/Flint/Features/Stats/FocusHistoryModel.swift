@@ -33,7 +33,11 @@ final class FocusHistoryModel: ObservableObject {
          acknowledgementKey: String = "flint.history.lastAcknowledgedCompletion",
          project: ((FlintHistoryStore, FlintHistorySnapshot) -> Void)? = nil) {
         self.sink = sink; self.clock = clock; self.activeSession = activeSession
-        self.calendarProvider = calendar.map { fixed in { fixed } } ?? calendarProvider
+        if let calendar {
+            self.calendarProvider = { calendar }
+        } else {
+            self.calendarProvider = calendarProvider
+        }
         self.sessionClock = sessionClock
         self.isPreview = isPreview; self.presentsCompletions = presentsCompletions
         self.acknowledgementKey = acknowledgementKey
