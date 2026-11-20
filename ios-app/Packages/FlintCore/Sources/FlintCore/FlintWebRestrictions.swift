@@ -283,7 +283,7 @@ extension FlintWebRestrictions {
     /// The optional native-store probe keeps isolated persistence tests independent of the OS.
     static func loadForEnforcement(from defaults: UserDefaults?,
                                   existingWebStores: (() -> Bool)? = nil) -> FlintWebRestrictions? {
-        guard let defaults, defaults.synchronize() else { return nil }
+        guard let defaults, defaults.flintSynchronize() else { return nil }
         guard let stored = defaults.object(forKey: storageKey) else {
             guard defaults.object(forKey: initializedMarkerKey) == nil else { return nil }
             guard !hasExistingWebStores(in: defaults, probe: existingWebStores) else {
@@ -346,7 +346,7 @@ extension FlintWebRestrictions {
                     if let object { defaults.set(object, forKey: key) }
                     else { defaults.removeObject(forKey: key) }
                 }
-                let flushed = defaults.synchronize()
+                let flushed = defaults.flintSynchronize()
                 let restored = zip(keys, previous).allSatisfy {
                     (defaults.object(forKey: $0.0) as? NSObject) == ($0.1 as? NSObject)
                 }
@@ -359,11 +359,11 @@ extension FlintWebRestrictions {
                     if children != nil, defaults.object(forKey: childMarker) == nil {
                         defaults.set(true, forKey: childMarker)
                     }
-                    defaults.synchronize()
+                    defaults.flintSynchronize()
                 }
             }
         }
-        guard defaults.synchronize() else { return false }
+        guard defaults.flintSynchronize() else { return false }
         // Snapshot after synchronization, while the transition excludes other writers.
         previous = keys.map { defaults.object(forKey: $0) }
         let stored = defaults.object(forKey: storageKey)
@@ -384,11 +384,11 @@ extension FlintWebRestrictions {
         }
         guard let data = try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]) else { return false }
         defaults.set(data, forKey: Self.storageKey)
-        guard defaults.synchronize(), defaults.data(forKey: Self.storageKey) == data else { return false }
+        guard defaults.flintSynchronize(), defaults.data(forKey: Self.storageKey) == data else { return false }
         guard Self.markInitialized(in: defaults) else { return false }
         if children != nil, defaults.object(forKey: childMarker) == nil {
             defaults.set(true, forKey: childMarker)
-            guard defaults.synchronize(), defaults.object(forKey: childMarker) != nil else { return false }
+            guard defaults.flintSynchronize(), defaults.object(forKey: childMarker) != nil else { return false }
         }
         committed = true
         return true
@@ -397,7 +397,7 @@ extension FlintWebRestrictions {
     private static func markInitialized(in defaults: UserDefaults) -> Bool {
         if defaults.object(forKey: initializedMarkerKey) != nil { return true }
         defaults.set(true, forKey: initializedMarkerKey)
-        return defaults.synchronize() && defaults.object(forKey: initializedMarkerKey) != nil
+        return defaults.flintSynchronize() && defaults.object(forKey: initializedMarkerKey) != nil
     }
 
     #if canImport(FamilyControls) && canImport(ManagedSettings) && canImport(DeviceActivity)
@@ -410,7 +410,7 @@ extension FlintWebRestrictions {
     }
 
     static func retainUnavailableIntent(to defaults: UserDefaults?, recoveryDirectory: URL?, force: Bool = false) -> Bool {
-        guard let defaults, defaults.synchronize() else { return false }
+        guard let defaults, defaults.flintSynchronize() else { return false }
         if let object = defaults.object(forKey: Self.storageKey) {
             let config = (object as? Data).flatMap { try? JSONDecoder().decode(Self.self, from: $0) }
             if force || config == nil || config?.validationMessage != nil {

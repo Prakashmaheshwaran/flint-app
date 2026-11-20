@@ -83,7 +83,7 @@ public struct FlintRemovalGuardReconciler {
     }
 
     static func migrationComplete(defaults: UserDefaults?) throws -> Bool {
-        guard let defaults, defaults.synchronize() else { throw FlintRemovalGuardPreference.Error.unavailable }
+        guard let defaults, defaults.flintSynchronize() else { throw FlintRemovalGuardPreference.Error.unavailable }
         // Missing, stale or malformed markers all require the same idempotent migration.
         return defaults.object(forKey: migrationKey) as? String == "complete-v1"
     }
@@ -120,7 +120,7 @@ extension FlintRemovalGuardReconciler.Environment {
             }, markMigration: {
                 guard let defaults else { throw FlintRemovalGuardPreference.Error.unavailable }
                 defaults.set("complete-v1", forKey: FlintRemovalGuardReconciler.migrationKey)
-                guard defaults.synchronize(), defaults.string(forKey: FlintRemovalGuardReconciler.migrationKey) == "complete-v1" else {
+                guard defaults.flintSynchronize(), defaults.string(forKey: FlintRemovalGuardReconciler.migrationKey) == "complete-v1" else {
                     throw FlintRemovalGuardPreference.Error.readBackFailed
                 }
             }, preference: defaults.map { .init(defaults: $0) })
@@ -132,7 +132,7 @@ extension FlintRemovalGuardReconciler.Environment {
 enum FlintRemovalGuardInventory {
     static func load(environment env: FlintRuleReloadEnvironment, store: FlintSessionStateStoring?,
                      clock: FlintClock) -> [FlintRemovalGuardOwner]? {
-        guard let defaults = env.defaults, defaults.synchronize(),
+        guard let defaults = env.defaults, defaults.flintSynchronize(),
               let store, store.isProtectionStateReadable(), let ledger = env.ledger(),
               case .success = ledger.peek() else { return nil }
         let result = ledger.transaction { state -> [FlintRemovalGuardOwner]? in

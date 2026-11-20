@@ -171,7 +171,7 @@ final class FlintWebRestrictionChildren {
 
     func read() -> Read {
         if let memory { return memory }
-        guard let defaults, defaults.synchronize() else { return .unavailable }
+        guard let defaults, defaults.flintSynchronize() else { return .unavailable }
         let object = defaults.object(forKey: FlintWebRestrictions.storageKey)
         let root = (object as? Data).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
         let established = defaults.object(forKey: Self.markerKey) != nil

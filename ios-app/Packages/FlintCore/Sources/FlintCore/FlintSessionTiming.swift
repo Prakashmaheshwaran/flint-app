@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 // MARK: - Auto-clear plan
 
@@ -136,7 +137,28 @@ public struct FlintClock {
         calendar: { Calendar.autoupdatingCurrent }
     )
 
+    /// Marks a boot identity derived from `kern.boottime` rather than the real boot session UUID.
+    /// It is wall-clock derived, so a clock change moves it; callers must not read a changed
+    /// value as proof of a reboot.
+    static let fallbackIDPrefix = "boottime:"
+
     static func readBootSessionID() -> String? {
+        if let uuid = readBootSessionUUID() { return uuid }
+        // iOS 27 denies kern.bootsessionuuid to third-party apps (EPERM). kern.boottime is
+        // still available and is stable across the host and its extensions for one boot, so
+        // use its whole-second boot instant as the shared identity. Because it is wall-clock
+        // derived, a clock change moves it: `verdict` and `elapsed` treat a *changed* fallback
+        // identity as an unknown boot (never as extra time), while a matching one still anchors
+        // monotonic elapsed time.
+        var bootTime = timeval()
+        var size = MemoryLayout<timeval>.stride
+        guard sysctlbyname("kern.boottime", &bootTime, &size, nil, 0) == 0, bootTime.tv_sec > 0 else {
+            return nil
+        }
+        return "\(fallbackIDPrefix)\(bootTime.tv_sec)"
+    }
+
+    private static func readBootSessionUUID() -> String? {
         var size = 0
         guard sysctlbyname("kern.bootsessionuuid", nil, &size, nil, 0) == 0, size > 1 else { return nil }
         var buffer = [CChar](repeating: 0, count: size)
@@ -204,21 +226,37 @@ public enum FlintTimeIntegrity {
         currentBootSessionID: String?
     ) -> Verdict {
         guard let monotonicStart else { return .unverifiable }
-        let sameBootKnown: Bool
-        if let bootSessionID, let currentBootSessionID {
-            guard bootSessionID == currentBootSessionID else { return .unverifiable }
-            sameBootKnown = true
-        } else {
-            sameBootKnown = false
-        }
         // A monotonic reading below the anchor proves a reboot.
         guard monotonicNow >= monotonicStart else { return .unverifiable }
+        // Matching identities prove the same boot. Differing identities prove a reboot only when
+        // both are real boot session ids: the iOS 27 `boottime:` fallback is wall-clock derived,
+        // so a clock change moves it, and it must not be read as a reboot (nor silently as
+        // "unverifiable" when the skew itself is attributable).
+        var sameBootKnown = false
+        var fallbackMismatch = false
+        if let bootSessionID, let currentBootSessionID {
+            let anchoredFallback = bootSessionID.hasPrefix(FlintClock.fallbackIDPrefix)
+            let currentFallback = currentBootSessionID.hasPrefix(FlintClock.fallbackIDPrefix)
+            if bootSessionID == currentBootSessionID {
+                sameBootKnown = true
+            } else if !anchoredFallback, !currentFallback {
+                return .unverifiable // a real boot id changed: the anchored boot is gone
+            } else if anchoredFallback, currentFallback {
+                fallbackMismatch = true
+            }
+            // A real id on one side and the fallback on the other leaves the boot unknown.
+        }
         let skew = now.timeIntervalSince(wallStart) - (monotonicNow - monotonicStart)
-        // An undetected reboot makes monotonic time *under*-count, which looks exactly like a
-        // forward clock change — so "ahead" is only trusted when the boot is known to match.
-        // A reboot can never make the wall clock look behind.
-        if skew > discontinuityThreshold { return sameBootKnown ? .wallAhead(seconds: skew) : .unverifiable }
-        if skew < -discontinuityThreshold { return .wallBehind(seconds: -skew) }
+        // A forward skew under a moved fallback identity is not attributed to a reboot: with the
+        // wall-derived identity a clock change and an undetected reboot are indistinguishable,
+        // and anchors must never be reset on a mere identity change (`elapsed` already refuses to
+        // credit the moved boot). Report the anomaly rather than silence it (ADR-012 §9), and let
+        // callers keep their bounded wall fallback. Only a real boot-id change is a reboot.
+        let reportedAsClockChange = sameBootKnown || fallbackMismatch
+        if skew > discontinuityThreshold { return reportedAsClockChange ? .wallAhead(seconds: skew) : .unverifiable }
+        // A reboot can never make the wall clock look behind, so a mirrored wall time is always a
+        // clock change, including under the fallback identity.
+        if skew < -discontinuityThreshold { return reportedAsClockChange ? .wallBehind(seconds: -skew) : .unverifiable }
         return .consistent
     }
 }

@@ -28,6 +28,10 @@ public final class FlintGroupStore {
 
     /// Returns nil if the App Group is misconfigured (entitlement missing) — fail loudly in dev.
     public init?(suiteName: String = FlintGroupStore.appGroupID) {
+        if suiteName == FlintGroupStore.appGroupID, let shared = UserDefaults.flintGroup {
+            defaults = shared
+            return
+        }
         guard let defaults = UserDefaults(suiteName: suiteName) else { return nil }
         self.defaults = defaults
     }

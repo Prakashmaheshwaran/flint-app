@@ -719,7 +719,21 @@ public final class FlintEmergencyPassController {
             return .failure(.unavailable)
         }
         guard Self.hasValidRecovery(snapshot) else { return .failure(.unavailable) }
-        guard let recovery = snapshot.emergencyRecovery else { return status() }
+        // No committed recovery means there is nothing to drain. Do not require a readable
+        // rule scope here: on a fresh install the rule domains are initialized only after this
+        // policy gate succeeds, so asking for their scope would deadlock initialization. A
+        // still-pending accepted installation is different: its scope must not be inferred.
+        guard let recovery = snapshot.emergencyRecovery else {
+            // Match every other installing check in the codebase: a positively idle authority
+            // keeps `latest.phase == .installing` after `terminate` (it writes a tombstone and
+            // never clears the phase). Refusing there would fail this drain forever, because
+            // an idle authority's pass scope is reachable by design (§7) and no later session
+            // could repair it.
+            if snapshot.sessionAuthority.map({ !$0.provesIdle && $0.latest?.phase == .installing }) == true {
+                return .failure(.scopeUnavailable)
+            }
+            return .success(Self.status(snapshot, at: FlintLedgerInstant(clock: env.clock), active: false))
+        }
         guard snapshot.operation(recovery.operationID)?.kind == "pass" || snapshot.pass.lastOperationID == recovery.operationID else {
             return .failure(.unavailable)
         }
