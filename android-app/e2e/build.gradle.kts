@@ -24,6 +24,7 @@ android {
     sourceSets.getByName("main") {
         manifest.srcFile("../app/src/androidTest/AndroidManifest.xml")
         java.srcDir("../app/src/androidTest/kotlin")
+        java.srcDir("../app/src/sharedTest/kotlin")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

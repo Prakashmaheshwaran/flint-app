@@ -68,11 +68,13 @@ class QuickStartTileTest : FlintE2EFixture() {
             screenshot("tile-start-focus")
             // Dismiss the sheet, then verify real focus-session state: the Start focus sheet has no
             // "End session" control, so UI absence there cannot prove nothing started in background.
+            // History writes are asynchronous, so poll the real file and fail immediately on any started event.
             shell("cmd statusbar collapse")
             visible(By.desc("Close").enabled(true)).click()
-            assertTrue(
-                "Tile click must not create a focus session",
-                focusHistoryEvents().none { it.optString("type") == "started" },
+            assertNoStartedFocusSessionWithin(
+                readEvents = ::focusHistoryEvents,
+                nowMs = { SystemClock.uptimeMillis() },
+                sleepMs = { SystemClock.sleep(it) },
             )
             visible(By.text("Today"))
         } finally {
@@ -82,9 +84,5 @@ class QuickStartTileTest : FlintE2EFixture() {
     }
 
     private fun focusHistoryEvents(): List<JSONObject> =
-        shell("run-as $app cat files/focus-history/events.v1.jsonl")
-            .lineSequence()
-            .filter { it.startsWith("{") }
-            .map(::JSONObject)
-            .toList()
+        parseFocusHistoryOutput(shell("run-as $app cat files/focus-history/events.v1.jsonl"))
 }
