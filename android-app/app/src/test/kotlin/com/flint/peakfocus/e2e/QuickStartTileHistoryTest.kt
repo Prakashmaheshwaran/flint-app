@@ -125,6 +125,87 @@ class QuickStartTileHistoryTest {
         assertEquals(5000L, clock.now())
     }
 
+    @Test fun `blank run-as output fails closed instead of parsing as empty history`() {
+        expectFailureContaining("Focus-history read failed") {
+            readFocusHistory("app.flint.focus") { "" }
+        }
+        expectFailureContaining("Focus-history read failed") {
+            readFocusHistory("app.flint.focus") { "\n" }
+        }
+    }
+
+    @Test fun `read output without the sentinel fails closed`() {
+        // run-as/cat errors normally reach stderr only (dropped by executeShellCommand); if any
+        // error text does reach stdout, or the sentinel file cannot be read, never parse as empty.
+        expectFailureContaining("Focus-history read failed") {
+            readFocusHistory("app.flint.focus") { "run-as: package not debuggable: app.flint.focus\n" }
+        }
+        expectFailureContaining("Focus-history read failed") {
+            readFocusHistory("app.flint.focus") { """{"type":"started","session":"s"}""" }
+        }
+    }
+
+    @Test fun `sentinel-only output is a genuinely empty history`() {
+        // cat exited 0 on an empty file, so the script echoed the marker with nothing before it
+        assertEquals(
+            emptyList<JSONObject>(),
+            readFocusHistory("app.flint.focus") { "$FOCUS_HISTORY_READ_OK\n" },
+        )
+        assertEquals(
+            emptyList<JSONObject>(),
+            readFocusHistory("app.flint.focus") { FOCUS_HISTORY_READ_OK },
+        )
+    }
+
+    @Test fun `missing or unreadable history read is rejected while genuine empty is accepted`() {
+        // genuine empty history (cat exit 0) is the only marker-only success
+        assertEquals(
+            emptyList<JSONObject>(),
+            readFocusHistory("app.flint.focus") { "$FOCUS_HISTORY_READ_OK\n" },
+        )
+        // missing file: cat exits non-zero, && short-circuits, no marker is ever emitted
+        expectFailureContaining("Focus-history read failed") {
+            readFocusHistory("app.flint.focus") { "" }
+        }
+        // unreadable file: likewise rejected, and any non-marker text is never parsed as empty
+        expectFailureContaining("Focus-history read failed") {
+            readFocusHistory("app.flint.focus") { "cat: $FOCUS_HISTORY_FILE: Permission denied\n" }
+        }
+    }
+
+    @Test fun `marker must be the final output of the read`() {
+        expectFailureContaining("Focus-history read failed") {
+            readFocusHistory("app.flint.focus") { "$FOCUS_HISTORY_READ_OK\nstray-after-marker\n" }
+        }
+    }
+
+    @Test fun `sentinel output plus JSONL parses the history events`() {
+        val started = """{"type":"started","session":"s"}"""
+        val completed = """{"type":"completed","session":"s"}"""
+        // cat prints the history first; echo appends the marker last, glued when the file has no
+        // final newline of its own
+        val glued = readFocusHistory("app.flint.focus") {
+            "$started\n$completed$FOCUS_HISTORY_READ_OK\n"
+        }
+        assertEquals(listOf("started", "completed"), glued.map { it.getString("type") })
+        val newlineSeparated = readFocusHistory("app.flint.focus") {
+            "$started\n$completed\n$FOCUS_HISTORY_READ_OK\n"
+        }
+        assertEquals(listOf("started", "completed"), newlineSeparated.map { it.getString("type") })
+    }
+
+    @Test fun `read command carries sentinel and history in one run-as invocation`() {
+        var command = ""
+        readFocusHistory("app.flint.focus") {
+            command = it
+            "$FOCUS_HISTORY_READ_OK\n"
+        }
+        assertEquals(
+            "run-as app.flint.focus sh -c cat\${IFS}$FOCUS_HISTORY_FILE&&echo\${IFS}$FOCUS_HISTORY_READ_OK",
+            command,
+        )
+    }
+
     private fun expectFailureContaining(fragment: String, block: () -> Unit) {
         try {
             block()

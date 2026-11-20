@@ -84,5 +84,5 @@ class QuickStartTileTest : FlintE2EFixture() {
     }
 
     private fun focusHistoryEvents(): List<JSONObject> =
-        parseFocusHistoryOutput(shell("run-as $app cat files/focus-history/events.v1.jsonl"))
+        readFocusHistory(app) { shell(it) }
 }
