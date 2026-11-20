@@ -99,8 +99,8 @@ class FocusHistoryTest : FlintE2EFixture() {
         // Week/Day chips and totals sit below the fold on the runner's 1080x1920 display.
         // Compose does not expose those nodes until the page scrolls, and scrolling this page
         // kills the software-rendered runner emulator (connectedDebugAndroidTest dies at this
-        // exact step). The section's empty state is asserted above; the rendered Week and Day
-        // views were verified by hand on a 1080x2400 device.
+        // exact step). The section's empty state is asserted above; the Week/Day switch and its
+        // per-period totals are covered by the host test FocusSessionsCardTest instead.
     }
 
     private fun startFiveMinuteTimer(): Long {

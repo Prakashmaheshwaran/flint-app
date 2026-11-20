@@ -99,17 +99,28 @@ internal fun FocusSessionsSection() {
         return
     }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var retrying by remember { mutableStateOf(false) }
     val history by remember(context) { FocusHistoryBridge.summaries(context) }
         .collectAsStateWithLifecycle(initialValue = null)
+
+    FocusStreakCard(history)
+    Spacer(Modifier.height(FlintSpacing.lg))
+    FocusSessionsCard(history)
+    Spacer(Modifier.height(FlintSpacing.cardGap))
+    FlintSectionLabel("Screen usage")
+    Spacer(Modifier.height(FlintSpacing.sm))
+}
+
+/**
+ * The sessions card on its own. Taking the summary as a parameter keeps the Week/Day switch
+ * testable without the live history bridge or the crash-prone emulator scroll path.
+ */
+@Composable
+internal fun FocusSessionsCard(summary: FocusSummary?) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var retrying by remember { mutableStateOf(false) }
     var week by rememberSaveable { mutableStateOf(true) }
     var selectedDate by rememberSaveable { mutableStateOf<String?>(null) }
-    val summary = history
-
-    FocusStreakCard(summary)
-    Spacer(Modifier.height(FlintSpacing.lg))
-
     FlintCard {
         FlintSectionLabel("Focus sessions")
         Text(
@@ -148,7 +159,7 @@ internal fun FocusSessionsSection() {
                 ?: summary.days.lastOrNull()
             val shown = if (week) summary.days else listOfNotNull(selected)
             val totals = focusPeriodTotals(shown)
-            Text(totals.focused, style = MaterialTheme.typography.headlineMedium)
+            Text(totals.focused, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.testTag("focus.sessions.total"))
             Text(
                 "${totals.completed} completed · ${totals.endedEarly} ended early",
                 style = MaterialTheme.typography.bodyMedium,
@@ -216,9 +227,6 @@ internal fun FocusSessionsSection() {
             }
         }
     }
-    Spacer(Modifier.height(FlintSpacing.cardGap))
-    FlintSectionLabel("Screen usage")
-    Spacer(Modifier.height(FlintSpacing.sm))
 }
 
 @Composable
