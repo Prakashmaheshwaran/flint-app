@@ -9,6 +9,7 @@ import com.flint.peakfocus.glance.CoordinatorGlanceReader
 import com.flint.peakfocus.glance.OngoingSessionNotification
 import com.flint.peakfocus.glance.FocusHistoryGlanceReader
 import com.flint.peakfocus.blocking.overlay.PathBNotification
+import com.flint.peakfocus.quickstart.QuickStartShortcuts
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,6 +43,7 @@ class FlintApplication : Application() {
         PathBNotification.register(OngoingSessionNotification::customize)
         appScope.launch { GlanceSurfaceBridge.display.collect { PathBNotification.requestRefresh() } }
         EditorReconciler.rearm(this, appScope)
+        QuickStartShortcuts.start(this, appScope)
         BootReceiver.registerRearmAction { context -> EditorReconciler.rearm(context, appScope); PathBServiceGate.sync(context) }
         TimeChangeReceiver.baselineAnchor(this)
         TimeChangeReceiver.registerRearmAction { context -> EditorReconciler.rearm(context, appScope); PathBServiceGate.sync(context) }

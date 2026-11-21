@@ -59,6 +59,8 @@ explicitly preserves accessibility services during the test session.
 | Rule and restart | Author rule through UI, enable real service via secure settings, launch target, see shield; stop/relaunch Flint and see saved rule plus shield; Easy break dismisses shield | Service is explicitly re-enabled after restart; no automatic OS recovery, break expiry or reboot claim |
 | Emergency Pass | Hardcore rule shows shield, omits ordinary break, explicit pass opens target | No pass reset, overlap or durable grant proof |
 | Budget | Existing DEBUG receiver seeds a zero-minute legacy budget, real service shows Time limit shield | Does not prove elapsed UsageStats measurement, modern limit authoring or cross-midnight reset |
+| Quick start tile (3.2) | `am start` from shell is refused by the non-exported entry and opens nothing; `cmd statusbar add-tile`/`click-tile` on Flint's tile opens the Start focus sheet with the existing no-detector refusal copy | No launcher-shortcut, lock-screen unlock, app-open PIN or OEM System UI proof; nothing is started |
+
 | App PIN | Settings sets a 4–6 digit PIN ("On"); a cold relaunch shows the gate with the tab bar hidden; a wrong PIN is refused; Emergency Pass & protection recovery open without the PIN; the right PIN unlocks and removing the PIN turns it off | Emulator only; no Recents-thumbnail pixel proof, no TalkBack audio, no physical device |
 
 These are emulator integration checks, not hardware/OEM, anti-removal, web

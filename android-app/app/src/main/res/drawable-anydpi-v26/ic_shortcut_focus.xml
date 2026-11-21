@@ -1,0 +1,5 @@
+<!-- Launcher shortcut icon: charcoal stage, ember-on-the-horizon foreground. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/flint_charcoal" />
+    <foreground android:drawable="@drawable/ic_shortcut_focus_foreground" />
+</adaptive-icon>

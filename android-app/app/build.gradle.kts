@@ -97,6 +97,10 @@ android {
         compose = true
         buildConfig = true
     }
+    sourceSets {
+        getByName("test").java.srcDir("src/sharedTest/kotlin")
+        getByName("androidTest").java.srcDir("src/sharedTest/kotlin")
+    }
     testOptions.unitTests.isIncludeAndroidResources = true
 }
 
@@ -136,4 +140,5 @@ dependencies {
     testImplementation(libs.androidx.datastore.preferences)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    testImplementation("org.json:json:20231013")
 }

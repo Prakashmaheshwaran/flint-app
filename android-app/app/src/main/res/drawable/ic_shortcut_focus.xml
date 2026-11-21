@@ -1,0 +1,9 @@
+<!-- API 25 launcher shortcut icon (pre-adaptive): charcoal disc behind the ember foreground. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/flint_charcoal" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/ic_shortcut_focus_foreground" />
+</layer-list>

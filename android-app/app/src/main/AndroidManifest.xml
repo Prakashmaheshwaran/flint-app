@@ -67,5 +67,29 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/flint_glance_widget" />
         </receiver>
         <receiver android:name=".glance.GlanceRefreshReceiver" android:exported="false" />
+
+        <!-- 3.2 quick start. Reached only by Flint's own tile and launcher shortcuts (the
+             system launches shortcuts as Flint); NOT exported, so no other app can use it.
+             It only opens the Start focus sheet: Begin in Flint is the only commit. -->
+        <activity
+            android:name=".quickstart.QuickStartActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- Exported only to the system UI: BIND_QUICK_SETTINGS_TILE is a system-only
+             permission, so other apps cannot bind it. No toggle metadata: a tap opens Flint. -->
+        <service
+            android:name=".quickstart.FlintQuickTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_focus"
+            android:label="@string/quick_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            tools:targetApi="24">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

@@ -2,4 +2,6 @@
     <string name="flint_widget_name">Flint focus</string>
     <string name="flint_widget_description">Last checked protection, next session and Focused today. Tap to open Flint.</string>
     <string name="app_name">Flint</string>
+    <!-- Quick Settings tile (3.2): opens Flint's Start focus sheet; never a toggle. -->
+    <string name="quick_tile_label">Start focus</string>
 </resources>
