@@ -74,11 +74,11 @@ class Component extends DCLogic {
     super(props);
     this.state = {
       allow: false,
-      picked: { Instagram: true, TikTok: true, YouTube: true, Reddit: true, X: true, Snapchat: true, Netflix: true }
+      picked: { Instagram: true, TikTok: true, YouTube: true, Reddit: true, X: true, Pinterest: true, Netflix: true }
     };
   }
   renderVals() {
-    const names = ['Instagram', 'TikTok', 'YouTube', 'Reddit', 'X', 'Snapchat', 'Netflix', 'Chrome', 'Messages'];
+    const names = ['Instagram', 'TikTok', 'YouTube', 'Reddit', 'X', 'Pinterest', 'Netflix', 'Chrome', 'Messages'];
     const tones = ['#3A3430', '#33302E', '#3D3631', '#36312D', '#2F2C2A', '#3B3530', '#35302C', '#312E2B', '#38332F'];
     const apps = names.map((name, i) => {
       const on = !!this.state.picked[name];

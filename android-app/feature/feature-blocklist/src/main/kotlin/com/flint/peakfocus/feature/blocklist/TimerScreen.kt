@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -57,7 +58,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -94,18 +97,23 @@ import com.flint.peakfocus.core.common.ui.FlintRadioCard
 import com.flint.peakfocus.core.common.ui.FlintSectionTitle
 import com.flint.peakfocus.core.common.ui.FlintSegmented
 import com.flint.peakfocus.core.common.ui.FlintStatusPill
+import com.flint.peakfocus.core.common.ui.FlintStreakEmber
+import com.flint.peakfocus.core.common.ui.FocusStreakCelebrationSheet
 import com.flint.peakfocus.core.common.ui.GhostButton
 import com.flint.peakfocus.core.common.ui.QuietButton
+import com.flint.peakfocus.core.common.ui.StreakFlamePlacement
 import com.flint.peakfocus.core.common.ui.SunArc
 import com.flint.peakfocus.core.common.ui.TodayHero
+import com.flint.peakfocus.core.common.ui.emberMoodFor
+import com.flint.peakfocus.core.history.FocusHistoryText
+import com.flint.peakfocus.core.history.FocusSession
+import com.flint.peakfocus.core.history.FocusSummary
+import com.flint.peakfocus.core.history.HistoryAvailability
 import com.flint.peakfocus.core.model.AppRef
 import com.flint.peakfocus.core.model.BlockRule
 import com.flint.peakfocus.core.model.BreakLevel
 import com.flint.peakfocus.core.model.PomodoroPlan
 import com.flint.peakfocus.core.model.Schedule
-import com.flint.peakfocus.core.history.FocusHistoryText
-import com.flint.peakfocus.core.history.FocusSession
-import com.flint.peakfocus.core.history.FocusSummary
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -341,7 +349,7 @@ internal fun TimerAppPicker(
     )
 }
 
-/** M03 — Today. */
+/** E03 — Today. */
 @Composable
 private fun TodayScene(
     state: TimerUiState,
@@ -359,202 +367,142 @@ private fun TodayScene(
     onDismiss: () -> Unit,
     modifier: Modifier,
 ) {
-    val nowMinute = localMinuteOfDay(state.nowEpochMs)
-    val ready = rulesState as? RulesUiState.Ready
-    val authored = ready?.rules.orEmpty().filter {
-        it.enabled &&
-            !it.id.startsWith(BlockRule.SESSION_ID_PREFIX) &&
-            !it.id.startsWith(SLEEP_RULE_PREFIX)
-    }
-    val statuses = ready?.statuses.orEmpty()
-    val active = authored.firstOrNull { statuses[it.id]?.activeNow == true }
-    // A one-time rule belongs to Today only on its own date (never a later date's start time).
-    val today = java.time.Instant.ofEpochMilli(state.nowEpochMs).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-    val upNext = authored
-        .filter { statuses[it.id]?.nextChange?.startsWith("Starts") == true }
-        .filter { rule -> rule.schedule?.date?.let { it == today } ?: true }
-        .sortedBy { it.schedule?.startMinuteOfDay ?: 0 }
-        .take(2)
-    val nextLabel = upNext.firstOrNull()?.let { rule ->
-        // A dated one-time start names its date; only a weekly window can imply "next at HH:MM".
-        if (rule.schedule?.date != null) statuses[rule.id]?.nextChange
-        else rule.schedule?.let { "Starts ${formatMinuteOfDay(it.startMinuteOfDay)}" }
-            ?: statuses[rule.id]?.nextChange
-    }?.removePrefix("Starts ")
+    var showStreakSheet by remember { mutableStateOf(false) }
+    val streak = history?.streak ?: 0
+    val historyKnown = history != null && history.availability != HistoryAvailability.UNAVAILABLE
+    val completedToday = history?.days?.lastOrNull()?.completed?.let { it > 0 } == true
+    val emberMood = emberMoodFor(streak, completedToday)
 
-    Box(modifier.fillMaxSize().background(FlintPalette.Ground)) {
-        TodayHero(Modifier.align(Alignment.TopCenter))
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(contentPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
-        ) {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
+    Box(modifier.fillMaxSize()) {
+        // Horizon scene: the reference composition when the copy is short, and a
+        // smaller, lower sun when the setup copy is long enough to reach the horizon.
+        val tightCopy = (subline?.length ?: 0) > 260
+        EmberLandscape(
+            orbCenter = Offset(195f, if (tightCopy) 426f else 470f),
+            orbRadius = if (tightCopy) 50f else 73f,
+        )
+        BoxWithConstraints(Modifier.fillMaxSize().padding(contentPadding)) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight)
+                    .padding(horizontal = FlintSpacing.gutter),
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                FlintMark(Modifier.size(22.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "Flint",
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontSize = 20.sp,
-                        letterSpacing = (-0.3).sp,
-                    ),
-                    modifier = Modifier.weight(1f),
-                )
-                // Fail closed: only a loaded rule set may claim "Protected · N rules".
-                val pillText = when {
-                    setupLabel != null -> "Setup needed"
-                    rulesState is RulesUiState.Unavailable -> "Rules unavailable"
-                    ready == null -> "Checking rules…"
-                    else -> "Protected · ${authored.size} ${if (authored.size == 1) "rule" else "rules"}"
-                }
-                val healthy = setupLabel == null && ready != null
-                FlintStatusPill(
-                    text = pillText,
-                    emphasized = healthy,
-                    dot = healthy,
-                    modifier = Modifier.clip(RoundedCornerShape(percent = 50)).clickable(onClick = onOpenRules),
-                )
-            }
-
-            Text(
-                "Spark your life.",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = 30.sp,
-                    fontFamily = com.flint.peakfocus.core.common.theme.FlintDisplay,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
-                    letterSpacing = (-0.3).sp,
-                ),
-                textAlign = TextAlign.Center,
-                // The hero draws from the screen top (board coordinates: spark ends at 222dp,
-                // tagline at 240dp); this sits below the status bar, so leave the spark room.
-                modifier = Modifier.fillMaxWidth().padding(top = 136.dp),
-            )
-            Spacer(Modifier.height(20.dp))
-            EmberButton(
-                "Start focus",
-                onClick = onStart,
-                enabled = state.rulesLoaded && state.rulesError == null,
-                minHeight = 52.dp,
-                leadingIcon = FlintGlyphs.timer,
-            )
-            Spacer(Modifier.height(20.dp))
-            TodayStatsRow(
-                focused = FocusHistoryText.today(history),
-                next = nextLabel,
-                // Allow-list rules list the apps left open, so they are never "resting".
-                restingApps = active?.targets?.takeUnless { it.allowListMode }?.apps?.toList().orEmpty(),
-            )
-
-            if (setupLabel != null || (headline != null && state.rulesError != null)) {
-                Spacer(Modifier.height(16.dp))
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(FlintPalette.BoneFaint)
-                        .padding(14.dp),
-                ) {
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        // Derived from the UI clock: a date captured once would go stale
+                        // after midnight while Today stays composed.
+                        FlintEyebrow(todayLabel(state.nowEpochMs), Modifier.weight(1f))
+                        Box(
+                            Modifier
+                                .size(48.dp)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClickLabel = "Show streak details",
+                                    role = Role.Button,
+                                    onClick = { showStreakSheet = true },
+                                )
+                                .semantics {
+                                    // One merged node: the flame itself is silent, so TalkBack
+                                    // hears the count once, with the day singular/zero handled.
+                                    // Unreadable history (null or UNAVAILABLE) stays neutral
+                                    // instead of claiming "no active streak".
+                                    contentDescription = streakBadgeDescription(historyKnown, streak)
+                                }
+                                .testTag("today.streak.ember"),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            // Static streak icon on the landing header; the live flame runs in
+                            // the streak sheet only.
+                            FlintStreakEmber(mood = emberMood, size = StreakFlamePlacement.Badge, animate = false)
+                        }
+                        // Brand mark sits at the far right, after the streak flame.
+                        FlintMark(Modifier.size(20.dp))
+                    }
                     Text(
-                        (headline ?: "Finish setup").let { if (it.endsWith(".")) it else "$it." },
-                        style = MaterialTheme.typography.titleSmall,
+                        (headline ?: "Make time for what matters").let { if (it.endsWith(".")) it else "$it." },
+                        style = MaterialTheme.typography.headlineMedium.copy(fontSize = MaterialTheme.typography.headlineMedium.fontSize * (31f / 30f)),
+                        modifier = Modifier.padding(top = 26.dp),
                     )
                     if (subline != null) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(subline, style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist)
+                        Text(
+                            subline,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = MaterialTheme.typography.bodySmall.fontSize * (14f / 13f)),
+                            color = FlintPalette.Mist,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    Column(
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(FocusHistoryText.today(history), style = if (history?.days?.lastOrNull()?.focusedMs != null && history.sessions.isNotEmpty())
+                            MaterialTheme.typography.displaySmall.merge(FlintNumerals) else MaterialTheme.typography.titleLarge,
+                            textAlign = TextAlign.Center)
+                        FlintEyebrow("Focused today")
+                        FocusHistoryText.note(history, resources = LocalContext.current.resources)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist) }
+                        Text("Your next session · ${timerDurationLabel(state.draft.durationMinutes)}",
+                            style = MaterialTheme.typography.bodySmall, color = FlintPalette.Mist,
+                            modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+
+                Column(Modifier.padding(top = 32.dp)) {
+                    if (state.busy || (!state.rulesLoaded && state.rulesError == null)) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 12.dp), color = FlintPalette.Ember, trackColor = FlintPalette.BoneFill)
+                    }
+                    val notice = state.rulesError ?: state.error ?: state.message
+                    if (notice != null) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = 12.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(notice, style = MaterialTheme.typography.bodySmall,
+                                color = if (state.message != null && state.error == null && state.rulesError == null) FlintPalette.Mist else FlintPalette.Danger,
+                                modifier = Modifier.weight(1f))
+                            TextButton(onClick = if (state.rulesError != null) onRetry else onDismiss) {
+                                Text(if (state.rulesError != null) "Refresh" else "Dismiss", color = FlintPalette.Bone)
+                            }
+                        }
                     }
                     if (setupLabel != null) {
-                        Spacer(Modifier.height(10.dp))
-                        QuietButton(setupLabel, onSetup, outlined = true, color = FlintPalette.EmberText)
+                        QuietButton(setupLabel, onSetup, outlined = true, color = FlintPalette.Ember, modifier = Modifier.padding(bottom = 12.dp))
                     }
-                }
-            }
-
-            if (state.busy || (!state.rulesLoaded && state.rulesError == null)) {
-                LinearProgressIndicator(
-                    Modifier.fillMaxWidth().padding(top = 14.dp),
-                    color = FlintPalette.Ember,
-                    trackColor = FlintPalette.BoneFill,
-                )
-            }
-            val notice = state.rulesError ?: state.error ?: state.message
-            if (notice != null) {
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 12.dp).semantics { liveRegion = LiveRegionMode.Polite },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        notice,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (state.message != null && state.error == null && state.rulesError == null) FlintPalette.Mist else FlintPalette.Danger,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = if (state.rulesError != null) onRetry else onDismiss) {
-                        Text(if (state.rulesError != null) "Refresh" else "Dismiss", color = FlintPalette.Bone)
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        todayPresets.forEach { preset ->
+                            FlintChip(onClick = { onPreset(preset.id) }, enabled = state.canEdit) {
+                                FlintChipText(preset.name)
+                                FlintChipText(timerDurationLabel(preset.minutes), color = FlintPalette.Mist)
+                            }
+                        }
                     }
+                    Spacer(Modifier.height(14.dp))
+                    EmberButton("Start focus", onStart, enabled = state.rulesLoaded && state.rulesError == null)
+                    Spacer(Modifier.height(12.dp))
                 }
             }
-
-            if (active != null) {
-                Spacer(Modifier.height(16.dp))
-                TodayNowCard(
-                    rule = active,
-                    remainingMinutes = scheduleMinutesLeft(active.schedule, nowMinute),
-                    progress = scheduleProgress(active.schedule, nowMinute),
-                    nowMinute = nowMinute,
-                    onOpenRules = onOpenRules,
-                )
-            }
-
-            if (upNext.isNotEmpty()) {
-                Spacer(Modifier.height(22.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Up next", style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp), modifier = Modifier.weight(1f))
-                    Text(
-                        "All rules",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                        color = FlintPalette.Mist,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable(onClick = onOpenRules)
-                            .padding(vertical = 8.dp, horizontal = 4.dp),
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                upNext.forEachIndexed { index, rule ->
-                    if (index > 0) Spacer(Modifier.height(8.dp))
-                    TodayNextRow(rule = rule, nowMinute = nowMinute, onClick = onOpenRules)
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
-            Text(
-                "Your next session · ${timerDurationLabel(state.draft.durationMinutes)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = FlintPalette.Mist,
+        }
+        if (showStreakSheet) {
+            FocusStreakCelebrationSheet(
+                streak = streak,
+                mood = emberMood,
+                onDismiss = { showStreakSheet = false },
             )
-            Spacer(Modifier.height(6.dp))
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                todayPresets.forEach { preset ->
-                    FlintChip(onClick = { onPreset(preset.id) }, enabled = state.canEdit) {
-                        FlintChipText(preset.name)
-                        FlintChipText(timerDurationLabel(preset.minutes), color = FlintPalette.Mist)
-                    }
-                }
-            }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
 
-/** M03's three-stat row: two serif numbers plus the resting app tiles. */
 @Composable
 private fun TodayStatsRow(focused: String, next: String?, restingApps: List<AppRef>) {
     // Values may wrap at large font scales; each column spans the row so labels stay on one baseline.
@@ -1581,8 +1529,8 @@ private fun CompleteStatsRow(session: FocusSession, summary: FocusSummary?) {
 private val todayPresets: List<TimerPreset>
     get() = listOf("deep-study", "reading", "workout").mapNotNull { id -> timerPresets.firstOrNull { it.id == id } }
 
-private fun todayLabel(): String =
-    SimpleDateFormat("EEEE · d MMMM", Locale.getDefault()).format(Date())
+private fun todayLabel(nowEpochMs: Long): String =
+    SimpleDateFormat("EEEE · d MMMM", Locale.getDefault()).format(Date(nowEpochMs))
 
 internal fun localMinuteOfDay(epochMs: Long): Int {
     val calendar = Calendar.getInstance().apply { timeInMillis = epochMs }
@@ -1672,3 +1620,16 @@ private fun timerExitHint(rule: BlockRule): String = when {
     rule.breakLevel == BreakLevel.HARDCORE -> "Expiry or an available Emergency Pass"
     else -> "Hold to end early"
 }
+
+/**
+ * TalkBack label for the Today streak badge. One node announces the count once.
+ * Unreadable history stays neutral instead of claiming "no active streak".
+ */
+internal fun streakBadgeLabel(streak: Int): String = when {
+    streak <= 0 -> "No active focus streak"
+    streak == 1 -> "Focus streak, 1 day"
+    else -> "Focus streak, $streak days"
+}
+
+internal fun streakBadgeDescription(historyKnown: Boolean, streak: Int): String =
+    if (historyKnown) streakBadgeLabel(streak) else "Focus streak"

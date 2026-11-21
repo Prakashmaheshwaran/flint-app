@@ -79,11 +79,11 @@ class Component extends DCLogic {
     super(props);
     this.state = {
       allow: false, group: 'deep',
-      picked: { Instagram: true, TikTok: true, YouTube: true, Reddit: true, X: true, Snapchat: true, Netflix: true }
+      picked: { Instagram: true, TikTok: true, YouTube: true, Reddit: true, X: true, Pinterest: true, Netflix: true }
     };
   }
   renderVals() {
-    const list = [['Instagram', 'I', '#5C3344', 'Social · 48m today'], ['TikTok', 'T', '#2E2E33', 'Social · 31m today'], ['YouTube', 'Y', '#5A2A2A', 'Video · 22m today'], ['Reddit', 'R', '#6B3D2A', 'Social · 14m today'], ['X', 'X', '#26262A', 'Social · 9m today'], ['Snapchat', 'S', '#6B6230', 'Social · 6m today'], ['Netflix', 'N', '#4A1F22', 'Video'], ['Chrome', 'C', '#3A4A3A', 'Browser'], ['Messages', 'M', '#2F4A3A', 'Always allowed']];
+    const list = [['Instagram', 'I', '#5C3344', 'Social · 48m today'], ['TikTok', 'T', '#2E2E33', 'Social · 31m today'], ['YouTube', 'Y', '#5A2A2A', 'Video · 22m today'], ['Reddit', 'R', '#6B3D2A', 'Social · 14m today'], ['X', 'X', '#26262A', 'Social · 9m today'], ['Pinterest', 'P', '#6B6230', 'Social · 6m today'], ['Netflix', 'N', '#4A1F22', 'Video'], ['Chrome', 'C', '#3A4A3A', 'Browser'], ['Messages', 'M', '#2F4A3A', 'Always allowed']];
     const apps = list.map(([name, initial, bg, meta]) => {
       const on = !!this.state.picked[name];
       return {
@@ -101,8 +101,8 @@ class Component extends DCLogic {
       (on ? 'background: #EDE6DA; color: #141316;' : 'background: transparent; color: #B7AE9F;');
     const mini = (bg) => 'width: 20px; height: 20px; border-radius: 6px; background: ' + bg + '; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #D8CFC0; border: 1.5px solid #0E0D0F;';
     const groupDefs = [
-      ['deep', 'Deep work', '7', 'I', 'T', '#5C3344', '#2E2E33', ['Instagram', 'TikTok', 'YouTube', 'Reddit', 'X', 'Snapchat', 'Netflix']],
-      ['doom', 'Doomscroll', '11', 'R', 'X', '#6B3D2A', '#26262A', ['Instagram', 'TikTok', 'YouTube', 'Reddit', 'X', 'Snapchat', 'Netflix', 'Chrome']],
+      ['deep', 'Deep work', '7', 'I', 'T', '#5C3344', '#2E2E33', ['Instagram', 'TikTok', 'YouTube', 'Reddit', 'X', 'Pinterest', 'Netflix']],
+      ['doom', 'Doomscroll', '11', 'R', 'X', '#6B3D2A', '#26262A', ['Instagram', 'TikTok', 'YouTube', 'Reddit', 'X', 'Pinterest', 'Netflix', 'Chrome']],
       ['always', 'Always allowed', '3', 'M', 'C', '#2F4A3A', '#3A4A3A', ['Messages', 'Chrome']]
     ];
     const groups = groupDefs.map(([id, name, count, i1, i2, b1, b2, members]) => {

@@ -14,6 +14,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    // Robolectric renders the flame at real sizes; it needs merged resources + manifest.
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 dependencies {
@@ -21,6 +23,12 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
+    // Preview annotations must compile in every variant; the inspector stays debug-only
+    // (matches feature-blocklist's split). Release previously failed on @Preview.
+    implementation(libs.androidx.ui.tooling.preview)
 
+    debugImplementation(libs.androidx.ui.tooling)
     testImplementation(libs.junit)
+    // Host render harness for deterministic flame pixels (no device required).
+    testDebugImplementation(libs.robolectric)
 }

@@ -39,8 +39,33 @@ struct FocusHistorySection: View {
             }
             .accessibilityIdentifier("history.section")
 
+            if StreakPresentationPolicy.showsCard(for: history.summary), let summary = history.summary {
+                streakCard(summary)
+            }
+
             weekSection
         }
+    }
+
+    private func streakCard(_ summary: FlintHistorySummary) -> some View {
+        let completedToday = (summary.days.last?.completed ?? 0) > 0
+        let mood = StreakEmberMood.forStreak(summary.streak, completedToday: completedToday)
+        return FlintCard(radius: 24, padding: EdgeInsets(top: 18, leading: 16, bottom: 16, trailing: 16)) {
+            VStack(spacing: 6) {
+                FlintStreakEmber(mood: mood, size: StreakFlamePlacement.insights)
+                Text("\(summary.streak)")
+                    .font(FlintFont.display(56, relativeTo: .largeTitle))
+                    .foregroundStyle(FlintBrand.bone)
+                Text("DAY STREAK")
+                    .font(FlintFont.text(12, weight: .semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(FlintBrand.stone)
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(StreakPresentationPolicy.badgeLabel(for: summary))
+        }
+        .accessibilityIdentifier("history.streak")
     }
 
     // MARK: Sentence

@@ -16,10 +16,26 @@ struct TodayView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var health = FlintArmingHealth()
     @State private var observation: FlintProtectionObservation?
+    @State private var showStreakSheet = false
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.flintTabBarHeight) private var barHeight
 
     private var compact: Bool { typeSize.isAccessibilitySize }
+
+    private var streak: Int { history.summary?.streak ?? 0 }
+    private var streakCompletedToday: Bool { (history.summary?.days.last?.completed ?? 0) > 0 }
+    private var streakMood: StreakEmberMood {
+        StreakEmberMood.forStreak(streak, completedToday: streakCompletedToday)
+    }
+    private var streakLabel: String {
+        StreakPresentationPolicy.badgeLabel(for: history.summary)
+    }
+
+    /// The sheet carries the streak number; with unreadable history there is nothing
+    /// truthful to show, so the badge does not open it.
+    private var canShowStreakSheet: Bool {
+        StreakPresentationPolicy.showsSheet(for: history.summary)
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -54,6 +70,9 @@ struct TodayView: View {
         }
         .sheet(isPresented: $showStart) {
             StartFocusSheet(vm: vm) { showStart = false }
+        }
+        .sheet(isPresented: $showStreakSheet) {
+            FocusStreakCelebrationSheet(streak: streak, mood: streakMood) { showStreakSheet = false }
         }
         .task {
             auth.refresh()
@@ -126,6 +145,22 @@ struct TodayView: View {
                     .font(FlintFont.text(20, weight: .bold, relativeTo: .title3))
                     .tracking(-0.3)
                     .foregroundStyle(FlintBrand.bone)
+                Spacer(minLength: 8)
+                Button {
+                    guard canShowStreakSheet else { return }
+                    showStreakSheet = true
+                } label: {
+                    FlintStreakEmber(mood: streakMood, size: StreakFlamePlacement.badge, animate: false)
+                        // The flame stays at the approved 24 pt size; the button keeps a
+                        // 44 pt target around it.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canShowStreakSheet)
+                .accessibilityIdentifier("today.streak.ember")
+                .accessibilityLabel(streakLabel)
+                .accessibilityHint("Opens your focus streak")
             }
             if !compact { Spacer(minLength: 8) }
             Button(action: onOpenRules) {

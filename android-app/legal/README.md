@@ -9,11 +9,13 @@ It resolves POMs (and license-bearing parent POMs) using Gradle's configured rep
 notices. There is no network or WebView code in the legal UI and no new runtime SDK.
 
 Outputs are in `app/build/generated/offlineLegal/assets/legal/`:
-
 - `privacy-policy.md`: the canonical policy, without rewriting or translation.
 - `open-source-licenses.txt`: readable dependency/font inventory and full notices.
 - `dependency-list.json`: coordinates, scopes, license declarations, notice references,
   POM/artifact/font hashes and policy hash; no machine paths or timestamps.
+
+Generated notices cover libraries and fonts only. Bundled artwork (the streak flame) is
+recorded in `docs/asset-provenance.md`, which states its provenance as unverified.
 
 Run `./gradlew :app:generateOfflineLegal :app:testOfflineLegalGenerator` (on this
 shared host, use the mandatory `flint-heavy android` semaphore). Gradle may fetch

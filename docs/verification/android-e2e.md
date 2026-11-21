@@ -62,6 +62,7 @@ explicitly preserves accessibility services during the test session.
 | Quick start tile (3.2) | `am start` from shell is refused by the non-exported entry and opens nothing; `cmd statusbar add-tile`/`click-tile` on Flint's tile opens the Start focus sheet with the existing no-detector refusal copy | No launcher-shortcut, lock-screen unlock, app-open PIN or OEM System UI proof; nothing is started |
 
 | App PIN | Settings sets a 4–6 digit PIN ("On"); a cold relaunch shows the gate with the tab bar hidden; a wrong PIN is refused; Emergency Pass & protection recovery open without the PIN; the right PIN unlocks and removing the PIN turns it off | Emulator only; no Recents-thumbnail pixel proof, no TalkBack audio, no physical device |
+| Focus history | A real Start focus run completes after real elapsed time; Today shows the focused total; a restart keeps the completion; the Focus sessions empty state renders from a cold launch | The Focus Streak card sits above the sessions section, so on the runner's 1080x1920 display the Week/Day chips and totals are below the fold, where Compose does not expose their nodes; scrolling that page kills the software-rendered runner emulator. The Week/Day switch and its per-period totals are covered by the host Compose test `feature-stats FocusSessionsCardTest` (Robolectric), not by this emulator suite |
 
 These are emulator integration checks, not hardware/OEM, anti-removal, web
 blocking, Play compliance or complete enforcement certification. There are no

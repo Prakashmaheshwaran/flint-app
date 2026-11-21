@@ -20,6 +20,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    // Robolectric renders the sessions card and merges core-history resources for the test.
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 dependencies {
@@ -37,4 +39,12 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    // Host Compose test for the Week/Day switch (no emulator; the runner cannot scroll this
+    // card). Debug-only like core-common's Robolectric harness: createComposeRule needs the
+    // debug test-manifest activity, which the release unit-test variant does not merge.
+    testDebugImplementation(platform(libs.androidx.compose.bom))
+    testDebugImplementation(libs.androidx.ui.test.junit4)
+    testDebugImplementation(libs.androidx.junit)
+    testDebugImplementation(libs.robolectric)
+    debugImplementation(libs.androidx.ui.test.manifest)
 }

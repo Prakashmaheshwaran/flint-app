@@ -134,8 +134,8 @@ private fun DrawScope.drawMist(topLeft: Offset, size: Size, alpha: Float) {
 fun DrawScope.drawEmber(center: Offset, radius: Float, haloRadius: Float, haloAlpha: Float = 1f) {
     drawCircle(
         Brush.radialGradient(
-            0f to FlintPalette.Ember.copy(alpha = 0.42f * haloAlpha),
-            0.45f to FlintPalette.Ember.copy(alpha = 0.12f * haloAlpha),
+            0f to FlintPalette.Ember.copy(alpha = 0.48f * haloAlpha),
+            0.45f to FlintPalette.Ember.copy(alpha = 0.14f * haloAlpha),
             1f to FlintPalette.Ember.copy(alpha = 0f),
             center = center, radius = haloRadius,
         ),
@@ -143,7 +143,7 @@ fun DrawScope.drawEmber(center: Offset, radius: Float, haloRadius: Float, haloAl
     )
     drawCircle(
         Brush.radialGradient(
-            0f to FlintPalette.Glow, 0.35f to FlintPalette.Flame, 0.7f to FlintPalette.Ember, 1f to Color(0xFFC9781A),
+            0f to Color(0xFFFFE1A0), 0.30f to Color(0xFFFFC563), 0.65f to Color(0xFFF79B2E), 0.90f to Color(0xFFEE8218), 1f to Color(0xFFD96E12),
             center = center, radius = radius,
         ),
         radius = radius, center = center,
@@ -225,7 +225,7 @@ fun EmberLandscape(
                 drawCircle(FlintPalette.Bone.copy(alpha = a), radius = r * s, center = Offset(x * s, y * s))
             }
             orbCenter?.let { c ->
-                drawEmber(Offset(c.x * s, (c.y + o) * s), orbRadius * s, orbRadius * 2.93f * s, halo)
+                drawEmber(Offset(c.x * s, (c.y + o) * s), orbRadius * s, orbRadius * 3.3f * s, halo)
             }
             withTransform({ scale(s, s, pivot = Offset.Zero); translate(0f, o) }) {
                 val floor = maxOf(size.height / s - o, 844f)
