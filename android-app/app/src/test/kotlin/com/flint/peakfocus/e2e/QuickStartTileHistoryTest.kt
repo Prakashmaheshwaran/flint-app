@@ -136,7 +136,8 @@ class QuickStartTileHistoryTest {
 
     @Test fun `read output without the sentinel fails closed`() {
         // run-as/cat errors normally reach stderr only (dropped by executeShellCommand); if any
-        // error text does reach stdout, or the sentinel file cannot be read, never parse as empty.
+        // error text does reach stdout, there is no verified pwd line and no success marker,
+        // so it must never parse as empty history.
         expectFailureContaining("Focus-history read failed") {
             readFocusHistory("app.flint.focus") { "run-as: package not debuggable: app.flint.focus\n" }
         }
@@ -146,65 +147,107 @@ class QuickStartTileHistoryTest {
     }
 
     @Test fun `sentinel-only output is a genuinely empty history`() {
-        // cat exited 0 on an empty file, so the script echoed the marker with nothing before it
+        // verified location + cat exit 0 on an empty file: marker follows the pwd line only
         assertEquals(
             emptyList<JSONObject>(),
-            readFocusHistory("app.flint.focus") { "$FOCUS_HISTORY_READ_OK\n" },
+            readFocusHistory("app.flint.focus") { "$dataDir\n$FOCUS_HISTORY_READ_OK\n" },
         )
         assertEquals(
             emptyList<JSONObject>(),
-            readFocusHistory("app.flint.focus") { FOCUS_HISTORY_READ_OK },
+            readFocusHistory("app.flint.focus") { "$dataDir\n$FOCUS_HISTORY_READ_OK" },
         )
     }
 
-    @Test fun `missing or unreadable history read is rejected while genuine empty is accepted`() {
-        // genuine empty history (cat exit 0) is the only marker-only success
+    @Test fun `verified absent history file is accepted while failed and unreadable reads fail closed`() {
+        // state 3: location verified in-script and echoed back, `test -f` proves absence
         assertEquals(
             emptyList<JSONObject>(),
-            readFocusHistory("app.flint.focus") { "$FOCUS_HISTORY_READ_OK\n" },
+            readFocusHistory("app.flint.focus") { "$dataDir\n$FOCUS_HISTORY_ABSENT\n" },
         )
-        // missing file: cat exits non-zero, && short-circuits, no marker is ever emitted
+        // state 2: present, readable, empty file
+        assertEquals(
+            emptyList<JSONObject>(),
+            readFocusHistory("app.flint.focus") { "$dataDir\n$FOCUS_HISTORY_READ_OK\n" },
+        )
+        // failed run-as / no output: never an empty history
         expectFailureContaining("Focus-history read failed") {
             readFocusHistory("app.flint.focus") { "" }
         }
-        // unreadable file: likewise rejected, and any non-marker text is never parsed as empty
+        // present but unreadable: location line only — no absent marker, no success marker
+        expectFailureContaining("history read did not succeed") {
+            readFocusHistory("app.flint.focus") { "$dataDir\n" }
+        }
+        // unreadable text on stdout is never parsed as empty
         expectFailureContaining("Focus-history read failed") {
-            readFocusHistory("app.flint.focus") { "cat: $FOCUS_HISTORY_FILE: Permission denied\n" }
+            readFocusHistory("app.flint.focus") { "$dataDir\ncat: $FOCUS_HISTORY_FILE: Permission denied\n" }
+        }
+    }
+
+    @Test fun `absent marker without a verified location fails closed`() {
+        // no pwd line means the expected data directory was never confirmed
+        expectFailureContaining("unexpected working directory") {
+            readFocusHistory("app.flint.focus") { "$FOCUS_HISTORY_ABSENT\n" }
+        }
+    }
+
+    @Test fun `wrong working directory fails closed even when the file appears absent`() {
+        // the naive relative `test -f` would report absent here; the echoed pwd exposes it
+        expectFailureContaining("unexpected working directory") {
+            readFocusHistory("app.flint.focus") { "/data/local/tmp\n$FOCUS_HISTORY_ABSENT\n" }
+        }
+        expectFailureContaining("unexpected working directory") {
+            readFocusHistory("app.flint.focus") { "/\n" }
+        }
+    }
+
+    @Test fun `malformed history content fails closed through the read helper`() {
+        expectFailureContaining("Malformed") {
+            readFocusHistory("app.flint.focus") {
+                "$dataDir\nnot-json-at-all\n$FOCUS_HISTORY_READ_OK\n"
+            }
         }
     }
 
     @Test fun `marker must be the final output of the read`() {
         expectFailureContaining("Focus-history read failed") {
-            readFocusHistory("app.flint.focus") { "$FOCUS_HISTORY_READ_OK\nstray-after-marker\n" }
+            readFocusHistory("app.flint.focus") {
+                "$dataDir\n$FOCUS_HISTORY_READ_OK\nstray-after-marker\n"
+            }
         }
     }
 
-    @Test fun `sentinel output plus JSONL parses the history events`() {
+    @Test fun `verified location plus JSONL parses the history events`() {
         val started = """{"type":"started","session":"s"}"""
         val completed = """{"type":"completed","session":"s"}"""
         // cat prints the history first; echo appends the marker last, glued when the file has no
         // final newline of its own
         val glued = readFocusHistory("app.flint.focus") {
-            "$started\n$completed$FOCUS_HISTORY_READ_OK\n"
+            "$dataDir\n$started\n$completed$FOCUS_HISTORY_READ_OK\n"
         }
         assertEquals(listOf("started", "completed"), glued.map { it.getString("type") })
         val newlineSeparated = readFocusHistory("app.flint.focus") {
-            "$started\n$completed\n$FOCUS_HISTORY_READ_OK\n"
+            "$dataDir\n$started\n$completed\n$FOCUS_HISTORY_READ_OK\n"
         }
         assertEquals(listOf("started", "completed"), newlineSeparated.map { it.getString("type") })
     }
 
-    @Test fun `read command carries sentinel and history in one run-as invocation`() {
+    @Test fun `read command gates the history probe behind an in-script location check`() {
         var command = ""
         readFocusHistory("app.flint.focus") {
             command = it
-            "$FOCUS_HISTORY_READ_OK\n"
+            "$dataDir\n$FOCUS_HISTORY_READ_OK\n"
         }
         assertEquals(
-            "run-as app.flint.focus sh -c cat\${IFS}$FOCUS_HISTORY_FILE&&echo\${IFS}$FOCUS_HISTORY_READ_OK",
+            "run-as app.flint.focus sh -c p=\$(pwd);echo\${IFS}\$p;" +
+                "test\${IFS}\${p##*/}\${IFS}=\${IFS}app.flint.focus&&" +
+                "test\${IFS}\${p#/data/}\${IFS}!=\${IFS}\$p&&" +
+                "(test\${IFS}-f\${IFS}$FOCUS_HISTORY_FILE||echo\${IFS}$FOCUS_HISTORY_ABSENT;" +
+                "cat\${IFS}$FOCUS_HISTORY_FILE&&echo\${IFS}$FOCUS_HISTORY_READ_OK;true)",
             command,
         )
     }
+
+    private val dataDir = "/data/user/0/app.flint.focus"
 
     private fun expectFailureContaining(fragment: String, block: () -> Unit) {
         try {
