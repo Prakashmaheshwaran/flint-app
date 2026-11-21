@@ -8,7 +8,8 @@ internal const val FOCUS_HISTORY_FILE = "files/focus-history/events.v1.jsonl"
 /** Emitted by the read script only after `cat` exits 0, so it marks a successful history read. */
 internal const val FOCUS_HISTORY_READ_OK = "flint-history-read-ok"
 
-/** Emitted only after the location gate passed and `test -f` proves the file is genuinely absent. */
+/** Emitted only after the location gate passed, a `cat` read failed, and a `test -f` re-probe
+ * proves the file is genuinely absent — never before the read, so it can never accompany content. */
 internal const val FOCUS_HISTORY_ABSENT = "flint-history-absent"
 
 /**
@@ -23,10 +24,14 @@ internal const val FOCUS_HISTORY_ABSENT = "flint-history-absent"
  * 1. `pwd` is echoed first; the read section only runs when the location gate passes — the
  *    basename of the working directory must equal the app id and must live under `/data/`. A wrong
  *    directory therefore yields only the pwd line and never the absent marker.
- * 2. Location verified and `test -f` false => absent marker => genuinely empty history.
- * 3. Location verified and file present => `cat` output followed by the success marker. A non-zero
- *    `cat` exit (present but unreadable, failed run-as) short-circuits the marker: no absent
- *    marker, no success marker => fail closed below.
+ * 2. The read tries `cat` FIRST and `&& echo`s the success marker only after it exits 0; the
+ *    absent marker is emitted only in the `cat` failure branch, after a `test -f` re-probe still
+ *    finds the file missing. Absence is therefore derived from the failed read itself and can
+ *    never accompany content, even if the file appears between probes (first append or a
+ *    compaction rewrite racing the read — a probe-before-read ordering would emit
+ *    `absent` + content + marker together and misparse as malformed).
+ * 3. `cat` failure with the file still present (present but unreadable) emits neither marker,
+ *    and a failed run-as produces no output at all => fail closed below.
  *
  * The helper independently re-verifies the echoed pwd (expected `/data/.../<appId>`) before it
  * accepts the absent marker, so absence is trusted only when the expected data directory is proven.
@@ -37,8 +42,8 @@ internal fun readFocusHistory(appId: String, shell: (String) -> String): List<JS
         "p=\$(pwd);echo\${IFS}\$p;" +
             "test\${IFS}\${p##*/}\${IFS}=\${IFS}$appId&&" +
             "test\${IFS}\${p#/data/}\${IFS}!=\${IFS}\$p&&" +
-            "(test\${IFS}-f\${IFS}$FOCUS_HISTORY_FILE||echo\${IFS}$FOCUS_HISTORY_ABSENT;" +
-            "cat\${IFS}$FOCUS_HISTORY_FILE&&echo\${IFS}$FOCUS_HISTORY_READ_OK;true)"
+            "(cat\${IFS}$FOCUS_HISTORY_FILE&&echo\${IFS}$FOCUS_HISTORY_READ_OK||" +
+            "(test\${IFS}-f\${IFS}$FOCUS_HISTORY_FILE||echo\${IFS}$FOCUS_HISTORY_ABSENT);true)"
     val raw = shell("run-as $appId sh -c $script")
     if (raw.isBlank()) {
         error("Focus-history read failed: run-as produced no output; output was: ${raw.take(200)}")

@@ -241,10 +241,28 @@ class QuickStartTileHistoryTest {
             "run-as app.flint.focus sh -c p=\$(pwd);echo\${IFS}\$p;" +
                 "test\${IFS}\${p##*/}\${IFS}=\${IFS}app.flint.focus&&" +
                 "test\${IFS}\${p#/data/}\${IFS}!=\${IFS}\$p&&" +
-                "(test\${IFS}-f\${IFS}$FOCUS_HISTORY_FILE||echo\${IFS}$FOCUS_HISTORY_ABSENT;" +
-                "cat\${IFS}$FOCUS_HISTORY_FILE&&echo\${IFS}$FOCUS_HISTORY_READ_OK;true)",
+                "(cat\${IFS}$FOCUS_HISTORY_FILE&&echo\${IFS}$FOCUS_HISTORY_READ_OK||" +
+                "(test\${IFS}-f\${IFS}$FOCUS_HISTORY_FILE||echo\${IFS}$FOCUS_HISTORY_ABSENT);true)",
             command,
         )
+    }
+
+    @Test fun `absent marker alongside content fails closed instead of parsing`() {
+        // The read script can no longer emit this ordering — the absent marker comes only from
+        // the cat failure branch, after a successful read has already printed the success marker.
+        // If it ever arrived anyway, it must never parse as empty and never drop the real events.
+        expectFailureContaining("Malformed") {
+            readFocusHistory("app.flint.focus") {
+                "$dataDir\n$FOCUS_HISTORY_ABSENT\n" +
+                    "{\"type\":\"started\",\"session\":\"s\"}\n$FOCUS_HISTORY_READ_OK\n"
+            }
+        }
+        // content without the success marker (e.g. read raced by a rewrite) stays fail-closed too
+        expectFailureContaining("history read did not succeed") {
+            readFocusHistory("app.flint.focus") {
+                "$dataDir\n{\"type\":\"started\",\"session\":\"s\"}\n$FOCUS_HISTORY_ABSENT\n"
+            }
+        }
     }
 
     private val dataDir = "/data/user/0/app.flint.focus"
